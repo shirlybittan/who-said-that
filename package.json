@@ -1,0 +1,13 @@
+{
+  "dependencies": {
+    "qrcode.react": "^4.2.0",
+    "react-confetti": "^6.4.0",
+    "react-router-dom": "^6.30.3",
+    "socket.io-client": "^4.8.3"
+  },
+  "devDependencies": {
+    "autoprefixer": "^10.4.27",
+    "postcss": "^8.5.8",
+    "tailwindcss": "^4.2.2"
+  }
+}
