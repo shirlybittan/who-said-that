@@ -24,27 +24,36 @@ const shuffleAnswers = (answers) => {
   return array;
 };
 
-const calculateScores = (answers, currentScores) => {
+const calculateScores = (answers, currentScores, numPlayers) => {
   const newScores = { ...currentScores };
   
   answers.forEach(answer => {
+    let correctGuessesCount = 0;
+    const actualAuthorId = answer.playerId;
+    if (newScores[actualAuthorId] === undefined) newScores[actualAuthorId] = 0;
+
     answer.votes.forEach(vote => {
       const voterId = vote.voterId;
       const guessedId = vote.votedForId;
-      const actualAuthorId = answer.playerId;
       
       if (newScores[voterId] === undefined) newScores[voterId] = 0;
-      if (newScores[actualAuthorId] === undefined) newScores[actualAuthorId] = 0;
       
       if (guessedId === actualAuthorId) {
         // Voter guessed correctly
         newScores[voterId] += 1;
-        // Author is recognized, gets 0
+        correctGuessesCount++;
       } else {
         // Voter guessed wrongly
         newScores[voterId] -= 1;
+        // Deception Bonus
+        newScores[actualAuthorId] += 1;
       }
     });
+
+    // Signature Bonus: +1 if majority correctly guess the author
+    if (correctGuessesCount > (numPlayers - 1) / 2) {
+      newScores[actualAuthorId] += 1;
+    }
   });
   
   return newScores;

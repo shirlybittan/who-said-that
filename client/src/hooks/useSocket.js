@@ -116,6 +116,12 @@ export const useSocket = () => {
       alert(message);
     };
 
+    const onKicked = () => {
+      alert("You have been kicked from the room.");
+      dispatch({ type: 'RESET_GAME' });
+      navigate('/');
+    };
+
     socket.on('connect', onConnect);
     socket.on('room_created', onRoomCreated);
     socket.on('join_success', onJoinSuccess);
@@ -136,6 +142,7 @@ export const useSocket = () => {
     socket.on('players_ready', onPlayersReady);
     socket.on('game_ended', onGameEnded);
     socket.on('error', onError);
+    socket.on('kicked', onKicked);
 
     return () => {
       socket.off('connect', onConnect);
@@ -158,6 +165,7 @@ export const useSocket = () => {
       socket.off('players_ready', onPlayersReady);
       socket.off('game_ended', onGameEnded);
       socket.off('error', onError);
+      socket.off('kicked', onKicked);
     };
   }, [dispatch, navigate, state.playerId]);
 };

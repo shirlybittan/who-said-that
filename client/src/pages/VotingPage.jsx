@@ -1,9 +1,35 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
+import { translations } from '../locales/translations';
 
 export default function VotingPage() {
   const { state, dispatch } = useGame();
+  const [timeLeft, setTimeLeft] = useState(15);
+  const t = translations[state.lang].voting;
+  
+  const currentAnswer = state.answers[state.currentAnswerIndex];
+  const isRevealed = currentAnswer && !!currentAnswer.playerName;
+  const isMyAnswer = currentAnswer && currentAnswer.text === state.myAnswer;
+
+  useEffect(() => {
+    setTimeLeft(15);
+  }, [state.currentAnswerIndex]);
+
+  useEffect(() => {
+    if (state.hasVoted || isRevealed || state.allVotesIn || isMyAnswer) return;
+    if (timeLeft <= 0) {
+       const eligiblePlayers = state.players.filter(p => p.isConnected && p.id !== state.playerId);
+       if (eligiblePlayers.length > 0) {
+         const randomPlayer = eligiblePlayers[Math.floor(Math.random() * eligiblePlayers.length)];
+         socket.emit('submit_vote', { code: state.roomCode, votedPlayerId: randomPlayer.id });
+         dispatch({ type: 'MARK_VOTED' });
+       }
+       return;
+    }
+    const timer = setInterval(() => setTimeLeft(prev => prev - 1), 1000);
+    return () => clearInterval(timer);
+  }, [timeLeft, state.hasVoted, isRevealed, state.allVotesIn, isMyAnswer, state.players, state.playerId, state.roomCode, dispatch]);
 
   const handleVote = (votedPlayerId) => {
     if (state.hasVoted) return;
@@ -19,17 +45,16 @@ export default function VotingPage() {
     socket.emit('next_answer_request', { code: state.roomCode });
   };
 
-  const currentAnswer = state.answers[state.currentAnswerIndex];
-  
-  if (!currentAnswer) return <div className="text-white p-6">Loading answer...</div>;
-  
-  const isRevealed = !!currentAnswer.playerName;
+  if (!currentAnswer) return <div className="text-white p-6">{t.loading}</div>;
 
   return (
     <div className="flex flex-col items-center justify-start min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 pb-24">
       <div className="flex justify-between w-full max-w-md items-center py-4 mb-4">
-         <p className="text-xl font-['Fredoka_One'] text-[#FFE66D] uppercase tracking-widest text-center w-full">
-           Answer {state.currentAnswerIndex + 1} of {state.answers.length}
+         <p className="text-xl font-['Fredoka_One'] text-[#FFE66D] uppercase tracking-widest text-center w-full relative">
+           {t.answerNum.replace('{current}', state.currentAnswerIndex + 1).replace('{total}', state.answers.length)}
+           {!state.hasVoted && !isRevealed && !isMyAnswer && !state.allVotesIn && (
+             <span className="absolute right-0 text-red-500 text-lg top-0">⏳ {timeLeft}s</span>
+           )}
          </p>
       </div>
 
@@ -43,7 +68,7 @@ export default function VotingPage() {
              </h1>
           ) : (
             <div className="flex flex-col items-center rotate-y-180 transform scale-x-[1] w-full">
-              <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest mb-1">Written by</p>
+              <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest mb-1">{t.writtenBy}</p>
               <h1 className="text-4xl font-['Fredoka_One']" style={{ color: state.players.find(p => p.id === currentAnswer.playerId)?.color || '#FF6B6B' }}>
                 {currentAnswer.playerName}
               </h1>
@@ -56,10 +81,10 @@ export default function VotingPage() {
            <p className="text-lg font-['Nunito'] text-white">
              {currentAnswer.votes?.length > 0 ? (
                <span className="text-[#FFE66D] font-['Fredoka_One']">
-                  Let's see the standings!
+                  {t.standings}
                </span>
              ) : (
-                 <span className="text-gray-400">Nobody voted!</span>
+                 <span className="text-gray-400">{t.nobodyVoted}</span>
              )}
            </p>
         </div>
@@ -67,7 +92,7 @@ export default function VotingPage() {
 
       {/* Voting Section */}
       <div className="w-full max-w-md grid grid-cols-2 gap-4 auto-rows-fr">
-        {!state.hasVoted && !isRevealed && state.players.filter(p => p.isConnected && p.id !== state.playerId).map(p => (
+        {!state.hasVoted && !isRevealed && !isMyAnswer && state.players.filter(p => p.isConnected && p.id !== state.playerId).map(p => (
            <button 
              key={p.id}
              onClick={() => handleVote(p.id)}
@@ -81,32 +106,40 @@ export default function VotingPage() {
         ))}
       </div>
 
+      {!state.hasVoted && !isRevealed && isMyAnswer && !state.allVotesIn && (
+        <div className="mt-8 text-center flex flex-col items-center">
+           <h3 className="text-2xl font-['Fredoka_One'] text-[#FFE66D] mb-2 animate-pulse">{t.yourAnswer}</h3>
+           <p className="text-gray-300 font-['Nunito'] text-lg mt-2">{t.letsSee}</p>
+           <p className="text-gray-400 font-['Nunito'] mt-4">{t.waitingVotes.replace('{current}', state.votedCount).replace('{total}', state.totalPlayers || state.players.length - 1)}</p>
+        </div>
+      )}
+
       {state.hasVoted && !isRevealed && !state.allVotesIn && (
          <div className="mt-8 text-center animate-bounce">
-           <h3 className="text-2xl font-['Fredoka_One'] text-[#FFE66D] mb-2">Vote Locked In!</h3>
-           <p className="text-gray-300 font-['Nunito']">Waiting for others: {state.votedCount} / {state.totalPlayers || state.players.length - 1} voted</p>
+           <h3 className="text-2xl font-['Fredoka_One'] text-[#FFE66D] mb-2">{t.voteLocked}</h3>
+           <p className="text-gray-300 font-['Nunito']">{t.waitingVotes.replace('{current}', state.votedCount).replace('{total}', state.totalPlayers || state.players.length - 1)}</p>
          </div>
       )}
 
       {state.allVotesIn && !isRevealed && (
          <div className="mt-8 text-center flex flex-col items-center">
-           <h3 className="text-2xl font-['Fredoka_One'] text-[#FFE66D] mb-2 animate-pulse">All Votes Received!</h3>
+           <h3 className="text-2xl font-['Fredoka_One'] text-[#FFE66D] mb-2 animate-pulse">{t.allVotes}</h3>
            {state.isHost ? (
              <button 
-               onClick={handleRevealAnswer}
-               className="bg-[#FFE66D] text-black px-6 py-3 rounded-full font-bold text-xl hover:bg-yellow-400 transform hover:scale-105 transition mt-4"
+               onClick={handleNextAnswer}
+               className="bg-[#FFE66D] text-black px-6 py-3 rounded-full font-bold text-xl hover:bg-yellow-400 transform hover:scale-105 transition mt-4"       
              >
-               Show Answer
+               {state.currentAnswerIndex < state.answers.length - 1 ? t.nextAnswer : t.endRound}
              </button>
            ) : (
-             <p className="text-gray-300 font-['Nunito'] mt-2">Waiting for Host to reveal...</p>
+             <p className="text-gray-300 font-['Nunito'] mt-2">{t.waitingHost}</p>
            )}
          </div>
       )}
 
       {isRevealed && (
         <div className="mt-8 w-full max-w-md bg-[#1A1A2E] p-4 flex flex-col items-center justify-center rounded-xl border border-[#2D2D44] shadow-lg">
-          <h3 className="text-xl font-['Fredoka_One'] text-gray-300 mb-4 border-b border-[#2D2D44] w-full text-center pb-2">Standings</h3>
+          <h3 className="text-xl font-['Fredoka_One'] text-gray-300 mb-4 border-b border-[#2D2D44] w-full text-center pb-2">{t.standings}</h3>
           <div className="w-full space-y-2 mb-4">
             {[...state.players]
               .sort((a, b) => (state.scores?.[b.id] || 0) - (state.scores?.[a.id] || 0))
@@ -125,10 +158,10 @@ export default function VotingPage() {
                onClick={handleNextAnswer}
                className="w-full bg-[#FFE66D] text-black px-6 py-3 rounded-full font-bold text-lg hover:bg-yellow-400 transform hover:scale-105 transition"
              >
-               {state.currentAnswerIndex < state.answers.length - 1 ? 'Next Answer' : 'Round End'}
+               {state.currentAnswerIndex < state.answers.length - 1 ? t.nextAnswer : t.endRound}
              </button>
           ) : (
-            <p className="text-gray-400 text-sm mt-2">Waiting for Host to continue...</p>
+            <p className="text-gray-400 text-sm mt-2">{t.waitingHost}</p>
           )}
         </div>
       )}

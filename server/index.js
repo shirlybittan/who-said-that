@@ -58,7 +58,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('add_custom_question', ({ code, text }) => {
+  socket.on('add_custom_question', ({ code, text, saveToBank }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'lobby') return;
     const player = room.players.find(p => p.socketId === socket.id);
@@ -66,7 +66,7 @@ io.on('connection', (socket) => {
     
     // Add custom question natively inside array
     if (text.trim().length > 0) {
-      room.customQuestions.push({ id: `c-${room.customQuestions.length}`, text: text.trim() });
+      room.customQuestions.push({ id: `c-${room.customQuestions.length}`, text: text.trim(), saveToBank: !!saveToBank });
       io.to(code).emit('custom_questions_updated', { customQuestions: room.customQuestions });
     }
   });
@@ -87,6 +87,7 @@ io.on('connection', (socket) => {
     room.currentQuestionIndex = 0;
     room.currentQuestion = room.questions[0].text;
     room.answers = [];
+    room.skipVotes = [];
 
     io.to(code).emit('game_started', { round: room.currentRound, totalRounds: room.totalRounds });
     io.to(code).emit('new_question', { question: room.currentQuestion, round: room.currentRound, totalRounds: room.totalRounds });
@@ -104,9 +105,58 @@ io.on('connection', (socket) => {
     room.questions[room.currentQuestionIndex] = extraQ[0];
     room.currentQuestion = extraQ[0].text;
     room.answers = []; // Reset currently submitted answers
+    room.skipVotes = [];
 
     // Broadcast new question update
     io.to(code).emit('new_question', { question: room.currentQuestion, round: room.currentRound, totalRounds: room.totalRounds });
+  });
+
+  socket.on('vote_skip_question', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'question') return;
+
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isConnected) return;
+
+    if (!room.skipVotes) room.skipVotes = [];
+    if (!room.skipVotes.includes(player.id)) {
+      room.skipVotes.push(player.id);
+    }
+
+    const connectedPlayersCount = room.players.filter(p => p.isConnected).length;
+    if (room.skipVotes.length > connectedPlayersCount / 2) {
+      const extraQ = selectQuestions(room.mode, 1, room.customQuestions);
+      room.questions[room.currentQuestionIndex] = extraQ[0];
+      room.currentQuestion = extraQ[0].text;
+      room.answers = []; 
+      room.skipVotes = [];
+      io.to(code).emit('new_question', { question: room.currentQuestion, round: room.currentRound, totalRounds: room.totalRounds });
+    }
+  });
+
+  socket.on('kick_player', ({ code, targetPlayerId }) => {
+    const room = getRoom(code);
+    if (!room) return;
+    const host = room.players.find(p => p.socketId === socket.id);
+    if (!host || !host.isHost) return;
+
+    const targetPlayerIndex = room.players.findIndex(p => p.id === targetPlayerId);
+    if (targetPlayerIndex !== -1) {
+      const targetPlayer = room.players[targetPlayerIndex];
+      const targetSocketId = targetPlayer.socketId;
+      
+      // Remove from room
+      room.players.splice(targetPlayerIndex, 1);
+      
+      // Notify remaining players
+      io.to(code).emit('player_joined', { players: room.players });
+      
+      // Disconnect the target player explicitly
+      if (targetSocketId && io.sockets.sockets.get(targetSocketId)) {
+        io.sockets.sockets.get(targetSocketId).emit('kicked');
+        io.sockets.sockets.get(targetSocketId).disconnect(true);
+      }
+    }
   });
 
   socket.on('submit_answer', ({ code, text }) => {
@@ -146,8 +196,7 @@ io.on('connection', (socket) => {
     if (!player || !player.isConnected) return;
 
     const currentAnswer = room.answers[room.currentAnswerIndex];
-    if (!currentAnswer) return;
-
+    if (!currentAnswer) return;      if (player.id === currentAnswer.playerId) return; // Prevent author from voting
     if (!currentAnswer.votes.find(v => v.voterId === player.id)) {
       currentAnswer.votes.push({
         voterId: player.id,
@@ -165,28 +214,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('reveal_answer', ({ code }) => {
-    const room = getRoom(code);
-    if (!room || room.phase !== 'voting') return;
-    
-    // Only host should technically do this, but we'll accept it from the room
-    const currentAnswer = room.answers[room.currentAnswerIndex];
-    if (!currentAnswer) return;
 
-    // Calculate incremental score for this answer
-    room.scores = require('./game/gameLogic').calculateScores([currentAnswer], room.scores || {});
-
-    io.to(code).emit('answer_revealed', {
-      answer: { 
-        text: currentAnswer.text,
-        playerName: currentAnswer.playerName,
-        playerId: currentAnswer.playerId,
-        votes: currentAnswer.votes 
-      },
-      currentIndex: room.currentAnswerIndex,
-      scores: room.scores
-    });
-  });
 
   socket.on('next_answer_request', ({ code }) => {
     const room = getRoom(code);
@@ -197,6 +225,10 @@ io.on('connection', (socket) => {
       io.to(code).emit('next_answer', { currentIndex: room.currentAnswerIndex });
     } else {
       room.phase = 'roundEnd';
+      // Calculate scores for the whole round now
+      const numPlayers = room.players.length;
+      room.scores = require('./game/gameLogic').calculateScores(room.answers, room.scores || {}, numPlayers);
+
       io.to(code).emit('round_ended', { scores: room.scores, players: room.players, answers: room.answers, stats: {} });
     }
   });
@@ -222,11 +254,7 @@ io.on('connection', (socket) => {
         room.currentQuestionIndex++;
         room.currentQuestion = room.questions[room.currentQuestionIndex].text;
         room.answers = [];
-        room.phase = 'question';
-
-        io.to(code).emit('game_started', { round: room.currentRound, totalRounds: room.totalRounds });
-        io.to(code).emit('new_question', { question: room.currentQuestion, round: room.currentRound, totalRounds: room.totalRounds });
-      } else {
+          room.skipVotes = [];
         room.phase = 'gameEnd';
         const finalStats = require('./game/gameLogic').computeStats(room.players, room.answers, room.scores);
         io.to(code).emit('game_ended', { finalScores: room.scores, players: room.players, stats: finalStats });

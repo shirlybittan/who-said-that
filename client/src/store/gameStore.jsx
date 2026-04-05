@@ -22,11 +22,17 @@ const initialState = {
   answeredCount: 0,
   votedCount: 0,
   totalPlayers: 0,
-  error: null
+  error: null,
+  lang: localStorage.getItem('wst_lang') || 'en'
 };
 
-const gameReducer = (state, action) => {
+export const gameReducer = (state, action) => {
   switch (action.type) {
+    case 'SET_LANG':
+      localStorage.setItem('wst_lang', action.payload);
+      return { ...state, lang: action.payload };
+    case 'RESET_GAME':
+      return initialState;
     case 'SET_PLAYER_ID':
       localStorage.setItem('wst_playerId', action.payload);
       return { ...state, playerId: action.payload };
@@ -51,7 +57,7 @@ const gameReducer = (state, action) => {
     case 'SET_ANSWERS':
       return { ...state, phase: 'voting', answers: action.payload.answers, currentAnswerIndex: action.payload.currentIndex, hasVoted: false, votedCount: 0, allVotesIn: false };
     case 'MARK_ANSWERED':
-      return { ...state, hasAnswered: true };
+      return { ...state, hasAnswered: true, myAnswer: action.payload?.myAnswer || null };
     case 'MARK_VOTED':
       return { ...state, hasVoted: true };
     case 'ALL_VOTES_IN':
