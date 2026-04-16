@@ -11,6 +11,7 @@ const {
   setGameOptions,
 } = require('./game/roomManager');
 const { selectQuestions, shuffleAnswers } = require('./game/gameLogic');
+const mltPromptBank = require('./questions/mostLikelyTo');
 
 const app = express();
 app.use(cors());
@@ -25,6 +26,118 @@ const io = new Server(server, {
     methods: ['GET', 'POST'],
   },
 });
+
+// ─── MLT helpers ─────────────────────────────────────────────────────────────
+
+const closeMltVoting = (io, room, code) => {
+  if (room.mlt.timerRef) {
+    clearTimeout(room.mlt.timerRef);
+    room.mlt.timerRef = null;
+  }
+  if (room.mlt.roundState !== 'voting') return; // prevent double-close
+  room.mlt.roundState = 'results';
+
+  const connectedPlayers = room.players.filter(p => p.isConnected);
+
+  // Tally votes
+  const voteCounts = {};
+  connectedPlayers.forEach(p => { voteCounts[p.id] = 0; });
+
+  Object.entries(room.mlt.votes).forEach(([, targetId]) => {
+    if (voteCounts[targetId] !== undefined) {
+      voteCounts[targetId]++;
+      room.mlt.totalVotes[targetId] = (room.mlt.totalVotes[targetId] || 0) + 1;
+    }
+  });
+
+  const totalVotes = Object.keys(room.mlt.votes).length;
+
+  const results = connectedPlayers.map(p => ({
+    playerId: p.id,
+    name: p.name,
+    color: p.color,
+    count: voteCounts[p.id] || 0,
+    pct: totalVotes > 0 ? Math.round((voteCounts[p.id] || 0) / totalVotes * 100) : 0,
+  })).sort((a, b) => b.count - a.count);
+
+  const winnerId = results[0]?.count > 0 ? results[0].playerId : null;
+
+  if (winnerId) {
+    room.mlt.wins[winnerId] = (room.mlt.wins[winnerId] || 0) + 1;
+    Object.entries(room.mlt.votes).forEach(([voterId, targetId]) => {
+      if (targetId === winnerId) {
+        room.mlt.scores[voterId] = (room.mlt.scores[voterId] || 0) + 1;
+      }
+    });
+  }
+
+  io.to(code).emit('mlt:results', { results, winnerId });
+};
+
+const startMltTimer = (io, room, code, seconds) => {
+  if (room.mlt.timerRef) {
+    clearTimeout(room.mlt.timerRef);
+    room.mlt.timerRef = null;
+  }
+
+  let remaining = seconds;
+
+  const tick = () => {
+    if (room.mlt.roundState !== 'voting') return;
+    io.to(code).emit('mlt:timer', { secondsLeft: remaining });
+    if (remaining === 0) {
+      closeMltVoting(io, room, code);
+      return;
+    }
+    remaining--;
+    room.mlt.timerRef = setTimeout(tick, 1000);
+  };
+
+  tick();
+};
+
+const assignMltTitles = (leaderboard) => {
+  const titled = new Set();
+
+  const tryAssign = (sorted, key, minVal, title) => {
+    for (const entry of sorted) {
+      if (!titled.has(entry.playerId) && entry[key] >= minVal) {
+        entry.title = title;
+        titled.add(entry.playerId);
+        break;
+      }
+    }
+  };
+
+  tryAssign([...leaderboard].sort((a, b) => b.totalVotes - a.totalVotes), 'totalVotes', 1, '🌪️ Most Chaotic');
+  tryAssign([...leaderboard].sort((a, b) => b.wins - a.wins), 'wins', 1, '🏆 Everyone Agrees');
+  tryAssign([...leaderboard].sort((a, b) => b.score - a.score), 'score', 1, '🔮 Top Predictor');
+  tryAssign([...leaderboard].sort((a, b) => a.totalVotes - b.totalVotes), 'totalVotes', 0, '🎭 The Wildcard');
+
+  leaderboard.forEach(p => { if (!p.title) p.title = '✨ The Contender'; });
+  return leaderboard;
+};
+
+const sendMltEnd = (io, room, code) => {
+  room.mlt.roundState = 'end';
+  room.phase = 'mltEnd';
+
+  const connectedPlayers = room.players.filter(p => p.isConnected);
+  let leaderboard = connectedPlayers.map(p => ({
+    playerId: p.id,
+    name: p.name,
+    color: p.color,
+    score: room.mlt.scores[p.id] || 0,
+    totalVotes: room.mlt.totalVotes[p.id] || 0,
+    wins: room.mlt.wins[p.id] || 0,
+    title: null,
+  })).sort((a, b) => b.score - a.score);
+
+  leaderboard = assignMltTitles(leaderboard);
+  io.to(code).emit('mlt:end', { leaderboard });
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 const PORT = process.env.PORT || 3001;
 
@@ -49,10 +162,17 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('set_game_options', ({ code, mode, totalRounds }) => {
+  socket.on('set_game_options', ({ code, mode, totalRounds, gameType, mltRounds, allowSelfVote }) => {
     try {
-      const room = setGameOptions(code, socket.id, mode, totalRounds);
-      io.to(code).emit('options_updated', { mode: room.mode, totalRounds: room.totalRounds, customQuestions: room.customQuestions });
+      const room = setGameOptions(code, socket.id, mode, totalRounds, gameType, mltRounds, allowSelfVote);
+      io.to(code).emit('options_updated', {
+        mode: room.mode,
+        totalRounds: room.totalRounds,
+        customQuestions: room.customQuestions,
+        gameType: room.gameType,
+        mltTotalRounds: room.mlt.totalRounds,
+        mltAllowSelfVote: room.mlt.allowSelfVote,
+      });
     } catch (err) {
       socket.emit('error', { message: err.message });
     }
@@ -94,7 +214,6 @@ io.on('connection', (socket) => {
   });
 
   socket.on('skip_question', ({ code }) => {
-    // Allows host to grab a new question quickly
     const room = getRoom(code);
     if (!room || room.phase !== 'question') return;
     const player = room.players.find(p => p.socketId === socket.id);
@@ -267,12 +386,120 @@ io.on('connection', (socket) => {
     const room = getRoomBySocketId(socket.id);
     if (room) {
       const { player, newHost } = removePlayerBySocketId(socket.id, false);
+      // If an MLT timer is running and room is now empty, clean it up
+      if (room.phase === 'mlt' && room.mlt.timerRef && room.players.filter(p => p.isConnected).length === 0) {
+        clearTimeout(room.mlt.timerRef);
+        room.mlt.timerRef = null;
+      }
       io.to(room.code).emit('player_disconnected', { playerId: player.id, playerName: player.name });
       if (newHost) {
         io.to(room.code).emit('host_changed', { host: newHost.id });
       }
     }
   });
+
+  // ─── Most Likely To events ─────────────────────────────────────────────────
+
+  socket.on('mlt:start', ({ code, rounds, allowSelfVote }) => {
+    const room = getRoom(code);
+    if (!room) return;
+
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+
+    const connectedPlayers = room.players.filter(p => p.isConnected);
+    if (connectedPlayers.length < 3) return;
+
+    const totalRounds = Math.min(Math.max(parseInt(rounds) || 5, 1), mltPromptBank.length);
+
+    // Fisher-Yates shuffle of prompt bank
+    const shuffled = [...mltPromptBank];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+
+    room.phase = 'mlt';
+    room.mlt = {
+      roundState: 'voting',
+      prompts: shuffled.slice(0, totalRounds),
+      currentPrompt: shuffled[0],
+      votes: {},
+      scores: {},
+      totalVotes: {},
+      wins: {},
+      round: 1,
+      totalRounds,
+      allowSelfVote: !!allowSelfVote,
+      timerRef: null,
+    };
+
+    io.to(code).emit('mlt:prompt', {
+      prompt: room.mlt.currentPrompt,
+      round: room.mlt.round,
+      totalRounds: room.mlt.totalRounds,
+      players: connectedPlayers.map(p => ({ id: p.id, name: p.name, color: p.color })),
+    });
+
+    startMltTimer(io, room, code, 15);
+  });
+
+  socket.on('mlt:vote', ({ code, targetPlayerId }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'mlt' || room.mlt.roundState !== 'voting') return;
+
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isConnected) return;
+
+    // Self-vote guard
+    if (!room.mlt.allowSelfVote && targetPlayerId === player.id) return;
+
+    // One vote per player per round
+    if (room.mlt.votes[player.id] !== undefined) return;
+
+    room.mlt.votes[player.id] = targetPlayerId;
+
+    const connectedPlayers = room.players.filter(p => p.isConnected);
+    const voteCount = Object.keys(room.mlt.votes).length;
+    const totalVoters = connectedPlayers.length;
+
+    io.to(code).emit('mlt:vote_received', { voteCount, totalVoters });
+
+    if (voteCount >= totalVoters) {
+      closeMltVoting(io, room, code);
+    }
+  });
+
+  socket.on('mlt:next_round', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'mlt') return;
+
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+
+    if (room.mlt.round >= room.mlt.totalRounds) {
+      sendMltEnd(io, room, code);
+      return;
+    }
+
+    room.mlt.round++;
+    room.mlt.currentPrompt = room.mlt.prompts[room.mlt.round - 1];
+    room.mlt.votes = {};
+    room.mlt.roundState = 'voting';
+
+    const connectedPlayers = room.players.filter(p => p.isConnected);
+
+    io.to(code).emit('mlt:prompt', {
+      prompt: room.mlt.currentPrompt,
+      round: room.mlt.round,
+      totalRounds: room.mlt.totalRounds,
+      players: connectedPlayers.map(p => ({ id: p.id, name: p.name, color: p.color })),
+    });
+
+    startMltTimer(io, room, code, 15);
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
 });
 
 server.listen(PORT, () => {

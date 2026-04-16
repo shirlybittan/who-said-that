@@ -34,7 +34,12 @@ export const useSocket = () => {
           players: room.players,
           mode: room.mode,
           totalRounds: room.totalRounds,
-          isHost: room.host === playerId
+          isHost: room.host === playerId,
+          gameType: room.gameType || 'who-said-that',
+          mlt: {
+            totalRounds: room.mlt?.totalRounds ?? 5,
+            allowSelfVote: room.mlt?.allowSelfVote ?? false,
+          },
         } 
       });
       dispatch({ type: 'SET_PLAYER_ID', payload: playerId });
@@ -45,8 +50,8 @@ export const useSocket = () => {
       dispatch({ type: 'UPDATE_PLAYERS', payload: players });
     };
 
-    const onOptionsUpdated = ({ mode, totalRounds, customQuestions }) => {
-      dispatch({ type: 'SET_OPTIONS', payload: { mode, totalRounds, customQuestions } });
+    const onOptionsUpdated = ({ mode, totalRounds, customQuestions, gameType, mltTotalRounds, mltAllowSelfVote }) => {
+      dispatch({ type: 'SET_OPTIONS', payload: { mode, totalRounds, customQuestions, gameType, mltTotalRounds, mltAllowSelfVote } });
     };
 
     const onCustomQuestionsUpdated = ({ customQuestions }) => {
@@ -122,6 +127,31 @@ export const useSocket = () => {
       navigate('/');
     };
 
+    // ─── Most Likely To handlers ─────────────────────────────────────────────
+    const onMltPrompt = (data) => {
+      dispatch({ type: 'MLT_SET_PROMPT', payload: data });
+      navigate('/mlt-vote');
+    };
+
+    const onMltTimer = (data) => {
+      dispatch({ type: 'MLT_SET_TIMER', payload: data });
+    };
+
+    const onMltVoteReceived = (data) => {
+      dispatch({ type: 'MLT_VOTE_RECEIVED', payload: data });
+    };
+
+    const onMltResults = (data) => {
+      dispatch({ type: 'MLT_SET_RESULTS', payload: data });
+      navigate('/mlt-results');
+    };
+
+    const onMltEnd = (data) => {
+      dispatch({ type: 'MLT_SET_END', payload: data });
+      navigate('/mlt-end');
+    };
+    // ────────────────────────────────────────────────────────────────────────
+
     socket.on('connect', onConnect);
     socket.on('room_created', onRoomCreated);
     socket.on('join_success', onJoinSuccess);
@@ -143,6 +173,11 @@ export const useSocket = () => {
     socket.on('game_ended', onGameEnded);
     socket.on('error', onError);
     socket.on('kicked', onKicked);
+    socket.on('mlt:prompt', onMltPrompt);
+    socket.on('mlt:timer', onMltTimer);
+    socket.on('mlt:vote_received', onMltVoteReceived);
+    socket.on('mlt:results', onMltResults);
+    socket.on('mlt:end', onMltEnd);
 
     return () => {
       socket.off('connect', onConnect);
@@ -166,6 +201,11 @@ export const useSocket = () => {
       socket.off('game_ended', onGameEnded);
       socket.off('error', onError);
       socket.off('kicked', onKicked);
+      socket.off('mlt:prompt', onMltPrompt);
+      socket.off('mlt:timer', onMltTimer);
+      socket.off('mlt:vote_received', onMltVoteReceived);
+      socket.off('mlt:results', onMltResults);
+      socket.off('mlt:end', onMltEnd);
     };
   }, [dispatch, navigate, state.playerId]);
 };
