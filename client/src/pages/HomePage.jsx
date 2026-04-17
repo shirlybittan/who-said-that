@@ -8,7 +8,10 @@ export default function HomePage() {
   const [searchParams] = useSearchParams();
   const defaultJoin = searchParams.get('join') || '';
 
-  const [nickname, setNickname] = useState('');
+  const [gameName, setGameName] = useState('');
+  const [selectedGame, setSelectedGame] = useState('most-likely-to');
+
+  const [joinNickname, setJoinNickname] = useState('');
   const [roomCode, setRoomCode] = useState(defaultJoin);
 
   const { state, dispatch } = useGame();
@@ -16,63 +19,122 @@ export default function HomePage() {
   const navigate = useNavigate();
 
   const handleCreateRoom = () => {
-    if (!nickname.trim()) return alert('Please enter a nickname');
-
     localStorage.removeItem('wst_roomCode');
     localStorage.removeItem('wst_playerId');
-    localStorage.setItem('wst_playerName', nickname.trim());
 
+    const payload = { playerName: 'Host', gameType: selectedGame, gameName: gameName.trim() };
     if (socket.connected) {
-      socket.emit('create_room', { playerName: nickname.trim() });
+      socket.emit('create_room', payload);
     } else {
       socket.connect();
-      socket.emit('create_room', { playerName: nickname.trim() });
+      socket.emit('create_room', payload);
     }
   };
 
   const handleJoinRoom = () => {
-    if (!nickname.trim()) return alert('Please enter a nickname');
+    if (!joinNickname.trim()) return alert('Please enter a nickname');
     if (!roomCode.trim() || roomCode.length !== 4) return alert('Enter a 4-letter room code');
 
     const code = roomCode.toUpperCase();
 
     localStorage.removeItem('wst_roomCode');
     localStorage.removeItem('wst_playerId');
-    localStorage.setItem('wst_playerName', nickname.trim());
+    localStorage.setItem('wst_playerName', joinNickname.trim());
 
     if (socket.connected) {
-      socket.emit('join_room', { code, playerName: nickname.trim(), playerId: null });
+      socket.emit('join_room', { code, playerName: joinNickname.trim(), playerId: null });
     } else {
       socket.connect();
-      socket.emit('join_room', { code, playerName: nickname.trim(), playerId: null });
+      socket.emit('join_room', { code, playerName: joinNickname.trim(), playerId: null });
     }
   };
 
+  const games = [
+    {
+      id: 'most-likely-to',
+      label: t.gameMlt,
+      desc: t.gameMltDesc,
+      accent: '#4ECDC4',
+      icon: '🎯',
+    },
+    {
+      id: 'who-said-that',
+      label: t.gameWst,
+      desc: t.gameWstDesc,
+      accent: '#FF6B6B',
+      icon: '💬',
+    },
+  ];
+
+  const accentColor = selectedGame === 'most-likely-to' ? '#4ECDC4' : '#FF6B6B';
+
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-4 text-center">
-      <h1 className="text-5xl font-['Fredoka_One'] mb-2 text-[#FF6B6B]">{t.title}</h1>
-      <p className="text-lg mb-8 font-['Nunito'] text-gray-300">{t.subtitle}</p>
+      <h1 className="text-5xl font-['Fredoka_One'] mb-1 text-[#FFE66D]">🎉 Party Pack</h1>
+      <p className="text-lg mb-8 font-['Nunito'] text-gray-400">{t.subtitle}</p>
 
-      <div className="bg-[#1A1A2E] p-6 rounded-2xl shadow-xl w-full max-w-sm border border-[#2D2D44]">
+      {/* ── CREATE GAME ── */}
+      <div className="bg-[#1A1A2E] p-6 rounded-2xl shadow-xl w-full max-w-sm border border-[#2D2D44] mb-4">
+        <p className="text-xs font-['Nunito'] uppercase tracking-widest text-gray-500 mb-4">{t.pickGame}</p>
+
+        {/* Game Picker */}
+        <div className="flex gap-3 mb-5">
+          {games.map((g) => (
+            <button
+              key={g.id}
+              onClick={() => setSelectedGame(g.id)}
+              className={`flex-1 rounded-2xl p-4 border-2 text-left transition active:scale-95 ${
+                selectedGame === g.id
+                  ? 'border-transparent shadow-lg scale-[1.02]'
+                  : 'border-[#2D2D44] bg-[#0D0D1A] opacity-60 hover:opacity-80'
+              }`}
+              style={selectedGame === g.id ? { backgroundColor: g.accent + '22', borderColor: g.accent, boxShadow: `0 0 16px ${g.accent}44` } : {}}
+            >
+              <span className="text-2xl">{g.icon}</span>
+              <p className="font-['Fredoka_One'] text-sm mt-1 leading-tight" style={selectedGame === g.id ? { color: g.accent } : { color: '#ccc' }}>
+                {g.label}
+              </p>
+              <p className="font-['Nunito'] text-xs text-gray-400 mt-1 leading-snug">{g.desc}</p>
+            </button>
+          ))}
+        </div>
+
         <input
           type="text"
-          placeholder={t.nickname}
-          value={nickname}
-          onChange={(e) => setNickname(e.target.value)}
-          className="w-full p-3 rounded-lg text-black mb-6 text-[16px] border-2 border-transparent focus:border-[#FF6B6B] focus:outline-none"
+          placeholder={t.gameNamePlaceholder}
+          value={gameName}
+          onChange={(e) => setGameName(e.target.value)}
+          maxLength={40}
+          className="w-full p-3 rounded-lg text-black mb-4 text-[16px] border-2 border-transparent focus:border-[#FFE66D] focus:outline-none"
         />
-
         <button
           onClick={handleCreateRoom}
-          className="w-full bg-[#FF6B6B] hover:bg-[#ff5252] text-white font-bold py-3 px-4 rounded-lg mb-6 transition transform active:scale-95 text-lg font-['Fredoka_One'] shadow-lg"
+          className="w-full font-bold py-3 px-4 rounded-lg transition transform active:scale-95 text-lg font-['Fredoka_One'] shadow-lg text-white"
+          style={{ backgroundColor: accentColor }}
+          onMouseEnter={e => e.currentTarget.style.filter = 'brightness(1.1)'}
+          onMouseLeave={e => e.currentTarget.style.filter = ''}
         >
           {t.createBtn}
         </button>
+      </div>
 
-        <div className="flex items-center my-4 before:flex-1 before:border-t before:border-[#2D2D44] after:flex-1 after:border-t after:border-[#2D2D44]">       
-          <span className="mx-4 text-gray-400 font-['Nunito'] text-sm uppercase">{t.or}</span>
-        </div>
+      {/* ── OR divider ── */}
+      <div className="flex items-center w-full max-w-sm mb-4">
+        <div className="flex-1 border-t border-[#2D2D44]" />
+        <span className="mx-4 text-gray-400 font-['Nunito'] text-sm uppercase">{t.or}</span>
+        <div className="flex-1 border-t border-[#2D2D44]" />
+      </div>
 
+      {/* ── JOIN GAME ── */}
+      <div className="bg-[#1A1A2E] p-6 rounded-2xl shadow-xl w-full max-w-sm border border-[#2D2D44]">
+        <p className="text-xs font-['Nunito'] uppercase tracking-widest text-gray-500 mb-4">{t.joinTitle || 'Join a game'}</p>
+        <input
+          type="text"
+          placeholder={t.nickname}
+          value={joinNickname}
+          onChange={(e) => setJoinNickname(e.target.value)}
+          className="w-full p-3 rounded-lg text-black mb-3 text-[16px] border-2 border-transparent focus:border-[#FFE66D] focus:outline-none"
+        />
         <div className="flex gap-2 w-full">
           <input
             type="text"
@@ -89,22 +151,6 @@ export default function HomePage() {
             {t.joinBtn}
           </button>
         </div>
-      </div>
-
-      <div className="mt-12 bg-[#1A1A2E] p-6 rounded-2xl shadow-xl w-full max-w-xl border border-[#2D2D44] text-left">
-        <h2 className="text-2xl font-bold font-['Fredoka_One'] text-[#FFE66D] mb-4">{t.howToTitle}</h2>
-        <ul className="text-gray-300 font-['Nunito'] space-y-3 text-lg leading-relaxed">
-          <li><strong className="text-white">{t.rule1Title}</strong> {t.rule1Desc}</li>       
-          <li><strong className="text-white">{t.rule2Title}</strong> {t.rule2Desc}</li>
-          <li><strong className="text-white">{t.rule3Title}</strong>        
-            <ul className="list-disc pl-6 mt-1 space-y-1 text-[#A8E6CF]">       
-              <li><span className="text-[#FF6B6B] font-bold">{t.point1}</span></li>
-              <li><span className="text-[#FFE66D] font-bold">{t.point0}</span></li>
-              <li><span className="text-[#FF6B6B] font-bold">{t.pointMinus1}</span></li>
-            </ul>
-          </li>
-          <li><strong className="text-white">{t.rule4Title}</strong> {t.rule4Desc}</li>
-        </ul>
       </div>
     </div>
   );

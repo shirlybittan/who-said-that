@@ -23,7 +23,33 @@ const initialState = {
   votedCount: 0,
   totalPlayers: 0,
   error: null,
-  lang: localStorage.getItem('wst_lang') || 'en'
+  lang: localStorage.getItem('wst_lang') || 'en',
+  gameType: 'most-likely-to',
+  gameName: '',
+  mlt: {
+    totalRounds: 5,
+    allowSelfVote: true,
+    prompt: null,
+    round: 0,
+    roundState: 'waiting',
+    players: [],
+    results: [],
+    majorityPlayerIds: [],
+    leaderboard: [],
+    secondsLeft: 30,
+    hasVoted: false,
+    votedPlayerId: null,
+    voteCount: 0,
+    totalVoters: 0,
+    jokersLeft: 2,
+    jokerActive: false,
+    paused: false,
+    jokersUsed: [],
+    gameName: '',
+    scores: {},
+    prevScores: {},
+    scorePlayers: [],
+  },
 };
 
 export const gameReducer = (state, action) => {
@@ -37,7 +63,12 @@ export const gameReducer = (state, action) => {
       localStorage.setItem('wst_playerId', action.payload);
       return { ...state, playerId: action.payload };
     case 'SET_ROOM':
-      return { ...state, ...action.payload };
+      return {
+        ...state,
+        ...action.payload,
+        gameName: action.payload.gameName !== undefined ? action.payload.gameName : state.gameName,
+        mlt: action.payload.mlt ? { ...state.mlt, ...action.payload.mlt } : state.mlt,
+      };
     case 'UPDATE_PLAYERS':
       return { ...state, players: action.payload };
     case 'UPDATE_CUSTOM_QUESTIONS':
@@ -45,7 +76,18 @@ export const gameReducer = (state, action) => {
     case 'SET_PHASE':
       return { ...state, phase: action.payload };
     case 'SET_OPTIONS':
-      return { ...state, mode: action.payload.mode, totalRounds: action.payload.totalRounds, customQuestions: action.payload.customQuestions || state.customQuestions };
+      return {
+        ...state,
+        mode: action.payload.mode,
+        totalRounds: action.payload.totalRounds,
+        customQuestions: action.payload.customQuestions || state.customQuestions,
+        gameType: action.payload.gameType !== undefined ? action.payload.gameType : state.gameType,
+        mlt: {
+          ...state.mlt,
+          totalRounds: action.payload.mltTotalRounds !== undefined ? action.payload.mltTotalRounds : state.mlt.totalRounds,
+          allowSelfVote: action.payload.mltAllowSelfVote !== undefined ? action.payload.mltAllowSelfVote : state.mlt.allowSelfVote,
+        },
+      };
     case 'SET_GAME_STARTED':
       return { ...state, phase: 'question', currentRound: action.payload.round, totalRounds: action.payload.totalRounds };
     case 'SET_QUESTION':
@@ -76,6 +118,67 @@ export const gameReducer = (state, action) => {
       return { ...state, gameEnded: true, phase: 'game_end', stats: action.payload.stats, players: action.payload.players || state.players };
     case 'SET_ERROR':
       return { ...state, error: action.payload };
+    // ─── Most Likely To actions ──────────────────────────────────────────────
+    case 'MLT_SET_PROMPT':
+      return {
+        ...state,
+        phase: 'mlt',
+        mlt: {
+          ...state.mlt,
+          prompt: action.payload.prompt,
+          round: action.payload.round,
+          totalRounds: action.payload.totalRounds,
+          players: action.payload.players,
+          roundState: 'voting',
+          hasVoted: false,
+          votedPlayerId: null,
+          voteCount: 0,
+          totalVoters: action.payload.players.length,
+          secondsLeft: 30,
+          results: [],
+          majorityPlayerIds: [],
+          jokerActive: false,
+          jokersLeft: action.payload.jokersLeft !== undefined ? action.payload.jokersLeft : state.mlt.jokersLeft,
+          paused: false,
+          gameName: action.payload.gameName !== undefined ? action.payload.gameName : state.mlt.gameName,
+        },
+      };
+    case 'MLT_SET_TIMER':
+      return { ...state, mlt: { ...state.mlt, secondsLeft: action.payload.secondsLeft } };
+    case 'MLT_VOTE_RECEIVED':
+      return { ...state, mlt: { ...state.mlt, voteCount: action.payload.voteCount, totalVoters: action.payload.totalVoters } };
+    case 'MLT_MARK_VOTED':
+      return { ...state, mlt: { ...state.mlt, hasVoted: true, votedPlayerId: action.payload.votedPlayerId } };
+    case 'MLT_SET_RESULTS':
+      return {
+        ...state,
+        mlt: {
+          ...state.mlt,
+          results: action.payload.results,
+          majorityPlayerIds: action.payload.majorityPlayerIds || [],
+          jokersUsed: action.payload.jokersUsed || [],
+          roundState: 'results',
+          prevScores: { ...state.mlt.scores },
+          scores: action.payload.scores || state.mlt.scores,
+          scorePlayers: action.payload.players || state.mlt.scorePlayers || [],
+        },
+      };
+    case 'MLT_JOKER_STATE':
+      return {
+        ...state,
+        mlt: { ...state.mlt, jokerActive: action.payload.jokerActive, jokersLeft: action.payload.jokersLeft },
+      };
+    case 'MLT_SET_PAUSED':
+      return { ...state, mlt: { ...state.mlt, paused: true } };
+    case 'MLT_SET_RESUMED':
+      return { ...state, mlt: { ...state.mlt, paused: false, secondsLeft: action.payload.secondsLeft } };
+    case 'MLT_SET_END':
+      return {
+        ...state,
+        phase: 'mltEnd',
+        mlt: { ...state.mlt, leaderboard: action.payload.leaderboard, roundState: 'end' },
+      };
+    // ────────────────────────────────────────────────────────────────────────
     default:
       return state;
   }

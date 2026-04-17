@@ -9,23 +9,35 @@ export default function LobbyPage() {
   const [saveToBank, setSaveToBank] = useState(false);
 
   const t = translations[state.lang].lobby;
+  const tMlt = translations[state.lang].mlt;
+  const isMlt = state.gameType === 'most-likely-to';
 
   const handleStartGame = () => {
     if (state.players.length < 3) return alert('Need at least 3 players to start!');
-    if (state.mode === 'custom' && (!state.customQuestions || state.customQuestions.length < state.totalRounds)) {
-      return alert(t.needCustom.replace('{count}', state.totalRounds));
+    if (isMlt) {
+      socket.emit('mlt:start', {
+        code: state.roomCode,
+        rounds: state.mlt.totalRounds,
+        allowSelfVote: state.mlt.allowSelfVote,
+      });
+    } else {
+      if (state.mode === 'custom' && (!state.customQuestions || state.customQuestions.length < state.totalRounds)) {
+        return alert(t.needCustom.replace('{count}', state.totalRounds));
+      }
+      socket.emit('start_game', { code: state.roomCode });
     }
-    socket.emit('start_game', { code: state.roomCode });
   };
 
   const handleOptionsChange = (option, value) => {
-    if (state.isHost) {
-      socket.emit('set_game_options', {
-        code: state.roomCode,
-        mode: option === 'mode' ? value : state.mode,
-        totalRounds: option === 'rounds' ? value : state.totalRounds
-      });
-    }
+    if (!state.isHost) return;
+    socket.emit('set_game_options', {
+      code: state.roomCode,
+      mode: option === 'mode' ? value : state.mode,
+      totalRounds: option === 'rounds' ? value : state.totalRounds,
+      gameType: option === 'gameType' ? value : state.gameType,
+      mltRounds: option === 'mltRounds' ? value : state.mlt.totalRounds,
+      allowSelfVote: option === 'allowSelfVote' ? value : state.mlt.allowSelfVote,
+    });
   };
 
   const handleAddCustomQuestion = (e) => {
@@ -45,10 +57,17 @@ export default function LobbyPage() {
         <h1 className="text-6xl font-['Fredoka_One'] tracking-widest text-white">{state.roomCode}</h1>
       </div>
 
+      {/* Game type badge (visible to everyone) */}
+      <div className="w-full max-w-md mb-4 flex items-center justify-center gap-2">
+        <span className={`text-xs px-3 py-1 rounded-full font-['Nunito'] font-bold uppercase tracking-wider ${isMlt ? 'bg-[#4ECDC4]/20 text-[#4ECDC4] border border-[#4ECDC4]/40' : 'bg-[#FFE66D]/20 text-[#FFE66D] border border-[#FFE66D]/40'}`}>
+          {isMlt ? tMlt.gameLabel : t.gameLabel}
+        </span>
+      </div>
+
       <div className="bg-[#1A1A2E] rounded-2xl w-full max-w-md border border-[#2D2D44] p-4 mb-8 text-left h-full flex flex-col justify-between">
-         <h3 className="text-xl font-bold mb-4 font-['Fredoka_One'] text-[#FF6B6B]">{t.players} ({state.players?.length || 0})</h3>
+         <h3 className="text-xl font-bold mb-4 font-['Fredoka_One'] text-[#FF6B6B]">{t.players} ({state.players?.filter(p => !p.isHost).length || 0})</h3>
          <div className="flex flex-wrap gap-3">
-          {state.players?.map((p, idx) => (
+          {state.players?.filter(p => !p.isHost).map((p, idx) => (
              <div key={idx} className="flex items-center space-x-2 bg-black bg-opacity-30 rounded-full px-3 py-2 border border-gray-800">
                <div className="w-8 h-8 rounded-full flex items-center justify-center text-black font-bold border-2 border-white shadow-sm" style={{ backgroundColor: p.color }}>
                  {p.name.charAt(0).toUpperCase()}
@@ -69,7 +88,7 @@ export default function LobbyPage() {
          </div>
       </div>
 
-      {state.mode === 'custom' && (
+      {!isMlt && state.mode === 'custom' && (
         <div className="bg-[#1A1A2E] rounded-2xl w-full max-w-md border border-[#2D2D44] p-4 mb-32 text-left">
            <h3 className="text-lg font-bold mb-2 font-['Fredoka_One'] text-[#A8E6CF]">{t.customQuestions} ({state.customQuestions?.length || 0})</h3>
            <div className="max-h-32 overflow-y-auto mb-4 space-y-2 pr-2">       
@@ -104,32 +123,77 @@ export default function LobbyPage() {
       )}
 
       {state.isHost ? (
-        <div className="fixed bottom-0 w-full bg-[#1A1A2E] p-4 border-t-2 border-[#FFE66D] flex flex-col items-center shadow-[0_-10px_30px_rgba(0,0,0,0.5)] z-50">
-          <div className="flex space-x-4 mb-4">
-             <select
-               value={state.mode}
-               onChange={(e) => handleOptionsChange('mode', e.target.value)}    
-               className="bg-[#0D0D1A] text-white p-2 rounded-lg border border-[#2D2D44] font-['Nunito'] w-1/2"
-             >
+        <div className="fixed bottom-0 w-full bg-[#1A1A2E] p-4 border-t-2 border-[#FFE66D] flex flex-col items-center shadow-[0_-10px_30px_rgba(0,0,0,0.5)] z-50 gap-3">
+
+          {/* Game type picker */}
+          <div className="flex w-full max-w-sm rounded-xl overflow-hidden border border-[#2D2D44]">
+            <button
+              onClick={() => handleOptionsChange('gameType', 'who-said-that')}
+              className={`flex-1 py-2 text-sm font-['Fredoka_One'] transition ${!isMlt ? 'bg-[#FFE66D] text-black' : 'bg-[#0D0D1A] text-gray-400 hover:text-white'}`}
+            >
+              {t.gameLabel}
+            </button>
+            <button
+              onClick={() => handleOptionsChange('gameType', 'most-likely-to')}
+              className={`flex-1 py-2 text-sm font-['Fredoka_One'] transition ${isMlt ? 'bg-[#4ECDC4] text-black' : 'bg-[#0D0D1A] text-gray-400 hover:text-white'}`}
+            >
+              {tMlt.gameLabel}
+            </button>
+          </div>
+
+          {/* WST options */}
+          {!isMlt && (
+            <div className="flex space-x-4 w-full max-w-sm">
+              <select
+                value={state.mode}
+                onChange={(e) => handleOptionsChange('mode', e.target.value)}
+                className="bg-[#0D0D1A] text-white p-2 rounded-lg border border-[#2D2D44] font-['Nunito'] w-1/2"
+              >
                 <option value="friends">{t.friendsMode}</option>
                 <option value="family">{t.familyMode}</option>
                 <option value="custom">{t.customMode}</option>
-             </select>
-             <select
-               value={state.totalRounds}
-               onChange={(e) => handleOptionsChange('rounds', parseInt(e.target.value))}
-               className="bg-[#0D0D1A] text-white p-2 rounded-lg border border-[#2D2D44] font-['Nunito'] w-1/2"
-             >
+              </select>
+              <select
+                value={state.totalRounds}
+                onChange={(e) => handleOptionsChange('rounds', parseInt(e.target.value))}
+                className="bg-[#0D0D1A] text-white p-2 rounded-lg border border-[#2D2D44] font-['Nunito'] w-1/2"
+              >
                 <option value={2}>2 {t.rounds}</option>
                 <option value={3}>3 {t.rounds}</option>
                 <option value={4}>4 {t.rounds}</option>
                 <option value={5}>5 {t.rounds}</option>
-             </select>
-          </div>
+              </select>
+            </div>
+          )}
+
+          {/* MLT options */}
+          {isMlt && (
+            <div className="flex items-center gap-4 w-full max-w-sm">
+              <select
+                value={state.mlt.totalRounds}
+                onChange={(e) => handleOptionsChange('mltRounds', parseInt(e.target.value))}
+                className="bg-[#0D0D1A] text-white p-2 rounded-lg border border-[#2D2D44] font-['Nunito'] flex-1"
+              >
+                {[5,6,7,8,9,10,12,15,20].map(n => (
+                  <option key={n} value={n}>{n} {tMlt.rounds}</option>
+                ))}
+              </select>
+              <label className="flex items-center gap-2 text-sm font-['Nunito'] text-gray-300 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={state.mlt.allowSelfVote}
+                  onChange={(e) => handleOptionsChange('allowSelfVote', e.target.checked)}
+                  className="w-4 h-4 rounded border-[#2D2D44] bg-[#0D0D1A] accent-[#4ECDC4]"
+                />
+                {tMlt.allowSelfVote}
+              </label>
+            </div>
+          )}
+
           <button
             disabled={state.players?.length < 3}
             onClick={handleStartGame}
-            className={`w-full max-w-sm ${state.players?.length < 3 ? 'bg-gray-600 cursor-not-allowed' : 'bg-[#FFE66D] hover:bg-[#ffdd33] text-black'} font-bold py-4 px-6 rounded-xl transition transform active:scale-95 text-xl font-['Fredoka_One'] shadow-lg uppercase tracking-wide`}
+            className={`w-full max-w-sm ${state.players?.length < 3 ? 'bg-gray-600 cursor-not-allowed' : isMlt ? 'bg-[#4ECDC4] hover:bg-[#3bbdb5] text-black' : 'bg-[#FFE66D] hover:bg-[#ffdd33] text-black'} font-bold py-4 px-6 rounded-xl transition transform active:scale-95 text-xl font-['Fredoka_One'] shadow-lg uppercase tracking-wide`}
           >
             {t.startBtn}
           </button>

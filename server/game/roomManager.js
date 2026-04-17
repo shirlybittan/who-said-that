@@ -17,7 +17,7 @@ const generatePlayerColor = (existingColors) => {
   return availableColors.length > 0 ? availableColors[0] : colors[Math.floor(Math.random() * colors.length)];
 };
 
-const createRoom = (socketId, playerName = 'Host') => {
+const createRoom = (socketId, playerName = 'Host', gameType = 'most-likely-to', gameName = '') => {
   const code = generateRoomCode();
   const player = {
     id: uuidv4(),
@@ -30,8 +30,10 @@ const createRoom = (socketId, playerName = 'Host') => {
   
   const room = {
     code,
+    gameName: gameName.trim().slice(0, 40) || '',
     host: player.id,
     phase: 'lobby',
+    gameType: gameType === 'who-said-that' ? 'who-said-that' : 'most-likely-to',
     mode: 'friends',
     totalRounds: 3,
     currentRound: 0,
@@ -44,7 +46,24 @@ const createRoom = (socketId, playerName = 'Host') => {
     scores: {},
     players: [player],
     usedQuestionIds: [],
-    timer: null
+    timer: null,
+    mlt: {
+      roundState: 'waiting',
+      currentPrompt: null,
+      prompts: [],
+      votes: {},
+      scores: {},
+      totalVotes: {},
+      wins: {},
+      jokers: {},
+      jokersThisRound: {},
+      round: 0,
+      totalRounds: 5,
+      allowSelfVote: false,
+      paused: false,
+      secondsLeft: 30,
+      timerRef: null
+    }
   };
   
   rooms.set(code, room);
@@ -132,14 +151,17 @@ const removePlayerBySocketId = (socketId, permanent) => {
   return { player, newHost };
 };
 
-const setGameOptions = (code, socketId, mode, totalRounds) => {
+const setGameOptions = (code, socketId, mode, totalRounds, gameType, mltRounds, allowSelfVote) => {
   const room = getRoom(code);
   if (!room) throw new Error('Room not found');
   const player = room.players.find(p => p.socketId === socketId);
   if (!player || !player.isHost) throw new Error('Only host can change options');
-  
-  room.mode = mode;
-  room.totalRounds = totalRounds;
+
+  if (mode !== undefined) room.mode = mode;
+  if (totalRounds !== undefined) room.totalRounds = totalRounds;
+  if (gameType !== undefined) room.gameType = gameType;
+  if (mltRounds !== undefined) room.mlt.totalRounds = mltRounds;
+  if (allowSelfVote !== undefined) room.mlt.allowSelfVote = allowSelfVote;
   return room;
 };
 

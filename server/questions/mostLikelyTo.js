@@ -1,0 +1,35 @@
+module.exports = [
+  // Funny
+  "Who would accidentally go viral?",
+  "Who would forget their own birthday?",
+  "Who would survive the longest in the wild?",
+  "Who would adopt 5 cats?",
+  "Who would become a reality TV star?",
+  "Who would show up 30 minutes late to their own wedding?",
+  "Who would order the weirdest thing on the menu?",
+  "Who would become obsessed with a niche hobby nobody else gets?",
+  "Who would go on a spontaneous road trip with zero plan?",
+  "Who would accidentally befriend a celebrity?",
+  // Edgy
+  "Who is most likely to text their ex at 3AM?",
+  "Who would ghost someone after a great first date?",
+  "Who would lie on a job interview?",
+  "Who would wake up in a foreign country with no memory?",
+  "Who would accidentally send a text to the wrong person?",
+  "Who would start drama at a family dinner?",
+  "Who would quit their job completely on impulse?",
+  "Who would call in sick just to binge a TV show?",
+  "Who would spend a whole paycheck on something ridiculous?",
+  "Who would start an argument just for the fun of it?",
+  // Absurd
+  "Who would accidentally join a cult?",
+  "Who would start a conspiracy theory that goes viral?",
+  "Who would betray the group in a zombie apocalypse?",
+  "Who would run for president on a completely ridiculous platform?",
+  "Who would discover a hidden talent at age 80?",
+  "Who would end up on a wanted poster?",
+  "Who would invent something useless but oddly popular?",
+  "Who would get lost in a building they've been in 100 times?",
+  "Who would argue with a GPS until the very end?",
+  "Who would somehow end up on the news for the strangest reason?"
+];
