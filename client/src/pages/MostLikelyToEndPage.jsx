@@ -12,6 +12,7 @@ export default function MostLikelyToEndPage() {
     width: window.innerWidth,
     height: window.innerHeight,
   });
+  const [podiumVisible, setPodiumVisible] = useState(false);
 
   useEffect(() => {
     const handleResize = () =>
@@ -20,11 +21,21 @@ export default function MostLikelyToEndPage() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  useEffect(() => {
+    const t = setTimeout(() => setPodiumVisible(true), 200);
+    return () => clearTimeout(t);
+  }, []);
+
   const handlePlayAgain = () => {
     window.location.reload();
   };
 
-  const topPlayer = mlt.leaderboard[0];
+  const top3 = mlt.leaderboard.slice(0, 3);
+  // Podium order: 2nd, 1st, 3rd
+  const podiumOrder = [top3[1], top3[0], top3[2]].filter(Boolean);
+  const podiumHeights = { 0: 'h-24', 1: 'h-36', 2: 'h-16' }; // heights for 2nd/1st/3rd
+  const podiumColors = { 0: '#C0C0C0', 1: '#FFE66D', 2: '#CD7F32' };
+  const podiumPositions = [1, 0, 2]; // indices in top3 for left/center/right
 
   return (
     <div className="flex flex-col items-center justify-start min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 pb-24">
@@ -35,21 +46,43 @@ export default function MostLikelyToEndPage() {
       </h1>
       <p className="text-gray-400 font-['Nunito'] text-sm mb-8">{t.gameOverSub}</p>
 
-      {/* Winner spotlight */}
-      {topPlayer && (
-        <div className="w-full max-w-md bg-[#1A1A2E] border-2 border-[#FFE66D] rounded-2xl p-6 text-center mb-6 shadow-[0_0_20px_rgba(255,230,109,0.2)]">
-          <p className="text-sm font-['Nunito'] text-[#FFE66D] uppercase tracking-widest mb-2">{t.topScorer}</p>
-          <div
-            className="w-16 h-16 rounded-full mx-auto flex items-center justify-center text-black font-bold text-2xl border-4 border-[#FFE66D] mb-3"
-            style={{ backgroundColor: topPlayer.color }}
-          >
-            {topPlayer.name.charAt(0).toUpperCase()}
+      {/* Podium */}
+      {top3.length > 0 && (
+        <div className="w-full max-w-md mb-8">
+          <div className="flex items-end justify-center gap-3 px-4">
+            {podiumOrder.map((player, slotIdx) => {
+              const realIdx = podiumPositions[slotIdx];
+              const medal = ['🥇', '🥈', '🥉'][realIdx] || '';
+              const barH = ['h-24', 'h-36', 'h-16'][slotIdx];
+              const col = [podiumColors[1], podiumColors[0], podiumColors[2]][slotIdx];
+              const nameColor = realIdx === 0 ? '#FFE66D' : realIdx === 1 ? '#C0C0C0' : '#CD7F32';
+              return (
+                <div key={player.playerId} className="flex flex-col items-center flex-1">
+                  {/* Avatar + name above podium */}
+                  <span className="text-xl mb-1">{medal}</span>
+                  <div
+                    className="w-12 h-12 rounded-full flex items-center justify-center text-black font-bold text-lg border-3 mb-1"
+                    style={{ backgroundColor: player.color, border: `3px solid ${col}` }}
+                  >
+                    {player.name.charAt(0).toUpperCase()}
+                  </div>
+                  <p className="font-['Fredoka_One'] text-sm mb-1 text-center leading-tight" style={{ color: nameColor }}>
+                    {player.name}
+                  </p>
+                  <p className="font-['Nunito'] text-xs text-gray-400 mb-2">{player.score} {t.pts}</p>
+                  {/* Podium block */}
+                  <div
+                    className={`w-full rounded-t-xl flex items-center justify-center font-['Fredoka_One'] text-2xl transition-all duration-700 ease-out ${podiumVisible ? barH : 'h-0'}`}
+                    style={{ backgroundColor: col + '33', border: `2px solid ${col}`, borderBottom: 'none', overflow: 'hidden' }}
+                  >
+                    {realIdx + 1}
+                  </div>
+                </div>
+              );
+            })}
           </div>
-          <p className="text-3xl font-['Fredoka_One'] text-white mb-1">{topPlayer.name}</p>
-          <p className="text-[#4ECDC4] font-['Nunito'] font-bold">{topPlayer.title}</p>
-          <p className="text-gray-400 font-['Nunito'] text-sm mt-1">
-            {topPlayer.score} {t.pts}
-          </p>
+          {/* Base line */}
+          <div className="h-1 w-full rounded-full mt-0" style={{ backgroundColor: '#2D2D44' }} />
         </div>
       )}
 

@@ -65,9 +65,9 @@ export default function LobbyPage() {
       </div>
 
       <div className="bg-[#1A1A2E] rounded-2xl w-full max-w-md border border-[#2D2D44] p-4 mb-8 text-left h-full flex flex-col justify-between">
-         <h3 className="text-xl font-bold mb-4 font-['Fredoka_One'] text-[#FF6B6B]">{t.players} ({state.players?.length || 0})</h3>
+         <h3 className="text-xl font-bold mb-4 font-['Fredoka_One'] text-[#FF6B6B]">{t.players} ({state.players?.filter(p => !p.isHost).length || 0})</h3>
          <div className="flex flex-wrap gap-3">
-          {state.players?.map((p, idx) => (
+          {state.players?.filter(p => !p.isHost).map((p, idx) => (
              <div key={idx} className="flex items-center space-x-2 bg-black bg-opacity-30 rounded-full px-3 py-2 border border-gray-800">
                <div className="w-8 h-8 rounded-full flex items-center justify-center text-black font-bold border-2 border-white shadow-sm" style={{ backgroundColor: p.color }}>
                  {p.name.charAt(0).toUpperCase()}

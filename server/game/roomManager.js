@@ -17,7 +17,7 @@ const generatePlayerColor = (existingColors) => {
   return availableColors.length > 0 ? availableColors[0] : colors[Math.floor(Math.random() * colors.length)];
 };
 
-const createRoom = (socketId, playerName = 'Host') => {
+const createRoom = (socketId, playerName = 'Host', gameType = 'most-likely-to', gameName = '') => {
   const code = generateRoomCode();
   const player = {
     id: uuidv4(),
@@ -30,9 +30,10 @@ const createRoom = (socketId, playerName = 'Host') => {
   
   const room = {
     code,
+    gameName: gameName.trim().slice(0, 40) || '',
     host: player.id,
     phase: 'lobby',
-    gameType: 'who-said-that',
+    gameType: gameType === 'who-said-that' ? 'who-said-that' : 'most-likely-to',
     mode: 'friends',
     totalRounds: 3,
     currentRound: 0,
@@ -54,9 +55,13 @@ const createRoom = (socketId, playerName = 'Host') => {
       scores: {},
       totalVotes: {},
       wins: {},
+      jokers: {},
+      jokersThisRound: {},
       round: 0,
       totalRounds: 5,
       allowSelfVote: false,
+      paused: false,
+      secondsLeft: 30,
       timerRef: null
     }
   };

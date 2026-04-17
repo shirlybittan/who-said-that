@@ -17,9 +17,9 @@ export const useSocket = () => {
       }
     };
 
-    const onRoomCreated = ({ code, playerId, players }) => {
+    const onRoomCreated = ({ code, playerId, players, gameType, gameName }) => {
       localStorage.setItem('wst_roomCode', code);
-      dispatch({ type: 'SET_ROOM', payload: { roomCode: code, phase: 'lobby', isHost: true, players } });
+      dispatch({ type: 'SET_ROOM', payload: { roomCode: code, phase: 'lobby', isHost: true, players, gameType, gameName: gameName || '' } });
       dispatch({ type: 'SET_PLAYER_ID', payload: playerId });
       navigate('/lobby');
     };
@@ -36,6 +36,7 @@ export const useSocket = () => {
           totalRounds: room.totalRounds,
           isHost: room.host === playerId,
           gameType: room.gameType || 'who-said-that',
+          gameName: room.gameName || '',
           mlt: {
             totalRounds: room.mlt?.totalRounds ?? 5,
             allowSelfVote: room.mlt?.allowSelfVote ?? false,
@@ -150,6 +151,18 @@ export const useSocket = () => {
       dispatch({ type: 'MLT_SET_END', payload: data });
       navigate('/mlt-end');
     };
+
+    const onMltJokerState = (data) => {
+      dispatch({ type: 'MLT_JOKER_STATE', payload: data });
+    };
+
+    const onMltPaused = () => {
+      dispatch({ type: 'MLT_SET_PAUSED' });
+    };
+
+    const onMltResumed = (data) => {
+      dispatch({ type: 'MLT_SET_RESUMED', payload: data });
+    };
     // ────────────────────────────────────────────────────────────────────────
 
     socket.on('connect', onConnect);
@@ -178,6 +191,9 @@ export const useSocket = () => {
     socket.on('mlt:vote_received', onMltVoteReceived);
     socket.on('mlt:results', onMltResults);
     socket.on('mlt:end', onMltEnd);
+    socket.on('mlt:joker_state', onMltJokerState);
+    socket.on('mlt:paused', onMltPaused);
+    socket.on('mlt:resumed', onMltResumed);
 
     return () => {
       socket.off('connect', onConnect);
@@ -206,6 +222,9 @@ export const useSocket = () => {
       socket.off('mlt:vote_received', onMltVoteReceived);
       socket.off('mlt:results', onMltResults);
       socket.off('mlt:end', onMltEnd);
+      socket.off('mlt:joker_state', onMltJokerState);
+      socket.off('mlt:paused', onMltPaused);
+      socket.off('mlt:resumed', onMltResumed);
     };
   }, [dispatch, navigate, state.playerId]);
 };

@@ -24,22 +24,31 @@ const initialState = {
   totalPlayers: 0,
   error: null,
   lang: localStorage.getItem('wst_lang') || 'en',
-  gameType: 'who-said-that',
+  gameType: 'most-likely-to',
+  gameName: '',
   mlt: {
     totalRounds: 5,
-    allowSelfVote: false,
+    allowSelfVote: true,
     prompt: null,
     round: 0,
     roundState: 'waiting',
     players: [],
     results: [],
-    winnerId: null,
+    majorityPlayerIds: [],
     leaderboard: [],
-    secondsLeft: 15,
+    secondsLeft: 30,
     hasVoted: false,
     votedPlayerId: null,
     voteCount: 0,
     totalVoters: 0,
+    jokersLeft: 2,
+    jokerActive: false,
+    paused: false,
+    jokersUsed: [],
+    gameName: '',
+    scores: {},
+    prevScores: {},
+    scorePlayers: [],
   },
 };
 
@@ -57,6 +66,7 @@ export const gameReducer = (state, action) => {
       return {
         ...state,
         ...action.payload,
+        gameName: action.payload.gameName !== undefined ? action.payload.gameName : state.gameName,
         mlt: action.payload.mlt ? { ...state.mlt, ...action.payload.mlt } : state.mlt,
       };
     case 'UPDATE_PLAYERS':
@@ -124,9 +134,13 @@ export const gameReducer = (state, action) => {
           votedPlayerId: null,
           voteCount: 0,
           totalVoters: action.payload.players.length,
-          secondsLeft: 15,
+          secondsLeft: 30,
           results: [],
-          winnerId: null,
+          majorityPlayerIds: [],
+          jokerActive: false,
+          jokersLeft: action.payload.jokersLeft !== undefined ? action.payload.jokersLeft : state.mlt.jokersLeft,
+          paused: false,
+          gameName: action.payload.gameName !== undefined ? action.payload.gameName : state.mlt.gameName,
         },
       };
     case 'MLT_SET_TIMER':
@@ -138,8 +152,26 @@ export const gameReducer = (state, action) => {
     case 'MLT_SET_RESULTS':
       return {
         ...state,
-        mlt: { ...state.mlt, results: action.payload.results, winnerId: action.payload.winnerId, roundState: 'results' },
+        mlt: {
+          ...state.mlt,
+          results: action.payload.results,
+          majorityPlayerIds: action.payload.majorityPlayerIds || [],
+          jokersUsed: action.payload.jokersUsed || [],
+          roundState: 'results',
+          prevScores: { ...state.mlt.scores },
+          scores: action.payload.scores || state.mlt.scores,
+          scorePlayers: action.payload.players || state.mlt.scorePlayers || [],
+        },
       };
+    case 'MLT_JOKER_STATE':
+      return {
+        ...state,
+        mlt: { ...state.mlt, jokerActive: action.payload.jokerActive, jokersLeft: action.payload.jokersLeft },
+      };
+    case 'MLT_SET_PAUSED':
+      return { ...state, mlt: { ...state.mlt, paused: true } };
+    case 'MLT_SET_RESUMED':
+      return { ...state, mlt: { ...state.mlt, paused: false, secondsLeft: action.payload.secondsLeft } };
     case 'MLT_SET_END':
       return {
         ...state,

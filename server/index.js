@@ -34,15 +34,16 @@ const closeMltVoting = (io, room, code) => {
     clearTimeout(room.mlt.timerRef);
     room.mlt.timerRef = null;
   }
-  if (room.mlt.roundState !== 'voting') return; // prevent double-close
+  if (room.mlt.roundState !== 'voting') return;
   room.mlt.roundState = 'results';
+  room.mlt.paused = false;
 
-  const connectedPlayers = room.players.filter(p => p.isConnected);
+  // Only non-host players can be voted for
+  const votablePlayers = room.players.filter(p => p.isConnected && !p.isHost);
 
-  // Tally votes
+  // Tally votes on votable players only
   const voteCounts = {};
-  connectedPlayers.forEach(p => { voteCounts[p.id] = 0; });
-
+  votablePlayers.forEach(p => { voteCounts[p.id] = 0; });
   Object.entries(room.mlt.votes).forEach(([, targetId]) => {
     if (voteCounts[targetId] !== undefined) {
       voteCounts[targetId]++;
@@ -50,28 +51,57 @@ const closeMltVoting = (io, room, code) => {
     }
   });
 
-  const totalVotes = Object.keys(room.mlt.votes).length;
+  const totalVotesCount = Object.keys(room.mlt.votes).length;
 
-  const results = connectedPlayers.map(p => ({
+  const results = votablePlayers.map(p => ({
     playerId: p.id,
     name: p.name,
     color: p.color,
     count: voteCounts[p.id] || 0,
-    pct: totalVotes > 0 ? Math.round((voteCounts[p.id] || 0) / totalVotes * 100) : 0,
+    pct: totalVotesCount > 0 ? Math.round((voteCounts[p.id] || 0) / totalVotesCount * 100) : 0,
   })).sort((a, b) => b.count - a.count);
 
-  const winnerId = results[0]?.count > 0 ? results[0].playerId : null;
+  // Option A: all tied top players count as majority
+  const maxVotes = results[0]?.count || 0;
+  const majorityPlayerIds = maxVotes > 0
+    ? results.filter(r => r.count === maxVotes).map(r => r.playerId)
+    : [];
 
-  if (winnerId) {
-    room.mlt.wins[winnerId] = (room.mlt.wins[winnerId] || 0) + 1;
-    Object.entries(room.mlt.votes).forEach(([voterId, targetId]) => {
-      if (targetId === winnerId) {
-        room.mlt.scores[voterId] = (room.mlt.scores[voterId] || 0) + 1;
-      }
-    });
-  }
+  // Award wins & accumulate total-votes to majority players (already done above)
+  majorityPlayerIds.forEach(id => {
+    room.mlt.wins[id] = (room.mlt.wins[id] || 0) + 1;
+  });
 
-  io.to(code).emit('mlt:results', { results, winnerId });
+  // Score every connected player (including host who can vote)
+  room.players.filter(p => p.isConnected).forEach(voter => {
+    const votedFor = room.mlt.votes[voter.id];
+    let points = 0;
+
+    // +1 if voted for any majority player
+    if (majorityPlayerIds.includes(votedFor)) {
+      points += 1;
+    }
+    // Joker doubles total points (0 stays 0)
+    if (points > 0 && room.mlt.jokersThisRound[voter.id]) {
+      points *= 2;
+    }
+    if (points > 0) {
+      room.mlt.scores[voter.id] = (room.mlt.scores[voter.id] || 0) + points;
+    }
+  });
+
+  // Spend jokers that were active this round
+  Object.keys(room.mlt.jokersThisRound).forEach(pid => {
+    room.mlt.jokers[pid] = Math.max(0, (room.mlt.jokers[pid] ?? 2) - 1);
+  });
+
+  io.to(code).emit('mlt:results', {
+    results,
+    majorityPlayerIds,
+    jokersUsed: Object.keys(room.mlt.jokersThisRound),
+    scores: { ...room.mlt.scores },
+    players: room.players.filter(p => p.isConnected && !p.isHost).map(p => ({ id: p.id, name: p.name, color: p.color })),
+  });
 };
 
 const startMltTimer = (io, room, code, seconds) => {
@@ -81,9 +111,12 @@ const startMltTimer = (io, room, code, seconds) => {
   }
 
   let remaining = seconds;
+  room.mlt.secondsLeft = remaining;
+  room.mlt.paused = false;
 
   const tick = () => {
-    if (room.mlt.roundState !== 'voting') return;
+    if (room.mlt.roundState !== 'voting' || room.mlt.paused) return;
+    room.mlt.secondsLeft = remaining;
     io.to(code).emit('mlt:timer', { secondsLeft: remaining });
     if (remaining === 0) {
       closeMltVoting(io, room, code);
@@ -146,9 +179,11 @@ io.on('connection', (socket) => {
 
   socket.on('create_room', (data = {}) => {
     const playerName = data.playerName || 'Host';
-    const { room, player } = createRoom(socket.id, playerName);
+    const gameType = data.gameType === 'who-said-that' ? 'who-said-that' : 'most-likely-to';
+    const gameName = (data.gameName || '').trim().slice(0, 40);
+    const { room, player } = createRoom(socket.id, playerName, gameType, gameName);
     socket.join(room.code);
-    socket.emit('room_created', { code: room.code, playerId: player.id, players: room.players });
+    socket.emit('room_created', { code: room.code, playerId: player.id, players: room.players, gameType: room.gameType, gameName: room.gameName });
   });
 
   socket.on('join_room', ({ code, playerName, playerId }) => {
@@ -408,16 +443,20 @@ io.on('connection', (socket) => {
     if (!player || !player.isHost) return;
 
     const connectedPlayers = room.players.filter(p => p.isConnected);
-    if (connectedPlayers.length < 3) return;
+    const nonHostPlayers = connectedPlayers.filter(p => !p.isHost);
+    if (nonHostPlayers.length < 2) return; // need at least 2 votable players
 
     const totalRounds = Math.min(Math.max(parseInt(rounds) || 5, 1), mltPromptBank.length);
 
-    // Fisher-Yates shuffle of prompt bank
     const shuffled = [...mltPromptBank];
     for (let i = shuffled.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
     }
+
+    // Init jokers: 2 per player per game
+    const jokers = {};
+    connectedPlayers.forEach(p => { jokers[p.id] = 2; });
 
     room.phase = 'mlt';
     room.mlt = {
@@ -428,9 +467,13 @@ io.on('connection', (socket) => {
       scores: {},
       totalVotes: {},
       wins: {},
+      jokers,
+      jokersThisRound: {},
       round: 1,
       totalRounds,
       allowSelfVote: !!allowSelfVote,
+      paused: false,
+      secondsLeft: 30,
       timerRef: null,
     };
 
@@ -438,10 +481,12 @@ io.on('connection', (socket) => {
       prompt: room.mlt.currentPrompt,
       round: room.mlt.round,
       totalRounds: room.mlt.totalRounds,
-      players: connectedPlayers.map(p => ({ id: p.id, name: p.name, color: p.color })),
+      players: nonHostPlayers.map(p => ({ id: p.id, name: p.name, color: p.color })),
+      gameName: room.gameName,
+      jokersLeft: 2,
     });
 
-    startMltTimer(io, room, code, 15);
+    startMltTimer(io, room, code, 30);
   });
 
   socket.on('mlt:vote', ({ code, targetPlayerId }) => {
@@ -449,19 +494,18 @@ io.on('connection', (socket) => {
     if (!room || room.phase !== 'mlt' || room.mlt.roundState !== 'voting') return;
 
     const player = room.players.find(p => p.socketId === socket.id);
-    if (!player || !player.isConnected) return;
+    if (!player || !player.isConnected || player.isHost) return;
 
-    // Self-vote guard
-    if (!room.mlt.allowSelfVote && targetPlayerId === player.id) return;
+    // Self-vote is allowed — no guard needed
 
     // One vote per player per round
     if (room.mlt.votes[player.id] !== undefined) return;
 
     room.mlt.votes[player.id] = targetPlayerId;
 
-    const connectedPlayers = room.players.filter(p => p.isConnected);
+    const nonHostPlayers = room.players.filter(p => p.isConnected && !p.isHost);
     const voteCount = Object.keys(room.mlt.votes).length;
-    const totalVoters = connectedPlayers.length;
+    const totalVoters = nonHostPlayers.length;
 
     io.to(code).emit('mlt:vote_received', { voteCount, totalVoters });
 
@@ -485,18 +529,108 @@ io.on('connection', (socket) => {
     room.mlt.round++;
     room.mlt.currentPrompt = room.mlt.prompts[room.mlt.round - 1];
     room.mlt.votes = {};
+    room.mlt.jokersThisRound = {};
     room.mlt.roundState = 'voting';
+    room.mlt.paused = false;
 
-    const connectedPlayers = room.players.filter(p => p.isConnected);
+    const nonHostPlayers = room.players.filter(p => p.isConnected && !p.isHost);
 
     io.to(code).emit('mlt:prompt', {
       prompt: room.mlt.currentPrompt,
       round: room.mlt.round,
       totalRounds: room.mlt.totalRounds,
-      players: connectedPlayers.map(p => ({ id: p.id, name: p.name, color: p.color })),
+      players: nonHostPlayers.map(p => ({ id: p.id, name: p.name, color: p.color })),
+      gameName: room.gameName,
     });
 
-    startMltTimer(io, room, code, 15);
+    startMltTimer(io, room, code, 30);
+  });
+
+  socket.on('mlt:toggle_joker', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'mlt' || room.mlt.roundState !== 'voting') return;
+
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isConnected) return;
+
+    const pid = player.id;
+    const remaining = room.mlt.jokers[pid] ?? 2;
+
+    if (room.mlt.jokersThisRound[pid]) {
+      // Toggle OFF — refund display (joker not yet spent until round closes)
+      delete room.mlt.jokersThisRound[pid];
+      socket.emit('mlt:joker_state', { jokerActive: false, jokersLeft: remaining });
+    } else {
+      // Toggle ON — must have jokers left
+      if (remaining <= 0) return;
+      room.mlt.jokersThisRound[pid] = true;
+      socket.emit('mlt:joker_state', { jokerActive: true, jokersLeft: remaining - 1 });
+    }
+  });
+
+  socket.on('mlt:skip', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'mlt') return;
+
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+
+    // Cancel timer
+    if (room.mlt.timerRef) { clearTimeout(room.mlt.timerRef); room.mlt.timerRef = null; }
+
+    // If this was the last round, go to end
+    if (room.mlt.round >= room.mlt.totalRounds) {
+      sendMltEnd(io, room, code);
+      return;
+    }
+
+    // Move to next round without scoring
+    room.mlt.round++;
+    room.mlt.currentPrompt = room.mlt.prompts[room.mlt.round - 1];
+    room.mlt.votes = {};
+    room.mlt.jokersThisRound = {};
+    room.mlt.roundState = 'voting';
+    room.mlt.paused = false;
+
+    const nonHostPlayers = room.players.filter(p => p.isConnected && !p.isHost);
+
+    io.to(code).emit('mlt:prompt', {
+      prompt: room.mlt.currentPrompt,
+      round: room.mlt.round,
+      totalRounds: room.mlt.totalRounds,
+      players: nonHostPlayers.map(p => ({ id: p.id, name: p.name, color: p.color })),
+      gameName: room.gameName,
+    });
+
+    startMltTimer(io, room, code, 30);
+  });
+
+  socket.on('mlt:pause', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'mlt' || room.mlt.roundState !== 'voting') return;
+
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+
+    if (room.mlt.paused) return; // already paused
+
+    if (room.mlt.timerRef) { clearTimeout(room.mlt.timerRef); room.mlt.timerRef = null; }
+    room.mlt.paused = true;
+    io.to(code).emit('mlt:paused', { secondsLeft: room.mlt.secondsLeft });
+  });
+
+  socket.on('mlt:resume', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'mlt' || room.mlt.roundState !== 'voting') return;
+
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+
+    if (!room.mlt.paused) return; // not paused
+
+    room.mlt.paused = false;
+    io.to(code).emit('mlt:resumed', { secondsLeft: room.mlt.secondsLeft });
+    startMltTimer(io, room, code, room.mlt.secondsLeft);
   });
 
   // ──────────────────────────────────────────────────────────────────────────

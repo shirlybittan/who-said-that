@@ -21,7 +21,13 @@ export const translations = {
       point0: "0 Points to whoever is the author.",
       pointMinus1: "-1 Point for a wrong guess! ❌",
       rule4Title: "4. The Reveal:",
-      rule4Desc: "The Host decides when to reveal the real authors after all votes are cast. The person with the most points at the end wins!"
+      rule4Desc: "The Host decides when to reveal the real authors after all votes are cast. The person with the most points at the end wins!",
+      pickGame: "Pick your game",
+      gameMlt: "Most Likely To",
+      gameMltDesc: "Vote for who fits best!",
+      gameWst: "Who Said That?",
+      gameWstDesc: "Guess who wrote it!",
+      gameNamePlaceholder: "Game Name (shown on TV)"
     },
     lobby: {
       title: "Lobby",
@@ -104,14 +110,29 @@ export const translations = {
       seeScores: "See Final Scores 🏆",
       waitingHost: "Waiting for host to continue...",
       allowSelfVote: "Allow self-vote",
+      pause: "Pause ⏸",
+      resume: "Resume ▶",
+      skip: "Skip Round",
+      useJoker: "Use Joker",
+      jokerActive: "Joker ON!",
+      jokerWillDouble: "Your points will be doubled this round!",
+      noJokersLeft: "No jokers remaining",
+      left: "left",
+      majorityGetsBonus: "Majority player gets +1 bonus",
+      correctVoteGetsPoint: "Correct vote = +1 point",
+      jokerDoubled: "Joker used — points doubled!",
       gameOverTitle: "That's a Wrap!",
-      gameOverSub: "Here's who everyone agreed on...",
+      gameOverSub: "The one who knows everyone best wins!",
       topScorer: "Top Scorer",
       finalStandings: "Final Standings",
       pts: "pts",
       win: "win",
       wins: "wins",
-      playAgain: "Play Again! 🎮"
+      playAgain: "Play Again! 🎮",
+      scoreboardTitle: "Scores so far",
+      confirmVoteLabel: "Confirm your vote?",
+      confirmVote: "✓ Confirm",
+      changeVote: "← Change"
     }
   },
   fr: {
@@ -136,7 +157,13 @@ export const translations = {
       point0: "0 Point pour l'auteur de la réponse.",
       pointMinus1: "-1 Point si tu te trompes ! ❌",
       rule4Title: "4. La révélation :",
-      rule4Desc: "L'hôte révèle les auteurs après tous les votes. Le joueur avec le plus de points à la fin gagne !"
+      rule4Desc: "L'hôte révèle les auteurs après tous les votes. Le joueur avec le plus de points à la fin gagne !",
+      pickGame: "Choisis ton jeu",
+      gameMlt: "Plutôt...",
+      gameMltDesc: "Vote pour qui correspond le mieux !",
+      gameWst: "Qui a dit ça ?",
+      gameWstDesc: "Devine qui a écrit ça !",
+      gameNamePlaceholder: "Nom de la partie (affiché à l'écran)"
     },
     lobby: {
       title: "Salon",
@@ -219,14 +246,29 @@ export const translations = {
       seeScores: "Voir les scores finaux 🏆",
       waitingHost: "En attente de l'hôte...",
       allowSelfVote: "Vote pour soi autorisé",
+      pause: "Pause ⏸",
+      resume: "Reprendre ▶",
+      skip: "Passer la manche",
+      useJoker: "Utiliser le Joker",
+      jokerActive: "Joker activé !",
+      jokerWillDouble: "Tes points seront doublés cette manche !",
+      noJokersLeft: "Plus de jokers disponibles",
+      left: "restant",
+      majorityGetsBonus: "Le joueur majoritaire reçoit +1 bonus",
+      correctVoteGetsPoint: "Vote correct = +1 point",
+      jokerDoubled: "Joker utilisé — points doublés !",
       gameOverTitle: "C'est fini !",
-      gameOverSub: "Voilà sur qui tout le monde était d'accord...",
+      gameOverSub: "Celui qui connaît le mieux les autres a gagné !",
       topScorer: "Meilleur score",
       finalStandings: "Classement final",
       pts: "pts",
       win: "victoire",
       wins: "victoires",
-      playAgain: "Rejouer ! 🎮"
+      playAgain: "Rejouer ! 🎮",
+      scoreboardTitle: "Scores actuels",
+      confirmVoteLabel: "Confirmer ton vote ?",
+      confirmVote: "✓ Confirmer",
+      changeVote: "← Changer"
     }
   }
 };
