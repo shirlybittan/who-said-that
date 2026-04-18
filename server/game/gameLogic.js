@@ -1,27 +1,54 @@
 const familyQuestions = require('../questions/family');
 const friendsQuestions = require('../questions/friends');
+const situationalQuestions = require('../questions/situational');
+const thisOrThatQuestions = require('../questions/thisOrThat');
+
+const shuffle = (arr) => {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+};
 
 const selectQuestions = (mode, count, customQuestions = []) => {
   let questions = mode === 'family' ? [...familyQuestions] : [...friendsQuestions];
   if (mode === 'custom') {
     questions = customQuestions.length > 0 ? [...customQuestions] : [...friendsQuestions];
   }
+  return shuffle(questions).slice(0, count).map(q => ({ ...q, type: 'wst' }));
+};
 
-  // Fisher-Yates shuffle
-  for (let i = questions.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [questions[i], questions[j]] = [questions[j], questions[i]];
+const selectSituationalQuestions = (count) => {
+  return shuffle(situationalQuestions).slice(0, count).map(text => ({ id: `sit-${Math.random()}`, text, type: 'situational' }));
+};
+
+const selectThisOrThatQuestions = (count) => {
+  return shuffle(thisOrThatQuestions).slice(0, count).map((q, i) => ({ id: `tot-${i}`, text: q.text, a: q.a, b: q.b, type: 'this-or-that' }));
+};
+
+// Build a mixed question list of the given total length, randomly drawn from all three types
+const selectMixedQuestions = (count, mode, customQuestions = []) => {
+  const wstPool = shuffle(mode === 'family' ? familyQuestions : friendsQuestions).slice(0, count).map(q => ({ ...q, type: 'wst' }));
+  const sitPool = shuffle(situationalQuestions).slice(0, count).map(text => ({ id: `sit-${Math.random()}`, text, type: 'situational' }));
+  const totPool = shuffle(thisOrThatQuestions).slice(0, count).map((q, i) => ({ id: `tot-${i}`, text: q.text, a: q.a, b: q.b, type: 'this-or-that' }));
+
+  // Interleave so no more than 2 of the same type in a row
+  const types = shuffle(['wst', 'situational', 'this-or-that', 'wst', 'situational', 'this-or-that', 'wst', 'situational', 'this-or-that', 'wst', 'situational', 'this-or-that', 'wst', 'situational', 'this-or-that', 'wst', 'situational', 'this-or-that', 'wst', 'situational']);
+  const picks = [];
+  const wstIdx = { i: 0 }; const sitIdx = { i: 0 }; const totIdx = { i: 0 };
+  for (const type of types) {
+    if (picks.length >= count) break;
+    if (type === 'wst' && wstIdx.i < wstPool.length) { picks.push(wstPool[wstIdx.i++]); }
+    else if (type === 'situational' && sitIdx.i < sitPool.length) { picks.push(sitPool[sitIdx.i++]); }
+    else if (type === 'this-or-that' && totIdx.i < totPool.length) { picks.push(totPool[totIdx.i++]); }
   }
-  return questions.slice(0, count);
+  return picks.slice(0, count);
 };
 
 const shuffleAnswers = (answers) => {
-  const array = [...answers];
-  for (let i = array.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [array[i], array[j]] = [array[j], array[i]];
-  }
-  return array;
+  return shuffle([...answers]);
 };
 
 const calculateScores = (answers, currentScores, numPlayers) => {
@@ -68,6 +95,9 @@ const computeStats = (players, answers, scores) => {
 
 module.exports = {
   selectQuestions,
+  selectSituationalQuestions,
+  selectThisOrThatQuestions,
+  selectMixedQuestions,
   shuffleAnswers,
   calculateScores,
   computeStats

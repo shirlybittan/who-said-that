@@ -10,7 +10,7 @@ const {
   removePlayerBySocketId,
   setGameOptions,
 } = require('./game/roomManager');
-const { selectQuestions, shuffleAnswers } = require('./game/gameLogic');
+const { selectQuestions, selectSituationalQuestions, selectThisOrThatQuestions, selectMixedQuestions, shuffleAnswers } = require('./game/gameLogic');
 const mltPromptBank = require('./questions/mostLikelyTo');
 
 const app = express();
@@ -142,12 +142,13 @@ const assignMltTitles = (leaderboard) => {
     }
   };
 
-  tryAssign([...leaderboard].sort((a, b) => b.totalVotes - a.totalVotes), 'totalVotes', 1, '🌪️ Most Chaotic');
-  tryAssign([...leaderboard].sort((a, b) => b.wins - a.wins), 'wins', 1, '🏆 Everyone Agrees');
-  tryAssign([...leaderboard].sort((a, b) => b.score - a.score), 'score', 1, '🔮 Top Predictor');
-  tryAssign([...leaderboard].sort((a, b) => a.totalVotes - b.totalVotes), 'totalVotes', 0, '🎭 The Wildcard');
+  tryAssign([...leaderboard].sort((a, b) => b.score - a.score), 'score', 1, '🔮 Top Predictor');         // highest score
+  tryAssign([...leaderboard].sort((a, b) => a.score - b.score), 'score', 0, '😬 Worst Predictor');        // lowest score
+  tryAssign([...leaderboard].sort((a, b) => b.wins - a.wins), 'wins', 1, '👑 Fan Favorite');              // most majority picks
+  tryAssign([...leaderboard].sort((a, b) => b.totalVotes - a.totalVotes), 'totalVotes', 1, '🎯 Hot Topic'); // most votes received
+  tryAssign([...leaderboard].sort((a, b) => a.totalVotes - b.totalVotes), 'totalVotes', 0, '🕵️ Under the Radar'); // fewest votes received
 
-  leaderboard.forEach(p => { if (!p.title) p.title = '✨ The Contender'; });
+  leaderboard.forEach(p => { if (!p.title) p.title = '⚡ Dark Horse'; });
   return leaderboard;
 };
 
@@ -170,9 +171,148 @@ const sendMltEnd = (io, room, code) => {
   io.to(code).emit('mlt:end', { leaderboard });
 };
 
+// ─── Situational helpers ──────────────────────────────────────────────────────
+
+// Pick the next non-host connected player to be the situational target (round-robin)
+const pickSituationalTarget = (room) => {
+  const eligible = room.players.filter(p => p.isConnected && !p.isHost);
+  if (eligible.length === 0) return null;
+  const idx = room.sit.targetPlayerIndex % eligible.length;
+  room.sit.targetPlayerIndex = (idx + 1) % eligible.length;
+  return eligible[idx];
+};
+
+// Emit the right 'new_question' event for a WST/Situational question
+const emitWstQuestion = (io, room, code) => {
+  const q = room.questions[room.currentQuestionIndex];
+  if (!q) return;
+
+  const roundType = q.type || 'wst';
+  let target = null;
+  let questionText = typeof q.text === 'string' ? q.text : (q.text?.[room.lang || 'en'] || '');
+
+  if (roundType === 'situational') {
+    target = pickSituationalTarget(room);
+    if (target) questionText = questionText.replace(/\{target\}/gi, target.name);
+  }
+
+  room.currentQuestion = questionText;
+  room.answers = [];
+  room.skipVotes = [];
+
+  io.to(code).emit('new_question', {
+    question: questionText,
+    round: room.currentRound,
+    totalRounds: room.totalRounds,
+    roundType,
+    target: target ? { id: target.id, name: target.name, color: target.color } : null,
+  });
+};
+
+// Emit a This-or-That round prompt
+const emitTotQuestion = (io, room, code) => {
+  const q = room.questions[room.currentQuestionIndex];
+  if (!q) return;
+
+  room.tot.roundState = 'voting';
+  room.tot.votesA = {};
+  room.tot.votesB = {};
+  room.tot.question = q;
+  room.tot.a = q.a;
+  room.tot.b = q.b;
+  room.tot.round = room.currentRound;
+  room.tot.totalRounds = room.totalRounds;
+
+  io.to(code).emit('new_question', {
+    question: q.text,
+    round: room.currentRound,
+    totalRounds: room.totalRounds,
+    roundType: 'this-or-that',
+    a: q.a,
+    b: q.b,
+  });
+};
+
+// Emit the next question for ANY game type (used after round-end in WST/Sit/Mixed)
+const emitNextQuestion = (io, room, code) => {
+  const q = room.questions[room.currentQuestionIndex];
+  if (!q) return;
+
+  if (q.type === 'this-or-that') {
+    room.phase = 'tot';
+    emitTotQuestion(io, room, code);
+  } else {
+    room.phase = 'question';
+    emitWstQuestion(io, room, code);
+  }
+};
+
+// Close a ToT voting round and broadcast results
+const closeTotRound = (io, room, code) => {
+  room.tot.roundState = 'results';
+
+  const connectedPlayers = room.players.filter(p => p.isConnected);
+  const countA = Object.keys(room.tot.votesA).length;
+  const countB = Object.keys(room.tot.votesB).length;
+  const total = countA + countB || 1;
+
+  const pctA = Math.round((countA / total) * 100);
+  const pctB = 100 - pctA;
+
+  // Scoring: majority side gets +1
+  const majorityChoice = countA >= countB ? 'a' : 'b';
+  const tieRound = countA === countB;
+
+  if (!tieRound) {
+    const winners = majorityChoice === 'a' ? room.tot.votesA : room.tot.votesB;
+    Object.keys(winners).forEach(pid => {
+      room.tot.scores[pid] = (room.tot.scores[pid] || 0) + 1;
+    });
+  }
+
+  // Build vote details list
+  const voteDetails = connectedPlayers.map(p => ({
+    playerId: p.id,
+    name: p.name,
+    color: p.color,
+    choice: room.tot.votesA[p.id] ? 'a' : room.tot.votesB[p.id] ? 'b' : null,
+  }));
+
+  io.to(code).emit('tot:results', {
+    a: room.tot.a,
+    b: room.tot.b,
+    countA,
+    countB,
+    pctA,
+    pctB,
+    majorityChoice: tieRound ? null : majorityChoice,
+    voteDetails,
+    scores: { ...room.tot.scores },
+    players: connectedPlayers.map(p => ({ id: p.id, name: p.name, color: p.color })),
+    round: room.currentRound,
+    totalRounds: room.totalRounds,
+  });
+};
+
+const assignTotTitles = (leaderboard) => {
+  const titled = new Set();
+  const tryAssign = (sorted, key, minVal, title) => {
+    for (const entry of sorted) {
+      if (!titled.has(entry.playerId) && entry[key] >= minVal) {
+        entry.title = title;
+        titled.add(entry.playerId);
+        break;
+      }
+    }
+  };
+  tryAssign([...leaderboard].sort((a, b) => b.score - a.score), 'score', 1, '🎯 Crowd Reader');
+  tryAssign([...leaderboard].sort((a, b) => a.score - b.score), 'score', 0, '🤔 Lone Wolf');
+  leaderboard.forEach(p => { if (!p.title) p.title = '⚡ Wildcard'; });
+  return leaderboard;
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 
-const PORT = process.env.PORT || 3001;
 
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
@@ -236,16 +376,37 @@ io.on('connection', (socket) => {
 
     if (room.players.filter(p => p.isConnected).length < 3) return;
 
-    room.questions = selectQuestions(room.mode, room.totalRounds, room.customQuestions);
-    room.phase = 'question';
+    // MLT is started separately via mlt:start
+    if (room.gameType === 'most-likely-to') return;
+
+    const count = Math.max(1, room.totalRounds);
     room.currentRound = 1;
     room.currentQuestionIndex = 0;
-    room.currentQuestion = room.questions[0].text;
-    room.answers = [];
-    room.skipVotes = [];
+    room.scores = {};
+    room.sit.targetPlayerIndex = 0;
 
-    io.to(code).emit('game_started', { round: room.currentRound, totalRounds: room.totalRounds });
-    io.to(code).emit('new_question', { question: room.currentQuestion, round: room.currentRound, totalRounds: room.totalRounds });
+    if (room.gameType === 'situational') {
+      room.questions = selectSituationalQuestions(count);
+    } else if (room.gameType === 'this-or-that') {
+      room.questions = selectThisOrThatQuestions(count);
+      room.tot.scores = {};
+      room.tot.round = 1;
+      room.tot.totalRounds = count;
+      room.phase = 'tot';
+    } else if (room.gameType === 'mixed') {
+      room.questions = selectMixedQuestions(count, room.mode, room.customQuestions);
+    } else {
+      // who-said-that
+      room.questions = selectQuestions(room.mode, count, room.customQuestions);
+    }
+
+    io.to(code).emit('game_started', {
+      round: room.currentRound,
+      totalRounds: room.totalRounds,
+      roundType: room.questions[0]?.type || 'wst',
+    });
+
+    emitNextQuestion(io, room, code);
   });
 
   socket.on('skip_question', ({ code }) => {
@@ -254,15 +415,17 @@ io.on('connection', (socket) => {
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isHost) return;
 
-    // Give a completely new question by grabbing 1 additional question
-    const extraQ = selectQuestions(room.mode, 1, room.customQuestions);
-    room.questions[room.currentQuestionIndex] = extraQ[0];
-    room.currentQuestion = extraQ[0].text;
-    room.answers = []; // Reset currently submitted answers
-    room.skipVotes = [];
-
-    // Broadcast new question update
-    io.to(code).emit('new_question', { question: room.currentQuestion, round: room.currentRound, totalRounds: room.totalRounds });
+    // Only applies to WST/Situational rounds
+    const qType = room.questions[room.currentQuestionIndex]?.type || 'wst';
+    if (qType === 'wst' || qType === 'situational') {
+      const [replacement] = qType === 'situational'
+        ? selectSituationalQuestions(1)
+        : selectQuestions(room.mode, 1, room.customQuestions);
+      room.questions[room.currentQuestionIndex] = replacement;
+      room.answers = [];
+      room.skipVotes = [];
+      emitWstQuestion(io, room, code);
+    }
   });
 
   socket.on('vote_skip_question', ({ code }) => {
@@ -279,12 +442,14 @@ io.on('connection', (socket) => {
 
     const connectedPlayersCount = room.players.filter(p => p.isConnected).length;
     if (room.skipVotes.length > connectedPlayersCount / 2) {
-      const extraQ = selectQuestions(room.mode, 1, room.customQuestions);
-      room.questions[room.currentQuestionIndex] = extraQ[0];
-      room.currentQuestion = extraQ[0].text;
-      room.answers = []; 
+      const qType = room.questions[room.currentQuestionIndex]?.type || 'wst';
+      const [replacement] = qType === 'situational'
+        ? selectSituationalQuestions(1)
+        : selectQuestions(room.mode, 1, room.customQuestions);
+      room.questions[room.currentQuestionIndex] = replacement;
+      room.answers = [];
       room.skipVotes = [];
-      io.to(code).emit('new_question', { question: room.currentQuestion, round: room.currentRound, totalRounds: room.totalRounds });
+      emitWstQuestion(io, room, code);
     }
   });
 
@@ -404,17 +569,116 @@ io.on('connection', (socket) => {
       connectedPlayers.forEach(p => p.isReady = false);
 
       if (room.currentRound < room.totalRounds) {
+        // More rounds remaining — advance to next question
         room.currentRound++;
         room.currentQuestionIndex++;
-        room.currentQuestion = room.questions[room.currentQuestionIndex].text;
-        room.answers = [];
-          room.skipVotes = [];
+        emitNextQuestion(io, room, code);
+      } else {
+        // All rounds done — end game
         room.phase = 'gameEnd';
         const finalStats = require('./game/gameLogic').computeStats(room.players, room.answers, room.scores);
         io.to(code).emit('game_ended', { finalScores: room.scores, players: room.players, stats: finalStats });
       }
     }
   });
+
+  // ─── This-or-That events ───────────────────────────────────────────────────
+
+  socket.on('tot:vote', ({ code, choice }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'tot' || room.tot.roundState !== 'voting') return;
+
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isConnected) return;
+
+    const pid = player.id;
+    // One vote per player
+    if (room.tot.votesA[pid] || room.tot.votesB[pid]) return;
+
+    if (choice === 'a') {
+      room.tot.votesA[pid] = true;
+    } else if (choice === 'b') {
+      room.tot.votesB[pid] = true;
+    } else {
+      return;
+    }
+
+    const connectedPlayers = room.players.filter(p => p.isConnected);
+    const voteCount = Object.keys(room.tot.votesA).length + Object.keys(room.tot.votesB).length;
+    io.to(code).emit('tot:vote_received', { voteCount, totalVoters: connectedPlayers.length });
+
+    if (voteCount >= connectedPlayers.length) {
+      closeTotRound(io, room, code);
+    }
+  });
+
+  socket.on('tot:next_round', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'tot') return;
+
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+
+    if (room.currentRound >= room.totalRounds) {
+      // Game over
+      if (room.gameType === 'this-or-that') {
+        // Standalone ToT end
+        const connectedPlayers = room.players.filter(p => p.isConnected);
+        let leaderboard = connectedPlayers.map(p => ({
+          playerId: p.id,
+          name: p.name,
+          color: p.color,
+          score: room.tot.scores[p.id] || 0,
+        })).sort((a, b) => b.score - a.score);
+        leaderboard = assignTotTitles(leaderboard);
+        room.phase = 'totEnd';
+        io.to(code).emit('tot:end', { leaderboard });
+      } else {
+        // Mixed game end
+        room.phase = 'gameEnd';
+        const finalStats = require('./game/gameLogic').computeStats(room.players, [], room.tot.scores);
+        io.to(code).emit('game_ended', { finalScores: room.tot.scores, players: room.players, stats: finalStats });
+      }
+      return;
+    }
+
+    room.currentRound++;
+    room.currentQuestionIndex++;
+    emitNextQuestion(io, room, code);
+  });
+
+  socket.on('tot:skip', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'tot') return;
+
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+
+    if (room.currentRound >= room.totalRounds) {
+      if (room.gameType === 'this-or-that') {
+        const connectedPlayers = room.players.filter(p => p.isConnected);
+        let leaderboard = connectedPlayers.map(p => ({
+          playerId: p.id,
+          name: p.name,
+          color: p.color,
+          score: room.tot.scores[p.id] || 0,
+        })).sort((a, b) => b.score - a.score);
+        leaderboard = assignTotTitles(leaderboard);
+        room.phase = 'totEnd';
+        io.to(code).emit('tot:end', { leaderboard });
+      } else {
+        room.phase = 'gameEnd';
+        io.to(code).emit('game_ended', { finalScores: room.tot.scores, players: room.players, stats: {} });
+      }
+      return;
+    }
+
+    room.currentRound++;
+    room.currentQuestionIndex++;
+    emitNextQuestion(io, room, code);
+  });
+
+  // ──────────────────────────────────────────────────────────────────────────
 
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
@@ -603,6 +867,50 @@ io.on('connection', (socket) => {
     });
 
     startMltTimer(io, room, code, 30);
+  });
+
+  socket.on('mlt:restart', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'mltEnd') return;
+
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+
+    // Clear any stale timer
+    if (room.mlt.timerRef) { clearTimeout(room.mlt.timerRef); room.mlt.timerRef = null; }
+
+    // Keep config from previous game
+    const prevTotalRounds = room.mlt.totalRounds;
+    const prevAllowSelfVote = room.mlt.allowSelfVote;
+
+    // Reset room to lobby state
+    room.phase = 'lobby';
+    room.mlt = {
+      roundState: 'waiting',
+      currentPrompt: null,
+      prompts: [],
+      votes: {},
+      scores: {},
+      totalVotes: {},
+      wins: {},
+      jokers: {},
+      jokersThisRound: {},
+      round: 0,
+      totalRounds: prevTotalRounds,
+      allowSelfVote: prevAllowSelfVote,
+      paused: false,
+      secondsLeft: 30,
+      timerRef: null,
+    };
+
+    room.players.forEach(p => { p.isReady = false; });
+
+    io.to(code).emit('mlt:restarted', {
+      code: room.code,
+      gameName: room.gameName,
+      players: room.players,
+      gameType: room.gameType,
+    });
   });
 
   socket.on('mlt:pause', ({ code }) => {

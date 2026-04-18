@@ -1,7 +1,6 @@
 {
-  "name": "who-said-that",
   "scripts": {
-    "dev": "concurrently \"npm start --prefix server\" \"npm run dev --prefix client\""
+    "dev": "concurrently \"npm run dev --prefix client\" \"npm start --prefix server\""
   },
   "dependencies": {
     "qrcode.react": "^4.2.0",
@@ -11,7 +10,6 @@
   },
   "devDependencies": {
     "autoprefixer": "^10.4.27",
-    "concurrently": "^9.2.1",
     "postcss": "^8.5.8",
     "tailwindcss": "^4.2.2"
   }

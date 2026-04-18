@@ -10,6 +10,8 @@ import GameEndPage from './pages/GameEndPage.jsx';
 import MostLikelyToVotingPage from './pages/MostLikelyToVotingPage.jsx';
 import MostLikelyToResultsPage from './pages/MostLikelyToResultsPage.jsx';
 import MostLikelyToEndPage from './pages/MostLikelyToEndPage.jsx';
+import ThisOrThatPage from './pages/ThisOrThatPage.jsx';
+import ThisOrThatEndPage from './pages/ThisOrThatEndPage.jsx';
 import { useSocket } from './hooks/useSocket';
 
 const SocketHandler = ({ children }) => {
@@ -55,6 +57,8 @@ function App() {
               <Route path="/mlt-vote" element={<MostLikelyToVotingPage />} />
               <Route path="/mlt-results" element={<MostLikelyToResultsPage />} />
               <Route path="/mlt-end" element={<MostLikelyToEndPage />} />
+              <Route path="/tot" element={<ThisOrThatPage />} />
+              <Route path="/tot-end" element={<ThisOrThatEndPage />} />
             </Routes>
           </div>
         </SocketHandler>

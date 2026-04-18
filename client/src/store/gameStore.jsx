@@ -11,6 +11,8 @@ const initialState = {
   totalRounds: 3,
   currentRound: 0,
   currentQuestion: null,
+  currentRoundType: 'wst',          // 'wst' | 'situational' | 'this-or-that'
+  situationalTarget: null,          // { id, name, color } or null
   answers: [],
   currentAnswerIndex: 0,
   myAnswer: null,
@@ -26,6 +28,28 @@ const initialState = {
   lang: localStorage.getItem('wst_lang') || 'en',
   gameType: 'most-likely-to',
   gameName: '',
+  tot: {
+    question: null,
+    a: '',
+    b: '',
+    round: 0,
+    totalRounds: 5,
+    hasVoted: false,
+    myChoice: null,       // 'a' | 'b'
+    countA: 0,
+    countB: 0,
+    pctA: 0,
+    pctB: 0,
+    voteCount: 0,
+    totalVoters: 0,
+    resultsVisible: false,
+    majorityChoice: null,
+    voteDetails: [],
+    scores: {},
+    prevScores: {},
+    scorePlayers: [],
+    leaderboard: [],
+  },
   mlt: {
     totalRounds: 5,
     allowSelfVote: true,
@@ -91,7 +115,20 @@ export const gameReducer = (state, action) => {
     case 'SET_GAME_STARTED':
       return { ...state, phase: 'question', currentRound: action.payload.round, totalRounds: action.payload.totalRounds };
     case 'SET_QUESTION':
-      return { ...state, phase: 'question', currentQuestion: action.payload.question, currentRound: action.payload.round, totalRounds: action.payload.totalRounds, hasAnswered: false, myAnswer: null, answeredCount: 0, votedCount: 0, answers: [] };
+      return {
+        ...state,
+        phase: 'question',
+        currentQuestion: action.payload.question,
+        currentRound: action.payload.round,
+        totalRounds: action.payload.totalRounds,
+        currentRoundType: action.payload.roundType || 'wst',
+        situationalTarget: action.payload.target || null,
+        hasAnswered: false,
+        myAnswer: null,
+        answeredCount: 0,
+        votedCount: 0,
+        answers: [],
+      };
     case 'SET_ANSWERED_COUNT':
       return { ...state, answeredCount: action.payload.answeredCount, totalPlayers: action.payload.totalPlayers };
     case 'SET_VOTE_COUNT':
@@ -118,6 +155,72 @@ export const gameReducer = (state, action) => {
       return { ...state, gameEnded: true, phase: 'game_end', stats: action.payload.stats, players: action.payload.players || state.players };
     case 'SET_ERROR':
       return { ...state, error: action.payload };
+    // ─── This or That actions ────────────────────────────────────────────────
+    case 'SET_TOT_QUESTION':
+      return {
+        ...state,
+        phase: 'tot',
+        currentRound: action.payload.round,
+        totalRounds: action.payload.totalRounds,
+        currentRoundType: 'this-or-that',
+        tot: {
+          ...state.tot,
+          question: action.payload.question,
+          a: action.payload.a || '',
+          b: action.payload.b || '',
+          round: action.payload.round,
+          totalRounds: action.payload.totalRounds,
+          hasVoted: false,
+          myChoice: null,
+          countA: 0,
+          countB: 0,
+          pctA: 0,
+          pctB: 0,
+          voteCount: 0,
+          totalVoters: 0,
+          resultsVisible: false,
+          majorityChoice: null,
+          voteDetails: [],
+        },
+      };
+    case 'TOT_VOTE_RECEIVED':
+      return {
+        ...state,
+        tot: {
+          ...state.tot,
+          voteCount: action.payload.voteCount,
+          totalVoters: action.payload.totalVoters,
+        },
+      };
+    case 'TOT_MARK_VOTED':
+      return {
+        ...state,
+        tot: { ...state.tot, hasVoted: true, myChoice: action.payload.choice },
+      };
+    case 'TOT_SET_RESULTS':
+      return {
+        ...state,
+        tot: {
+          ...state.tot,
+          countA: action.payload.countA,
+          countB: action.payload.countB,
+          pctA: action.payload.pctA,
+          pctB: action.payload.pctB,
+          majorityChoice: action.payload.majorityChoice,
+          voteDetails: action.payload.voteDetails || [],
+          prevScores: { ...state.tot.scores },
+          scores: action.payload.scores || state.tot.scores,
+          scorePlayers: action.payload.players || state.tot.scorePlayers || [],
+          resultsVisible: true,
+        },
+      };
+    case 'TOT_SET_END':
+      return {
+        ...state,
+        phase: 'totEnd',
+        tot: { ...state.tot, leaderboard: action.payload.leaderboard, resultsVisible: true },
+      };
+    // ────────────────────────────────────────────────────────────────────────
     // ─── Most Likely To actions ──────────────────────────────────────────────
     case 'MLT_SET_PROMPT':
       return {
@@ -177,6 +280,20 @@ export const gameReducer = (state, action) => {
         ...state,
         phase: 'mltEnd',
         mlt: { ...state.mlt, leaderboard: action.payload.leaderboard, roundState: 'end' },
+      };
+    case 'MLT_RESTARTED':
+      return {
+        ...state,
+        phase: 'lobby',
+        gameName: action.payload.gameName !== undefined ? action.payload.gameName : state.gameName,
+        players: action.payload.players || state.players,
+        gameType: action.payload.gameType || state.gameType,
+        mlt: {
+          ...initialState.mlt,
+          totalRounds: state.mlt.totalRounds,
+          allowSelfVote: state.mlt.allowSelfVote,
+          gameName: action.payload.gameName !== undefined ? action.payload.gameName : state.mlt.gameName,
+        },
       };
     // ────────────────────────────────────────────────────────────────────────
     default:

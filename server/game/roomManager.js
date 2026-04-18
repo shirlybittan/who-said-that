@@ -27,13 +27,16 @@ const createRoom = (socketId, playerName = 'Host', gameType = 'most-likely-to', 
     isHost: true,
     isConnected: true
   };
+
+  const validGameTypes = ['who-said-that', 'most-likely-to', 'situational', 'this-or-that', 'mixed'];
+  const resolvedGameType = validGameTypes.includes(gameType) ? gameType : 'most-likely-to';
   
   const room = {
     code,
     gameName: gameName.trim().slice(0, 40) || '',
     host: player.id,
     phase: 'lobby',
-    gameType: gameType === 'who-said-that' ? 'who-said-that' : 'most-likely-to',
+    gameType: resolvedGameType,
     mode: 'friends',
     totalRounds: 3,
     currentRound: 0,
@@ -47,6 +50,20 @@ const createRoom = (socketId, playerName = 'Host', gameType = 'most-likely-to', 
     players: [player],
     usedQuestionIds: [],
     timer: null,
+    sit: {
+      targetPlayerIndex: 0,   // cycles through non-host players
+    },
+    tot: {
+      roundState: 'waiting',  // 'voting' | 'results'
+      question: null,
+      a: '',
+      b: '',
+      votesA: {},             // { playerId: true }
+      votesB: {},             // { playerId: true }
+      scores: {},
+      round: 0,
+      totalRounds: 5,
+    },
     mlt: {
       roundState: 'waiting',
       currentPrompt: null,
@@ -159,7 +176,8 @@ const setGameOptions = (code, socketId, mode, totalRounds, gameType, mltRounds, 
 
   if (mode !== undefined) room.mode = mode;
   if (totalRounds !== undefined) room.totalRounds = totalRounds;
-  if (gameType !== undefined) room.gameType = gameType;
+  const validGameTypes = ['who-said-that', 'most-likely-to', 'situational', 'this-or-that', 'mixed'];
+  if (gameType !== undefined && validGameTypes.includes(gameType)) room.gameType = gameType;
   if (mltRounds !== undefined) room.mlt.totalRounds = mltRounds;
   if (allowSelfVote !== undefined) room.mlt.allowSelfVote = allowSelfVote;
   return room;

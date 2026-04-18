@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { translations } from '../locales/translations';
+import { socket } from '../socket';
 import Confetti from 'react-confetti';
 
 export default function MostLikelyToEndPage() {
@@ -27,7 +28,7 @@ export default function MostLikelyToEndPage() {
   }, []);
 
   const handlePlayAgain = () => {
-    window.location.reload();
+    socket.emit('mlt:restart', { code: state.roomCode });
   };
 
   const top3 = mlt.leaderboard.slice(0, 3);
@@ -124,12 +125,18 @@ export default function MostLikelyToEndPage() {
         </div>
       </div>
 
-      <button
-        onClick={handlePlayAgain}
-        className="w-full max-w-md bg-[#FFE66D] hover:bg-[#ffdd33] text-black font-bold py-4 px-6 rounded-xl transition transform active:scale-95 text-xl font-['Fredoka_One'] shadow-[0_0_15px_rgba(255,230,109,0.3)] uppercase tracking-wider"
-      >
-        {t.playAgain}
-      </button>
+      {state.isHost ? (
+        <button
+          onClick={handlePlayAgain}
+          className="w-full max-w-md bg-[#FFE66D] hover:bg-[#ffdd33] text-black font-bold py-4 px-6 rounded-xl transition transform active:scale-95 text-xl font-['Fredoka_One'] shadow-[0_0_15px_rgba(255,230,109,0.3)] uppercase tracking-wider"
+        >
+          {t.playAgain}
+        </button>
+      ) : (
+        <p className="text-gray-500 font-['Nunito'] text-sm">
+          Waiting for host to start a new game...
+        </p>
+      )}
     </div>
   );
 }
