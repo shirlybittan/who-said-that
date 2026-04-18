@@ -147,11 +147,24 @@ export default function LobbyPage() {
           {/* Game type picker — 5 buttons */}
           <div className="grid grid-cols-5 w-full max-w-sm gap-1">
             {GAME_TYPES.map(gt => {
-              const isSelected = state.gameType === gt.id;
+              const isSelected = state.gameType === gt.id || (state.gameType === 'mixed' && state.selectedSubGames?.includes(gt.id));
+              
+              const handleGameToggle = () => {
+                const arr = state.gameType === 'mixed' ? (state.selectedSubGames || []) : [state.gameType];
+                if (gt.id === 'mixed') {
+                  handleOptionsChange('gameType', ['mixed']);
+                  return;
+                }
+                const noMixed = arr.filter(id => id !== 'mixed');
+                const updated = noMixed.includes(gt.id) ? noMixed.filter(id => id !== gt.id) : [...noMixed, gt.id];
+                if (updated.length === 0) updated.push(gt.id); // Prevent empty selection
+                handleOptionsChange('gameType', updated);
+              };
+
               return (
                 <button
                   key={gt.id}
-                  onClick={() => handleOptionsChange('gameType', gt.id)}
+                  onClick={handleGameToggle}
                   className={`flex flex-col items-center justify-center py-2 px-1 rounded-lg text-xs font-['Fredoka_One'] transition border-2 ${isSelected ? `border-[${gt.color}] text-white` : 'border-transparent bg-[#0D0D1A] text-gray-400 hover:text-white hover:bg-[#2D2D44]'}`}
                   style={isSelected ? { backgroundColor: gt.color + '33', borderColor: gt.color } : {}}
                   title={gt.id}
@@ -210,21 +223,12 @@ export default function LobbyPage() {
               <select
                 value={state.mlt.totalRounds}
                 onChange={(e) => handleOptionsChange('mltRounds', parseInt(e.target.value))}
-                className="bg-[#0D0D1A] text-white p-2 rounded-lg border border-[#2D2D44] font-['Nunito'] flex-1"
+                className="bg-[#0D0D1A] text-white p-2 rounded-lg border border-[#2D2D44] font-['Nunito'] w-full"
               >
                 {[5,6,7,8,9,10,12,15,20].map(n => (
                   <option key={n} value={n}>{n} {tMlt.rounds}</option>
                 ))}
               </select>
-              <label className="flex items-center gap-2 text-sm font-['Nunito'] text-gray-300 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={state.mlt.allowSelfVote}
-                  onChange={(e) => handleOptionsChange('allowSelfVote', e.target.checked)}
-                  className="w-4 h-4 rounded border-[#2D2D44] bg-[#0D0D1A] accent-[#4ECDC4]"
-                />
-                {tMlt.allowSelfVote}
-              </label>
             </div>
           )}
 

@@ -106,6 +106,7 @@ export const gameReducer = (state, action) => {
         totalRounds: action.payload.totalRounds,
         customQuestions: action.payload.customQuestions || state.customQuestions,
         gameType: action.payload.gameType !== undefined ? action.payload.gameType : state.gameType,
+        selectedSubGames: action.payload.selectedSubGames !== undefined ? action.payload.selectedSubGames : state.selectedSubGames,
         mlt: {
           ...state.mlt,
           totalRounds: action.payload.mltTotalRounds !== undefined ? action.payload.mltTotalRounds : state.mlt.totalRounds,
@@ -141,10 +142,11 @@ export const gameReducer = (state, action) => {
       return { ...state, hasVoted: true };
     case 'ALL_VOTES_IN':
       return { ...state, allVotesIn: true };
-    case 'REVEAL_ANSWER':
-      const newAnswers = [...state.answers];
-      newAnswers[action.payload.currentIndex] = action.payload.answer;
-      return { ...state, answers: newAnswers, allVotesIn: false, scores: action.payload.scores || state.scores };
+    case 'REVEAL_ANSWER': {
+      const ObjectWithNewAnswers = [...state.answers];
+      ObjectWithNewAnswers[action.payload.currentIndex] = action.payload.answer;
+      return { ...state, answers: ObjectWithNewAnswers, allVotesIn: false, scores: action.payload.scores || state.scores };
+    }
     case 'START_NEXT_ANSWER':
       return { ...state, currentAnswerIndex: action.payload.currentIndex, hasVoted: false, votedCount: 0, allVotesIn: false };
     case 'SET_ROUND_ENDED':

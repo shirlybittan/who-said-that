@@ -17,7 +17,7 @@ const generatePlayerColor = (existingColors) => {
   return availableColors.length > 0 ? availableColors[0] : colors[Math.floor(Math.random() * colors.length)];
 };
 
-const createRoom = (socketId, playerName = 'Host', gameType = 'most-likely-to', gameName = '') => {
+const createRoom = (socketId, playerName = 'Host', gameType = 'most-likely-to', gameName = '', hostIsPlaying = false) => {
   const code = generateRoomCode();
   const player = {
     id: uuidv4(),
@@ -25,11 +25,27 @@ const createRoom = (socketId, playerName = 'Host', gameType = 'most-likely-to', 
     name: playerName,
     color: generatePlayerColor([]),
     isHost: true,
+    isPlaying: hostIsPlaying,
     isConnected: true
   };
 
   const validGameTypes = ['who-said-that', 'most-likely-to', 'situational', 'this-or-that', 'mixed'];
-  const resolvedGameType = validGameTypes.includes(gameType) ? gameType : 'most-likely-to';
+  let resolvedGameType = gameType;
+  let selectedSubGames = [];
+
+  if (Array.isArray(gameType)) {
+    // If they picked multiple specific ones, or if they just picked 'mixed' in an array
+    if (gameType.includes('mixed')) {
+      resolvedGameType = 'mixed';
+      selectedSubGames = validGameTypes.filter(g => g !== 'mixed');
+    } else {
+      resolvedGameType = gameType.length > 1 ? 'mixed' : (validGameTypes.includes(gameType[0]) ? gameType[0] : 'most-likely-to');
+      selectedSubGames = gameType.filter(g => validGameTypes.includes(g));
+    }
+  } else {
+    resolvedGameType = validGameTypes.includes(gameType) ? gameType : 'most-likely-to';
+    selectedSubGames = resolvedGameType === 'mixed' ? validGameTypes.filter(g => g !== 'mixed') : [resolvedGameType];
+  }
   
   const room = {
     code,
@@ -37,6 +53,7 @@ const createRoom = (socketId, playerName = 'Host', gameType = 'most-likely-to', 
     host: player.id,
     phase: 'lobby',
     gameType: resolvedGameType,
+    selectedSubGames,
     mode: 'friends',
     totalRounds: 3,
     currentRound: 0,
@@ -112,6 +129,7 @@ const joinRoom = (code, socketId, playerName, playerId) => {
     name: playerName || `Player ${room.players.length + 1}`,
     color: generatePlayerColor(existingColors),
     isHost: room.players.length === 0,
+    isPlaying: true,
     isConnected: true
   };
   
@@ -176,8 +194,24 @@ const setGameOptions = (code, socketId, mode, totalRounds, gameType, mltRounds, 
 
   if (mode !== undefined) room.mode = mode;
   if (totalRounds !== undefined) room.totalRounds = totalRounds;
+  
   const validGameTypes = ['who-said-that', 'most-likely-to', 'situational', 'this-or-that', 'mixed'];
-  if (gameType !== undefined && validGameTypes.includes(gameType)) room.gameType = gameType;
+  
+  if (gameType !== undefined) {
+    if (Array.isArray(gameType)) {
+      if (gameType.includes('mixed')) {
+        room.gameType = 'mixed';
+        room.selectedSubGames = validGameTypes.filter(g => g !== 'mixed');
+      } else {
+        room.gameType = gameType.length > 1 ? 'mixed' : (validGameTypes.includes(gameType[0]) ? gameType[0] : 'most-likely-to');
+        room.selectedSubGames = gameType.filter(g => validGameTypes.includes(g));
+      }
+    } else if (validGameTypes.includes(gameType)) {
+      room.gameType = gameType;
+      room.selectedSubGames = gameType === 'mixed' ? validGameTypes.filter(g => g !== 'mixed') : [gameType];
+    }
+  }
+  
   if (mltRounds !== undefined) room.mlt.totalRounds = mltRounds;
   if (allowSelfVote !== undefined) room.mlt.allowSelfVote = allowSelfVote;
   return room;

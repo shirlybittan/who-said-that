@@ -39,7 +39,7 @@ const closeMltVoting = (io, room, code) => {
   room.mlt.paused = false;
 
   // Only non-host players can be voted for
-  const votablePlayers = room.players.filter(p => p.isConnected && !p.isHost);
+  const votablePlayers = room.players.filter(p => p.isConnected && p.isPlaying);
 
   // Tally votes on votable players only
   const voteCounts = {};
@@ -100,7 +100,7 @@ const closeMltVoting = (io, room, code) => {
     majorityPlayerIds,
     jokersUsed: Object.keys(room.mlt.jokersThisRound),
     scores: { ...room.mlt.scores },
-    players: room.players.filter(p => p.isConnected && !p.isHost).map(p => ({ id: p.id, name: p.name, color: p.color })),
+    players: room.players.filter(p => p.isConnected && p.isPlaying).map(p => ({ id: p.id, name: p.name, color: p.color })),
   });
 };
 
@@ -175,7 +175,7 @@ const sendMltEnd = (io, room, code) => {
 
 // Pick the next non-host connected player to be the situational target (round-robin)
 const pickSituationalTarget = (room) => {
-  const eligible = room.players.filter(p => p.isConnected && !p.isHost);
+  const eligible = room.players.filter(p => p.isConnected && p.isPlaying);
   if (eligible.length === 0) return null;
   const idx = room.sit.targetPlayerIndex % eligible.length;
   room.sit.targetPlayerIndex = (idx + 1) % eligible.length;
@@ -345,6 +345,7 @@ io.on('connection', (socket) => {
         totalRounds: room.totalRounds,
         customQuestions: room.customQuestions,
         gameType: room.gameType,
+        selectedSubGames: room.selectedSubGames,
         mltTotalRounds: room.mlt.totalRounds,
         mltAllowSelfVote: room.mlt.allowSelfVote,
       });
@@ -440,7 +441,7 @@ io.on('connection', (socket) => {
       room.skipVotes.push(player.id);
     }
 
-    const connectedPlayersCount = room.players.filter(p => p.isConnected).length;
+    const connectedPlayersCount = room.players.filter(p => p.isConnected && p.isPlaying).length;
     if (room.skipVotes.length > connectedPlayersCount / 2) {
       const qType = room.questions[room.currentQuestionIndex]?.type || 'wst';
       const [replacement] = qType === 'situational'
@@ -494,7 +495,7 @@ io.on('connection', (socket) => {
       });
     }
 
-    const connectedPlayersCount = room.players.filter(p => p.isConnected).length;
+    const connectedPlayersCount = room.players.filter(p => p.isConnected && p.isPlaying).length;
     io.to(code).emit('answer_received', { answeredCount: room.answers.length, totalPlayers: connectedPlayersCount });
 
     if (room.answers.length >= connectedPlayersCount) {
@@ -523,7 +524,7 @@ io.on('connection', (socket) => {
       });
     }
 
-    const connectedPlayersCount = room.players.filter(p => p.isConnected).length;
+    const connectedPlayersCount = room.players.filter(p => p.isConnected && p.isPlaying).length;
     const expectedVotes = connectedPlayersCount - 1; // Author doesn't vote
 
     io.to(code).emit('vote_received', { votedCount: currentAnswer.votes.length, totalPlayers: expectedVotes });
@@ -545,7 +546,7 @@ io.on('connection', (socket) => {
     } else {
       room.phase = 'roundEnd';
       // Calculate scores for the whole round now
-      const numPlayers = room.players.length;
+      const numPlayers = room.players.filter(p => p.isPlaying).length;
       room.scores = require('./game/gameLogic').calculateScores(room.answers, room.scores || {}, numPlayers);
 
       io.to(code).emit('round_ended', { scores: room.scores, players: room.players, answers: room.answers, stats: {} });
@@ -560,9 +561,9 @@ io.on('connection', (socket) => {
     if (!player || !player.isConnected) return;
 
     player.isReady = true;
-    
+
     // Announce to others so they can see "X/Y ready"
-    const connectedPlayers = room.players.filter(p => p.isConnected);
+    const connectedPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
     io.to(code).emit('players_ready', { readyCount: connectedPlayers.filter(p => p.isReady).length, totalPlayers: connectedPlayers.length });
 
     if (connectedPlayers.every(p => p.isReady)) {
@@ -603,7 +604,7 @@ io.on('connection', (socket) => {
       return;
     }
 
-    const connectedPlayers = room.players.filter(p => p.isConnected);
+    const connectedPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
     const voteCount = Object.keys(room.tot.votesA).length + Object.keys(room.tot.votesB).length;
     io.to(code).emit('tot:vote_received', { voteCount, totalVoters: connectedPlayers.length });
 
@@ -623,7 +624,7 @@ io.on('connection', (socket) => {
       // Game over
       if (room.gameType === 'this-or-that') {
         // Standalone ToT end
-        const connectedPlayers = room.players.filter(p => p.isConnected);
+        const connectedPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
         let leaderboard = connectedPlayers.map(p => ({
           playerId: p.id,
           name: p.name,
@@ -656,7 +657,7 @@ io.on('connection', (socket) => {
 
     if (room.currentRound >= room.totalRounds) {
       if (room.gameType === 'this-or-that') {
-        const connectedPlayers = room.players.filter(p => p.isConnected);
+        const connectedPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
         let leaderboard = connectedPlayers.map(p => ({
           playerId: p.id,
           name: p.name,
@@ -706,8 +707,8 @@ io.on('connection', (socket) => {
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isHost) return;
 
-    const connectedPlayers = room.players.filter(p => p.isConnected);
-    const nonHostPlayers = connectedPlayers.filter(p => !p.isHost);
+    const connectedPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const nonHostPlayers = connectedPlayers; // since p.isPlaying excludes non-playing hosts
     if (nonHostPlayers.length < 2) return; // need at least 2 votable players
 
     const totalRounds = Math.min(Math.max(parseInt(rounds) || 5, 1), mltPromptBank.length);
@@ -758,7 +759,7 @@ io.on('connection', (socket) => {
     if (!room || room.phase !== 'mlt' || room.mlt.roundState !== 'voting') return;
 
     const player = room.players.find(p => p.socketId === socket.id);
-    if (!player || !player.isConnected || player.isHost) return;
+    if (!player || !player.isConnected || !player.isPlaying) return;
 
     // Self-vote is allowed — no guard needed
 
@@ -767,7 +768,7 @@ io.on('connection', (socket) => {
 
     room.mlt.votes[player.id] = targetPlayerId;
 
-    const nonHostPlayers = room.players.filter(p => p.isConnected && !p.isHost);
+    const nonHostPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
     const voteCount = Object.keys(room.mlt.votes).length;
     const totalVoters = nonHostPlayers.length;
 
@@ -797,7 +798,7 @@ io.on('connection', (socket) => {
     room.mlt.roundState = 'voting';
     room.mlt.paused = false;
 
-    const nonHostPlayers = room.players.filter(p => p.isConnected && !p.isHost);
+    const nonHostPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
 
     io.to(code).emit('mlt:prompt', {
       prompt: room.mlt.currentPrompt,
@@ -856,7 +857,7 @@ io.on('connection', (socket) => {
     room.mlt.roundState = 'voting';
     room.mlt.paused = false;
 
-    const nonHostPlayers = room.players.filter(p => p.isConnected && !p.isHost);
+    const nonHostPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
 
     io.to(code).emit('mlt:prompt', {
       prompt: room.mlt.currentPrompt,

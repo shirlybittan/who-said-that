@@ -17,25 +17,26 @@ export const useSocket = () => {
       }
     };
 
-    const onRoomCreated = ({ code, playerId, players, gameType, gameName }) => {
+    const onRoomCreated = ({ code, playerId, players, gameType, gameName, selectedSubGames }) => {
       localStorage.setItem('wst_roomCode', code);
-      dispatch({ type: 'SET_ROOM', payload: { roomCode: code, phase: 'lobby', isHost: true, players, gameType, gameName: gameName || '' } });
+      dispatch({ type: 'SET_ROOM', payload: { roomCode: code, phase: 'lobby', isHost: true, players, gameType, gameName: gameName || '', selectedSubGames } });
       dispatch({ type: 'SET_PLAYER_ID', payload: playerId });
       navigate('/lobby');
     };
 
     const onJoinSuccess = ({ room, playerId }) => {
       localStorage.setItem('wst_roomCode', room.code);
-      dispatch({ 
-        type: 'SET_ROOM', 
-        payload: { 
-          roomCode: room.code, 
+      dispatch({
+        type: 'SET_ROOM',
+        payload: {
+          roomCode: room.code,
           phase: room.phase,
           players: room.players,
           mode: room.mode,
           totalRounds: room.totalRounds,
           isHost: room.host === playerId,
           gameType: room.gameType || 'who-said-that',
+          selectedSubGames: room.selectedSubGames || [],
           gameName: room.gameName || '',
           mlt: {
             totalRounds: room.mlt?.totalRounds ?? 5,
@@ -51,8 +52,8 @@ export const useSocket = () => {
       dispatch({ type: 'UPDATE_PLAYERS', payload: players });
     };
 
-    const onOptionsUpdated = ({ mode, totalRounds, customQuestions, gameType, mltTotalRounds, mltAllowSelfVote }) => {
-      dispatch({ type: 'SET_OPTIONS', payload: { mode, totalRounds, customQuestions, gameType, mltTotalRounds, mltAllowSelfVote } });
+    const onOptionsUpdated = ({ mode, totalRounds, customQuestions, gameType, selectedSubGames, mltTotalRounds, mltAllowSelfVote }) => {
+      dispatch({ type: 'SET_OPTIONS', payload: { mode, totalRounds, customQuestions, gameType, selectedSubGames, mltTotalRounds, mltAllowSelfVote } });
     };
 
     const onCustomQuestionsUpdated = ({ customQuestions }) => {
