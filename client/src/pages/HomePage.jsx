@@ -10,6 +10,7 @@ export default function HomePage() {
 
   const [gameName, setGameName] = useState('');
   const [selectedGame, setSelectedGame] = useState('most-likely-to');
+  const [hostIsPlaying, setHostIsPlaying] = useState(false);
 
   const [joinNickname, setJoinNickname] = useState('');
   const [roomCode, setRoomCode] = useState(defaultJoin);
@@ -22,7 +23,10 @@ export default function HomePage() {
     localStorage.removeItem('wst_roomCode');
     localStorage.removeItem('wst_playerId');
 
-    const payload = { playerName: 'Host', gameType: selectedGame, gameName: gameName.trim() };
+    // Remove empty spaces, provide default "Host" if playing but no nickname given
+    const hName = hostIsPlaying ? (joinNickname.trim() || 'Host') : 'Screen Cast';
+
+    const payload = { playerName: hName, gameType: selectedGame, gameName: gameName.trim(), hostIsPlaying };
     if (socket.connected) {
       socket.emit('create_room', payload);
     } else {
@@ -51,22 +55,44 @@ export default function HomePage() {
 
   const games = [
     {
-      id: 'most-likely-to',
-      label: t.gameMlt,
-      desc: t.gameMltDesc,
-      accent: '#4ECDC4',
-      icon: '🎯',
+      id: 'who-said-that',
+      label: t?.gameWst || 'Who Said That?',
+      desc: t?.gameWstDesc || 'Guess who wrote it!',
+      accent: '#FFE66D',
+      icon: '🤔',
     },
     {
-      id: 'who-said-that',
-      label: t.gameWst,
-      desc: t.gameWstDesc,
-      accent: '#FF6B6B',
-      icon: '💬',
+      id: 'situational',
+      label: t?.gameSit || 'Situational',
+      desc: t?.gameSitDesc || 'Answer as if it was you!',
+      accent: '#A8E6CF',
+      icon: '🎭',
     },
+    {
+      id: 'this-or-that',
+      label: t?.gameTot || 'This or That',
+      desc: t?.gameTotDesc || 'Pick a side!',
+      accent: '#6C5CE7',
+      icon: '⚡',
+    },
+    {
+      id: 'most-likely-to',
+      label: t?.gameMlt || 'Most Likely To',
+      desc: t?.gameMltDesc || 'Who fits the prompt?',
+      accent: '#4ECDC4',
+      icon: '👑',
+    },
+    {
+      id: 'mixed',
+      label: t?.gameMixed || 'Mixed',
+      desc: t?.gameMixedDesc || 'All modes shuffled!',
+      accent: '#FF8B94',
+      icon: '🎲',
+    }
   ];
 
-  const accentColor = selectedGame === 'most-likely-to' ? '#4ECDC4' : '#FF6B6B';
+  const currentSelection = Array.isArray(selectedGame) ? selectedGame : [selectedGame];
+  const accentColor = currentSelection.length > 1 ? '#FF8B94' : (games.find(g => g.id === currentSelection[0])?.accent || '#FF6B6B');
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-4 text-center">
@@ -78,25 +104,35 @@ export default function HomePage() {
         <p className="text-xs font-['Nunito'] uppercase tracking-widest text-gray-500 mb-4">{t.pickGame}</p>
 
         {/* Game Picker */}
-        <div className="flex gap-3 mb-5">
-          {games.map((g) => (
+        <div className="grid grid-cols-2 gap-3 mb-5">
+          {games.map((g) => {
+            const currentArr = Array.isArray(selectedGame) ? selectedGame : [selectedGame];
+            const isSelected = currentArr.includes(g.id);
+            return (
             <button
               key={g.id}
-              onClick={() => setSelectedGame(g.id)}
-              className={`flex-1 rounded-2xl p-4 border-2 text-left transition active:scale-95 ${
-                selectedGame === g.id
+              onClick={() => setSelectedGame(current => {
+                const arr = Array.isArray(current) ? current : [current];
+                if (g.id === 'mixed') return ['mixed'];
+                const noMixed = arr.filter(id => id !== 'mixed');
+                const updated = noMixed.includes(g.id) ? noMixed.filter(id => id !== g.id) : [...noMixed, g.id];
+                return updated.length ? updated : [g.id];
+              })}
+              className={`rounded-2xl p-4 border-2 text-left transition active:scale-95 ${
+                isSelected
                   ? 'border-transparent shadow-lg scale-[1.02]'
-                  : 'border-[#2D2D44] bg-[#0D0D1A] opacity-60 hover:opacity-80'
-              }`}
-              style={selectedGame === g.id ? { backgroundColor: g.accent + '22', borderColor: g.accent, boxShadow: `0 0 16px ${g.accent}44` } : {}}
+                  : 'border-[#2D2D44] bg-[#0D0D1A]/60 hover:opacity-80'
+              } ${g.id === 'mixed' ? 'col-span-2 text-center flex flex-col items-center justify-center' : 'flex flex-col'}`}
+              style={isSelected ? { backgroundColor: g.accent + '22', borderColor: g.accent, boxShadow: `0 0 12px ${g.accent}44` } : {}}
             >
-              <span className="text-2xl">{g.icon}</span>
-              <p className="font-['Fredoka_One'] text-sm mt-1 leading-tight" style={selectedGame === g.id ? { color: g.accent } : { color: '#ccc' }}>
+              <span className="text-3xl mb-1">{g.icon}</span>
+              <p className="font-['Fredoka_One'] text-sm leading-tight" style={isSelected ? { color: g.accent } : { color: '#ccc' }}>
                 {g.label}
               </p>
               <p className="font-['Nunito'] text-xs text-gray-400 mt-1 leading-snug">{g.desc}</p>
             </button>
-          ))}
+            );
+          })}
         </div>
 
         <input
@@ -107,6 +143,28 @@ export default function HomePage() {
           maxLength={40}
           className="w-full p-3 rounded-lg text-black mb-4 text-[16px] border-2 border-transparent focus:border-[#FFE66D] focus:outline-none"
         />
+
+        {/* Host Play Toggle */}
+        <label className="flex items-center gap-3 mb-4 cursor-pointer text-gray-300">
+          <input 
+            type="checkbox"
+            checked={hostIsPlaying}
+            onChange={e => setHostIsPlaying(e.target.checked)}
+            className="w-5 h-5 rounded accent-pink-500 cursor-pointer"
+          />
+          <span className="font-['Nunito']">I am playing too (don't just cast)</span>
+        </label>
+        {hostIsPlaying && (
+          <input
+            type="text"
+            placeholder="Your Nickname"
+            value={joinNickname}
+            onChange={(e) => setJoinNickname(e.target.value)}
+            maxLength={15}
+            className="w-full p-3 rounded-lg text-black mb-4 text-[16px] border-2 border-transparent focus:border-[#FFE66D] focus:outline-none"
+          />
+        )}
+
         <button
           onClick={handleCreateRoom}
           className="w-full font-bold py-3 px-4 rounded-lg transition transform active:scale-95 text-lg font-['Fredoka_One'] shadow-lg text-white"

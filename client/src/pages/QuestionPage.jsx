@@ -6,9 +6,13 @@ import { translations } from '../locales/translations';
 export default function QuestionPage() {
   const { state, dispatch } = useGame();
   const t = translations[state.lang].question;
+  const tSit = translations[state.lang].situational;
   const [answer, setAnswer] = useState('');
   const [timeLeft, setTimeLeft] = useState(60);
   const [hasVotedSkip, setHasVotedSkip] = useState(false);
+
+  const isSituational = state.currentRoundType === 'situational';
+  const target = state.situationalTarget;
 
   useEffect(() => {
     setTimeLeft(60);
@@ -49,12 +53,36 @@ export default function QuestionPage() {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 text-center shadow-lg">
-      <div className="mb-8">
+      <div className="mb-8 w-full max-w-lg">
         <h3 className="text-xl font-['Fredoka_One'] text-[#FFE66D] uppercase tracking-widest mb-2">
           {t.round} {state.currentRound} {t.of} {state.totalRounds}
         </h3>
         <p className="text-xl font-bold font-['Nunito'] text-red-400 mb-2">⏳ {timeLeft}s</p>
-          <h1 className="text-4xl md:text-5xl font-['Nunito'] font-bold text-white mt-4">
+
+        {/* Situational: target player badge */}
+        {isSituational && target && (
+          <div className="flex items-center justify-center gap-3 mb-4 bg-[#1A1A2E] border border-[#6C5CE7]/60 rounded-xl px-4 py-3">
+            <span className="text-xs font-['Nunito'] text-[#6C5CE7] uppercase tracking-widest">{tSit.targetBadge}</span>
+            <div
+              className="w-8 h-8 rounded-full flex items-center justify-center text-black font-bold text-sm border-2 border-white/20"
+              style={{ backgroundColor: target.color }}
+            >
+              {target.name.charAt(0).toUpperCase()}
+            </div>
+            <span className="font-['Fredoka_One'] text-lg text-white">{target.name}</span>
+          </div>
+        )}
+
+        {/* Mode badge for situational */}
+        {isSituational && (
+          <div className="mb-3">
+            <span className="text-xs px-3 py-1 rounded-full font-['Nunito'] font-bold uppercase tracking-wider bg-[#6C5CE7]/20 text-[#6C5CE7] border border-[#6C5CE7]/40">
+              🎭 {tSit.gameLabel}
+            </span>
+          </div>
+        )}
+
+        <h1 className="text-4xl md:text-5xl font-['Nunito'] font-bold text-white mt-4">
           "{typeof state.currentQuestion === 'string' ? state.currentQuestion : (state.currentQuestion?.[state.lang] || state.currentQuestion?.en)}"
         </h1>
       </div>
@@ -64,7 +92,7 @@ export default function QuestionPage() {
           <textarea
             value={answer}
             onChange={(e) => setAnswer(e.target.value)}
-            placeholder={t.typeAnswerPlaceholder}
+            placeholder={isSituational && target ? `What would ${target.name} say?` : t.typeAnswerPlaceholder}
             className="w-full p-4 rounded-xl text-black bg-white focus:bg-[#FFF] font-['Nunito'] text-[16px] border-4 border-transparent focus:border-[#FFE66D] focus:outline-none resize-none h-32 mb-6"
             maxLength={150}
           />
