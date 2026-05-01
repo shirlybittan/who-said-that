@@ -19,7 +19,7 @@ export const useSocket = () => {
 
     const onRoomCreated = ({ code, playerId, players, gameType, gameName, selectedSubGames, isPlaying }) => {
       localStorage.setItem('wst_roomCode', code);
-      dispatch({ type: 'SET_ROOM', payload: { roomCode: code, phase: 'lobby', isHost: true, isPlaying: isPlaying !== false, players, gameType, gameName: gameName || '', selectedSubGames } });
+      dispatch({ type: 'SET_ROOM', payload: { roomCode: code, phase: 'lobby', isHost: true, isPlaying: !!isPlaying, players, gameType, gameName: gameName || '', selectedSubGames } });
       dispatch({ type: 'SET_PLAYER_ID', payload: playerId });
       navigate('/lobby');
     };

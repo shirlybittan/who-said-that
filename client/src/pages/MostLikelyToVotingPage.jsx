@@ -36,7 +36,7 @@ const TimerRing = ({ secondsLeft, total = 30, paused }) => {
 export default function MostLikelyToVotingPage() {
   const { state, dispatch } = useGame();
   const t = translations[state.lang].mlt;
-  const { mlt, isHost, roomCode, playerId } = state;
+  const { mlt, isHost, roomCode, playerId, isPlaying } = state;
 
   const [pendingVote, setPendingVote] = useState(null); // { id, name, color }
 
@@ -72,8 +72,10 @@ export default function MostLikelyToVotingPage() {
     socket.emit('mlt:skip', { code: roomCode });
   };
 
-  // Players list comes pre-filtered (host excluded) from server
-  const votablePlayers = mlt.players;
+  // Filter self unless self-voting is enabled (server includes playing host in the list)
+  const votablePlayers = mlt.allowSelfVote
+    ? mlt.players
+    : (mlt.players || []).filter(p => p.id !== playerId);
 
   const gameName = mlt.gameName || state.gameName || '';
 
@@ -95,8 +97,8 @@ export default function MostLikelyToVotingPage() {
         </h1>
       </div>
 
-      {/* ── Host / TV view ── */}
-      {isHost ? (
+      {/* ── Host controls (visible to any host, playing or not) ── */}
+      {isHost && (
         <div className="flex flex-col items-center gap-5 w-full max-w-lg">
           <TimerRing secondsLeft={mlt.secondsLeft} paused={mlt.paused} />
 
@@ -132,10 +134,17 @@ export default function MostLikelyToVotingPage() {
               {t.skip} ⏭
             </button>
           </div>
-          <p className="text-gray-500 text-sm font-['Nunito'] italic">{t.waitingReveal}</p>
+          {!isPlaying && <p className="text-gray-500 text-sm font-['Nunito'] italic">{t.waitingReveal}</p>}
         </div>
-      ) : (
-        /* ── Player phone view ── */
+      )}
+
+      {/* Divider between host controls and vote section when playing host */}
+      {isHost && isPlaying && (
+        <div className="w-full max-w-md border-t border-[#2D2D44] my-5" />
+      )}
+
+      {/* ── Vote interface (visible to any playing user, including playing host) ── */}
+      {isPlaying && (
         <div className="w-full max-w-md">
           {!mlt.hasVoted ? (
             <>

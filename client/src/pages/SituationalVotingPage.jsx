@@ -93,45 +93,64 @@ export default function SituationalVotingPage() {
       <h1 className="text-3xl font-['Fredoka_One'] text-[#4ECDC4] mb-2 mt-4">{t.votePrompt}</h1>
       <p className="text-gray-400 font-['Nunito'] mb-1 italic text-center">"{sit.question}"</p>
 
-      <p className="text-sm text-gray-500 font-['Nunito'] mb-6">
-        {sit.hasVoted
-          ? t.waitingOthers.replace('{count}', sit.voteCount).replace('{total}', sit.totalVoters)
-          : t.noSelfVote}
-      </p>
-
-      <div className="w-full max-w-md space-y-3">
-        {sit.answers.map((ans) => {
-          const isOwn = ans.id === state.playerId;
-          const isSelected = sit.myVote === ans.id;
-
-          return (
-            <button
-              key={ans.id}
-              onClick={() => handleVote(ans.id)}
-              disabled={sit.hasVoted || isOwn}
-              className={`w-full text-left rounded-2xl p-4 border-2 transition transform
-                ${isSelected
-                  ? 'border-[#4ECDC4] bg-[#4ECDC4]/15 scale-[1.02]'
-                  : isOwn
-                    ? 'border-[#2D2D44] bg-[#1A1A2E] opacity-40 cursor-not-allowed'
-                    : sit.hasVoted
-                      ? 'border-[#2D2D44] bg-[#1A1A2E] opacity-60 cursor-not-allowed'
-                      : 'border-[#2D2D44] bg-[#1A1A2E] hover:border-[#4ECDC4] hover:bg-[#4ECDC4]/10 active:scale-95 cursor-pointer'
-                }`}
-            >
-              <p className="font-['Nunito'] text-white italic">"{ans.text}"</p>
-              {isOwn && (
-                <p className="text-xs text-gray-500 mt-1 font-['Nunito']">({t.noSelfVote})</p>
-              )}
-            </button>
-          );
-        })}
-      </div>
-
-      {sit.hasVoted && (
-        <div className="mt-6 text-center">
-          <p className="text-[#4ECDC4] font-['Fredoka_One'] text-lg">{t.voteLockedMsg}</p>
+      {!state.isPlaying ? (
+        // ── Cast / spectator view ─────────────────────────────────────────
+        <div className="w-full max-w-md mt-6 bg-[#1A1A2E] rounded-2xl border border-[#2D2D44] p-8 text-center">
+          <p className="text-4xl font-['Fredoka_One'] text-[#4ECDC4]">
+            {sit.voteCount} <span className="text-gray-400 text-2xl">/ {sit.totalVoters}</span>
+          </p>
+          <p className="text-sm font-['Nunito'] text-gray-400 mt-2 uppercase tracking-wider">{t.votesIn || 'votes in'}</p>
+          <div className="mt-4 w-full bg-[#2D2D44] rounded-full h-2">
+            <div
+              className="bg-[#4ECDC4] h-2 rounded-full transition-all duration-500"
+              style={{ width: sit.totalVoters > 0 ? `${(sit.voteCount / sit.totalVoters) * 100}%` : '0%' }}
+            />
+          </div>
         </div>
+      ) : (
+        // ── Playing user vote interface ───────────────────────────────────
+        <>
+          <p className="text-sm text-gray-500 font-['Nunito'] mb-6 mt-0">
+            {sit.hasVoted
+              ? t.waitingOthers.replace('{count}', sit.voteCount).replace('{total}', sit.totalVoters)
+              : t.noSelfVote}
+          </p>
+
+          <div className="w-full max-w-md space-y-3">
+            {sit.answers.map((ans) => {
+              const isOwn = ans.id === state.playerId;
+              const isSelected = sit.myVote === ans.id;
+
+              return (
+                <button
+                  key={ans.id}
+                  onClick={() => handleVote(ans.id)}
+                  disabled={sit.hasVoted || isOwn}
+                  className={`w-full text-left rounded-2xl p-4 border-2 transition transform
+                    ${isSelected
+                      ? 'border-[#4ECDC4] bg-[#4ECDC4]/15 scale-[1.02]'
+                      : isOwn
+                        ? 'border-[#2D2D44] bg-[#1A1A2E] opacity-40 cursor-not-allowed'
+                        : sit.hasVoted
+                          ? 'border-[#2D2D44] bg-[#1A1A2E] opacity-60 cursor-not-allowed'
+                          : 'border-[#2D2D44] bg-[#1A1A2E] hover:border-[#4ECDC4] hover:bg-[#4ECDC4]/10 active:scale-95 cursor-pointer'
+                    }`}
+                >
+                  <p className="font-['Nunito'] text-white italic">"{ans.text}"</p>
+                  {isOwn && (
+                    <p className="text-xs text-gray-500 mt-1 font-['Nunito']">({t.noSelfVote})</p>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {sit.hasVoted && (
+            <div className="mt-6 text-center">
+              <p className="text-[#4ECDC4] font-['Fredoka_One'] text-lg">{t.voteLockedMsg}</p>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
