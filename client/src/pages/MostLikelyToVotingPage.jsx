@@ -72,10 +72,7 @@ export default function MostLikelyToVotingPage() {
     socket.emit('mlt:skip', { code: roomCode });
   };
 
-  // Filter self unless self-voting is enabled (server includes playing host in the list)
-  const votablePlayers = mlt.allowSelfVote
-    ? mlt.players
-    : (mlt.players || []).filter(p => p.id !== playerId);
+  const votablePlayers = mlt.players || [];
 
   const gameName = mlt.gameName || state.gameName || '';
 

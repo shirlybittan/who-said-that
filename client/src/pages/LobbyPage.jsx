@@ -82,7 +82,7 @@ export default function LobbyPage() {
     <div className="flex flex-col items-center justify-start min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 pb-24">
       <h2 className="text-3xl font-['Fredoka_One'] text-[#FFE66D] mb-4">{t.title}</h2>
 
-      <div className="bg-[#1A1A2E] border-2 border-[#2D2D44] p-6 rounded-2xl shadow-xl w-full max-w-md text-center mb-8 relative">
+      <div className="bg-[#1A1A2E] border-2 border-[#2D2D44] p-6 rounded-2xl shadow-xl w-full max-w-md text-center mb-4 relative">
         <p className="text-gray-400 font-['Nunito'] text-sm uppercase tracking-widest mb-2">{t.roomCode}</p>
         <h1 className="text-6xl font-['Fredoka_One'] tracking-widest text-white">{state.roomCode}</h1>
       </div>

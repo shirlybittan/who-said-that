@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useGame } from '../store/gameStore.jsx';
 import { translations } from '../locales/translations';
 import Confetti from 'react-confetti';
 
 export default function GameEndPage() {
   const { state } = useGame();
+  const navigate = useNavigate();
   const [windowDimension, setWindowDimension] = useState({ width: window.innerWidth, height: window.innerHeight });
 
   const t = translations[state.lang].gameEnd;
@@ -16,7 +18,7 @@ export default function GameEndPage() {
   }, []);
 
   const handlePlayAgain = () => {
-    window.location.reload();
+    navigate('/');
   };
 
   const sortedPlayers = state.players.filter(p => p.isPlaying).sort((a, b) => (state.scores[b.id] || 0) - (state.scores[a.id] || 0));   
@@ -60,6 +62,12 @@ export default function GameEndPage() {
         className="w-full max-w-md bg-[#FFE66D] hover:bg-[#ffdd33] text-black font-bold py-4 px-6 rounded-xl transition transform active:scale-95 text-xl font-['Fredoka_One'] shadow-[0_0_15px_rgba(255,230,109,0.3)] uppercase tracking-wider"
       >
         {t.playAgain}
+      </button>
+      <button
+        onClick={() => navigate('/')}
+        className="w-full max-w-md mt-3 border border-[#2D2D44] text-gray-400 font-bold py-3 px-6 rounded-xl transition transform active:scale-95 text-base font-['Fredoka_One'] hover:border-gray-500 hover:text-gray-300"
+      >
+        🏠 Main Menu
       </button>
     </div>
   );

@@ -13,6 +13,7 @@ import MostLikelyToEndPage from './pages/MostLikelyToEndPage.jsx';
 import ThisOrThatPage from './pages/ThisOrThatPage.jsx';
 import ThisOrThatEndPage from './pages/ThisOrThatEndPage.jsx';
 import SituationalVotingPage from './pages/SituationalVotingPage.jsx';
+import HostPage from './pages/HostPage.jsx';
 import { useSocket } from './hooks/useSocket';
 
 const SocketHandler = ({ children }) => {
@@ -55,28 +56,36 @@ function App() {
 
   return (
     <BrowserRouter>
-      <GameProvider>
-        <SocketHandler>
-          <div className="font-['Nunito'] min-h-screen bg-[#0D0D1A] text-[#F7F7F7] relative">
-            <LangSwitcher />
-            <RoomCodeBadge />
-            <Routes>
-              <Route path="/" element={<HomePage />} />
-              <Route path="/lobby" element={<LobbyPage />} />
-              <Route path="/question" element={<QuestionPage />} />
-              <Route path="/vote" element={<VotingPage />} />
-              <Route path="/round-end" element={<RoundEndPage />} />
-              <Route path="/game-end" element={<GameEndPage />} />
-              <Route path="/mlt-vote" element={<MostLikelyToVotingPage />} />
-              <Route path="/mlt-results" element={<MostLikelyToResultsPage />} />
-              <Route path="/mlt-end" element={<MostLikelyToEndPage />} />
-              <Route path="/tot" element={<ThisOrThatPage />} />
-              <Route path="/tot-end" element={<ThisOrThatEndPage />} />
-              <Route path="/sit-vote" element={<SituationalVotingPage />} />
-            </Routes>
-          </div>
-        </SocketHandler>
-      </GameProvider>
+      <Routes>
+        {/* Host / TV screen — manages its own socket, lives outside GameProvider */}
+        <Route path="/host" element={<HostPage />} />
+
+        {/* Player / phone routes */}
+        <Route path="/*" element={
+          <GameProvider>
+            <SocketHandler>
+              <div className="font-['Nunito'] min-h-screen bg-[#0D0D1A] text-[#F7F7F7] relative">
+                <LangSwitcher />
+                <RoomCodeBadge />
+                <Routes>
+                  <Route path="/" element={<HomePage />} />
+                  <Route path="/lobby" element={<LobbyPage />} />
+                  <Route path="/question" element={<QuestionPage />} />
+                  <Route path="/vote" element={<VotingPage />} />
+                  <Route path="/round-end" element={<RoundEndPage />} />
+                  <Route path="/game-end" element={<GameEndPage />} />
+                  <Route path="/mlt-vote" element={<MostLikelyToVotingPage />} />
+                  <Route path="/mlt-results" element={<MostLikelyToResultsPage />} />
+                  <Route path="/mlt-end" element={<MostLikelyToEndPage />} />
+                  <Route path="/tot" element={<ThisOrThatPage />} />
+                  <Route path="/tot-end" element={<ThisOrThatEndPage />} />
+                  <Route path="/sit-vote" element={<SituationalVotingPage />} />
+                </Routes>
+              </div>
+            </SocketHandler>
+          </GameProvider>
+        } />
+      </Routes>
     </BrowserRouter>
   );
 }

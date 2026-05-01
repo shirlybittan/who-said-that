@@ -775,6 +775,62 @@ io.on('connection', (socket) => {
 
   // ──────────────────────────────────────────────────────────────────────────
 
+  // ─── Host screen spectator ──────────────────────────────────────────────────
+
+  socket.on('join_spectator', ({ code } = {}) => {
+    if (!code || typeof code !== 'string') { socket.emit('error', { message: 'Room code required' }); return; }
+    const room = getRoom(code.toUpperCase().slice(0, 8));
+    if (!room) { socket.emit('error', { message: 'Room not found' }); return; }
+
+    socket.join(room.code);
+
+    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+
+    socket.emit('spectator_joined', {
+      room: {
+        code: room.code,
+        gameName: room.gameName,
+        gameType: room.gameType,
+        phase: room.phase,
+        players: room.players,
+        scores: room.scores,
+        currentRound: room.currentRound,
+        totalRounds: room.totalRounds,
+        currentQuestion: room.currentQuestion,
+        answersCount: room.answers?.length || 0,
+        mlt: {
+          prompt: room.mlt.currentPrompt,
+          round: room.mlt.round,
+          totalRounds: room.mlt.totalRounds,
+          roundState: room.mlt.roundState,
+          voteCount: Object.keys(room.mlt.votes || {}).length,
+          totalVoters: playingPlayers.length,
+          scores: room.mlt.scores,
+          secondsLeft: room.mlt.secondsLeft,
+          paused: room.mlt.paused,
+        },
+        tot: {
+          question: room.tot.question?.text || '',
+          a: room.tot.a || '',
+          b: room.tot.b || '',
+          round: room.tot.round,
+          totalRounds: room.tot.totalRounds,
+          voteCount: Object.keys(room.tot.votesA || {}).length + Object.keys(room.tot.votesB || {}).length,
+          totalVoters: playingPlayers.length,
+          scores: room.tot.scores,
+        },
+        sit: {
+          question: room.currentQuestion || '',
+          answers: room.answers?.map(a => ({ id: a.playerId, text: a.text })) || [],
+          voteCount: Object.keys(room.sit.votes || {}).length,
+          totalVoters: playingPlayers.length,
+        },
+      },
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
     const room = getRoomBySocketId(socket.id);

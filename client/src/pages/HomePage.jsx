@@ -8,9 +8,7 @@ export default function HomePage() {
   const [searchParams] = useSearchParams();
   const defaultJoin = searchParams.get('join') || '';
 
-  const [gameName, setGameName] = useState('');
   const [selectedGame, setSelectedGame] = useState('most-likely-to');
-  const [hostIsPlaying, setHostIsPlaying] = useState(false);
 
   const [joinNickname, setJoinNickname] = useState('');
   const [roomCode, setRoomCode] = useState(defaultJoin);
@@ -23,10 +21,8 @@ export default function HomePage() {
     localStorage.removeItem('wst_roomCode');
     localStorage.removeItem('wst_playerId');
 
-    // Remove empty spaces, provide default "Host" if playing but no nickname given
-    const hName = hostIsPlaying ? (joinNickname.trim() || 'Host') : 'Screen Cast';
-
-    const payload = { playerName: hName, gameType: selectedGame, gameName: gameName.trim(), hostIsPlaying };
+    const playerName = joinNickname.trim() || 'Player';
+    const payload = { playerName, gameType: selectedGame, hostIsPlaying: true };
     if (socket.connected) {
       socket.emit('create_room', payload);
     } else {
@@ -137,33 +133,12 @@ export default function HomePage() {
 
         <input
           type="text"
-          placeholder={t.gameNamePlaceholder}
-          value={gameName}
-          onChange={(e) => setGameName(e.target.value)}
-          maxLength={40}
+          placeholder={t.nickname}
+          value={joinNickname}
+          onChange={(e) => setJoinNickname(e.target.value)}
+          maxLength={15}
           className="w-full p-3 rounded-lg text-black mb-4 text-[16px] border-2 border-transparent focus:border-[#FFE66D] focus:outline-none"
         />
-
-        {/* Host Play Toggle */}
-        <label className="flex items-center gap-3 mb-4 cursor-pointer text-gray-300">
-          <input 
-            type="checkbox"
-            checked={hostIsPlaying}
-            onChange={e => setHostIsPlaying(e.target.checked)}
-            className="w-5 h-5 rounded accent-pink-500 cursor-pointer"
-          />
-          <span className="font-['Nunito']">I am playing too (don't just cast)</span>
-        </label>
-        {hostIsPlaying && (
-          <input
-            type="text"
-            placeholder="Your Nickname"
-            value={joinNickname}
-            onChange={(e) => setJoinNickname(e.target.value)}
-            maxLength={15}
-            className="w-full p-3 rounded-lg text-black mb-4 text-[16px] border-2 border-transparent focus:border-[#FFE66D] focus:outline-none"
-          />
-        )}
 
         <button
           onClick={handleCreateRoom}
@@ -209,6 +184,21 @@ export default function HomePage() {
             {t.joinBtn}
           </button>
         </div>
+      </div>
+
+      {/* ── TV MODE CTA ── */}
+      <div className="flex items-center gap-4 w-full max-w-sm bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-4">
+        <span className="text-3xl">📺</span>
+        <div className="flex-1 min-w-0">
+          <p className="font-['Fredoka_One'] text-sm text-[#4ECDC4]">Playing on a TV?</p>
+          <p className="text-xs font-['Nunito'] text-gray-400">Create the room from the big screen</p>
+        </div>
+        <a
+          href="/host"
+          className="flex-shrink-0 px-4 py-2 bg-[#4ECDC4]/20 border border-[#4ECDC4]/40 rounded-xl font-['Fredoka_One'] text-[#4ECDC4] text-sm hover:bg-[#4ECDC4]/30 transition"
+        >
+          TV Mode →
+        </a>
       </div>
     </div>
   );
