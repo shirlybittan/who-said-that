@@ -20,6 +20,7 @@ export default function QuestionPage() {
   }, [state.currentQuestion]);
 
   useEffect(() => {
+    if (!state.isPlaying) return;   // cast screen never auto-submits
     if (state.hasAnswered) return;
     if (timeLeft <= 0) {
       if (!state.hasAnswered) {
@@ -87,7 +88,22 @@ export default function QuestionPage() {
         </h1>
       </div>
 
-      {!state.hasAnswered ? (
+      {/* Answer form — only for playing participants */}
+      {!state.isPlaying ? (
+        // Spectator / cast-screen view
+        <div className="w-full max-w-md bg-[#1A1A2E] p-6 rounded-2xl border border-[#2D2D44] text-center">
+          <p className="text-4xl font-['Fredoka_One'] text-[#4ECDC4]">
+            {state.answeredCount} <span className="text-gray-400 text-2xl">/ {state.totalPlayers || state.players.filter(p => p.isPlaying).length}</span>
+          </p>
+          <p className="text-sm font-['Nunito'] text-gray-400 mt-1 uppercase tracking-wider">{t.answered}</p>
+          <div className="mt-3 w-full bg-[#2D2D44] rounded-full h-2">
+            <div
+              className="bg-[#4ECDC4] h-2 rounded-full transition-all duration-500"
+              style={{ width: (state.totalPlayers || state.players.filter(p => p.isPlaying).length) > 0 ? `${(state.answeredCount / (state.totalPlayers || state.players.filter(p => p.isPlaying).length)) * 100}%` : '0%' }}
+            />
+          </div>
+        </div>
+      ) : !state.hasAnswered ? (
         <form onSubmit={submitAnswer} className="w-full max-w-md">
           <textarea
             value={answer}
@@ -113,7 +129,7 @@ export default function QuestionPage() {
         </div>
       )}
 
-      {state.isHost && !state.hasAnswered && (
+      {!state.isPlaying && state.isHost && (
         <button
           onClick={handleSkip}
           className="mt-12 text-gray-500 hover:text-white underline font-['Nunito'] transition block w-full"
@@ -121,7 +137,7 @@ export default function QuestionPage() {
           {t.skipHost}
         </button>
       )}
-      {!state.hasAnswered && (
+      {!state.hasAnswered && state.isPlaying && (
         <button
           onClick={handleVoteSkip}
           disabled={hasVotedSkip}

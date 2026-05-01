@@ -20,6 +20,17 @@ const SocketHandler = ({ children }) => {
   return <>{children}</>;
 };
 
+const RoomCodeBadge = () => {
+  const { state } = useGame();
+  if (!state.roomCode || !state.phase || state.phase === 'game_end') return null;
+  return (
+    <div className="fixed bottom-4 right-4 z-50 bg-[#1A1A2E]/90 backdrop-blur-sm border border-[#2D2D44] rounded-xl px-3 py-2 text-center shadow-lg pointer-events-none">
+      <p className="text-[10px] font-['Nunito'] text-gray-500 uppercase tracking-widest leading-none mb-0.5">Room</p>
+      <p className="text-lg font-['Fredoka_One'] text-[#FFE66D] tracking-widest leading-tight">{state.roomCode}</p>
+    </div>
+  );
+};
+
 const LangSwitcher = () => {
   const { state, dispatch } = useGame();
   const toggleLanguage = () => {
@@ -48,6 +59,7 @@ function App() {
         <SocketHandler>
           <div className="font-['Nunito'] min-h-screen bg-[#0D0D1A] text-[#F7F7F7] relative">
             <LangSwitcher />
+            <RoomCodeBadge />
             <Routes>
               <Route path="/" element={<HomePage />} />
               <Route path="/lobby" element={<LobbyPage />} />

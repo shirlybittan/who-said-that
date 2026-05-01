@@ -64,6 +64,20 @@ export default function LobbyPage() {
     setSaveToBank(false);
   };
 
+  if (state.joinedMidRound) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 gap-6">
+        <div className="text-6xl">⚡</div>
+        <h1 className="text-3xl font-['Fredoka_One'] text-[#FFE66D] text-center">You've joined!</h1>
+        <p className="text-gray-300 font-['Nunito'] text-center text-lg">A round is in progress. Hang tight — you'll jump in at the next round.</p>
+        <div className="bg-[#1A1A2E] border-2 border-[#2D2D44] p-5 rounded-2xl text-center">
+          <p className="text-gray-400 font-['Nunito'] text-sm uppercase tracking-widest mb-1">Room Code</p>
+          <p className="text-4xl font-['Fredoka_One'] tracking-widest text-white">{state.roomCode}</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col items-center justify-start min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 pb-24">
       <h2 className="text-3xl font-['Fredoka_One'] text-[#FFE66D] mb-4">{t.title}</h2>

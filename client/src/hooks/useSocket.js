@@ -17,15 +17,21 @@ export const useSocket = () => {
       }
     };
 
-    const onRoomCreated = ({ code, playerId, players, gameType, gameName, selectedSubGames }) => {
+    const onRoomCreated = ({ code, playerId, players, gameType, gameName, selectedSubGames, isPlaying }) => {
       localStorage.setItem('wst_roomCode', code);
-      dispatch({ type: 'SET_ROOM', payload: { roomCode: code, phase: 'lobby', isHost: true, players, gameType, gameName: gameName || '', selectedSubGames } });
+      dispatch({ type: 'SET_ROOM', payload: { roomCode: code, phase: 'lobby', isHost: true, isPlaying: isPlaying !== false, players, gameType, gameName: gameName || '', selectedSubGames } });
       dispatch({ type: 'SET_PLAYER_ID', payload: playerId });
       navigate('/lobby');
     };
 
-    const onJoinSuccess = ({ room, playerId }) => {
+    const onJoinSuccess = ({ room, playerId, isRejoin }) => {
       localStorage.setItem('wst_roomCode', room.code);
+      const myPlayer = room.players.find(p => p.id === playerId);
+      const isPlaying = myPlayer?.isPlaying ?? true;
+      const isHost = room.host === playerId;
+      const phase = room.phase;
+      const joinedMidRound = !isRejoin && phase && phase !== 'lobby';
+
       dispatch({
         type: 'SET_ROOM',
         payload: {
@@ -34,10 +40,14 @@ export const useSocket = () => {
           players: room.players,
           mode: room.mode,
           totalRounds: room.totalRounds,
-          isHost: room.host === playerId,
+          currentRound: room.currentRound || 0,
+          isHost,
+          isPlaying,
+          joinedMidRound: !!joinedMidRound,
           gameType: room.gameType || 'who-said-that',
           selectedSubGames: room.selectedSubGames || [],
           gameName: room.gameName || '',
+          scores: room.scores || {},
           mlt: {
             totalRounds: room.mlt?.totalRounds ?? 5,
             allowSelfVote: room.mlt?.allowSelfVote ?? false,
@@ -45,7 +55,78 @@ export const useSocket = () => {
         } 
       });
       dispatch({ type: 'SET_PLAYER_ID', payload: playerId });
-      navigate('/lobby');
+
+      // Brand-new player joining mid-game — hold in lobby until next round
+      if (joinedMidRound) {
+        navigate('/lobby');
+        return;
+      }
+
+      // Mid-game rejoin: restore phase-specific state and navigate to correct page
+      if (phase === 'lobby' || !phase) {
+        navigate('/lobby');
+        return;
+      }
+
+      if (phase === 'question') {
+        const q = room.questions?.[room.currentQuestionIndex];
+        dispatch({
+          type: 'SET_QUESTION',
+          payload: {
+            question: room.currentQuestion,
+            round: room.currentRound,
+            totalRounds: room.totalRounds,
+            roundType: q?.type || 'wst',
+            target: null,
+          }
+        });
+        if (room.answers?.some(a => a.playerId === playerId)) {
+          dispatch({ type: 'MARK_ANSWERED' });
+        }
+        navigate('/question');
+      } else if (phase === 'sit-voting' || phase === 'sit-results') {
+        const answers = room.answers?.map(a => ({ id: a.playerId, text: a.text })) || [];
+        dispatch({
+          type: 'SIT_VOTING_STARTED',
+          payload: { question: room.currentQuestion, answers, totalVoters: room.players.filter(p => p.isConnected && p.isPlaying).length }
+        });
+        if (phase === 'sit-results') {
+          // results will come via sit:results if host triggers, otherwise show voting page
+        } else if (room.sit?.votes?.[playerId]) {
+          dispatch({ type: 'SIT_MARK_VOTED', payload: { answerId: room.sit.votes[playerId] } });
+        }
+        navigate('/sit-vote');
+      } else if (phase === 'voting') {
+        dispatch({
+          type: 'SET_ANSWERS',
+          payload: {
+            answers: room.answers?.map(a => ({ text: a.text })) || [],
+            currentIndex: room.currentAnswerIndex || 0,
+          }
+        });
+        navigate('/vote');
+      } else if (phase === 'roundEnd') {
+        dispatch({ type: 'SET_ROUND_ENDED', payload: { scores: room.scores, players: room.players, answers: room.answers || [], stats: {} } });
+        navigate('/round-end');
+      } else if (phase === 'gameEnd') {
+        dispatch({ type: 'SET_GAME_ENDED', payload: { players: room.players, stats: {} } });
+        navigate('/game-end');
+      } else if (phase === 'tot') {
+        const q = room.questions?.[room.currentQuestionIndex];
+        dispatch({
+          type: 'SET_TOT_QUESTION',
+          payload: {
+            question: q?.text || room.currentQuestion || '',
+            a: q?.a || '',
+            b: q?.b || '',
+            round: room.currentRound,
+            totalRounds: room.totalRounds,
+          }
+        });
+        navigate('/tot');
+      } else {
+        navigate('/lobby');
+      }
     };
 
     const onPlayerJoined = ({ players }) => {
@@ -70,6 +151,7 @@ export const useSocket = () => {
     };
 
     const onNewQuestion = (data) => {
+      dispatch({ type: 'SET_ROOM', payload: { joinedMidRound: false } });
       if (data.roundType === 'this-or-that') {
         dispatch({ type: 'SET_TOT_QUESTION', payload: data });
         navigate('/tot');
@@ -137,6 +219,7 @@ export const useSocket = () => {
 
     // ─── Most Likely To handlers ─────────────────────────────────────────────
     const onMltPrompt = (data) => {
+      dispatch({ type: 'SET_ROOM', payload: { joinedMidRound: false } });
       dispatch({ type: 'MLT_SET_PROMPT', payload: data });
       navigate('/mlt-vote');
     };

@@ -109,9 +109,7 @@ const joinRoom = (code, socketId, playerName, playerId) => {
   if (!rooms.has(code)) throw new Error('Room not found');
   const room = rooms.get(code);
   
-  if (room.phase !== 'lobby') throw new Error('Cannot join while game is in progress');
-  
-  // Rejoin
+  // Rejoin existing player — allowed even mid-game
   if (playerId) {
     const existingPlayer = room.players.find(p => p.id === playerId);
     if (existingPlayer) {
@@ -122,7 +120,7 @@ const joinRoom = (code, socketId, playerName, playerId) => {
     }
   }
   
-  // New player
+  // New player — allowed any time; flagged if joining mid-game
   const existingColors = room.players.map(p => p.color);
   const player = {
     id: uuidv4(),
@@ -131,7 +129,8 @@ const joinRoom = (code, socketId, playerName, playerId) => {
     color: generatePlayerColor(existingColors),
     isHost: room.players.length === 0,
     isPlaying: true,
-    isConnected: true
+    isConnected: true,
+    joinedMidRound: room.phase !== 'lobby',
   };
   
   if (room.players.length === 0) {

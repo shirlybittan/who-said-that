@@ -5,6 +5,8 @@ const initialState = {
   playerName: localStorage.getItem('wst_playerName') || null,
   roomCode: localStorage.getItem('wst_roomCode') || null,
   isHost: false,
+  isPlaying: true,
+  joinedMidRound: false,
   phase: null,
   players: [],
   mode: "friends",
