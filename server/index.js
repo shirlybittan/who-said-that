@@ -864,9 +864,14 @@ io.on('connection', (socket) => {
     const nonHostPlayers = connectedPlayers; // since p.isPlaying excludes non-playing hosts
     if (nonHostPlayers.length < 2) return; // need at least 2 votable players
 
-    const totalRounds = Math.min(Math.max(parseInt(rounds) || 5, 1), mltPromptBank.length);
+    const customMltPrompts = (room.customQuestions || []).map(q => q.text).filter(Boolean);
+    const promptPool = customMltPrompts.length > 0
+      ? [...customMltPrompts, ...mltPromptBank]
+      : [...mltPromptBank];
 
-    const shuffled = [...mltPromptBank];
+    const totalRounds = Math.min(Math.max(parseInt(rounds) || 5, 1), promptPool.length);
+
+    const shuffled = [...promptPool];
     for (let i = shuffled.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
@@ -889,7 +894,7 @@ io.on('connection', (socket) => {
       jokersThisRound: {},
       round: 1,
       totalRounds,
-      allowSelfVote: !!allowSelfVote,
+      allowSelfVote: true,
       paused: false,
       secondsLeft: 30,
       timerRef: null,
@@ -1041,8 +1046,6 @@ io.on('connection', (socket) => {
 
     // Keep config from previous game
     const prevTotalRounds = room.mlt.totalRounds;
-    const prevAllowSelfVote = room.mlt.allowSelfVote;
-
     // Reset room to lobby state
     room.phase = 'lobby';
     room.mlt = {
@@ -1057,7 +1060,7 @@ io.on('connection', (socket) => {
       jokersThisRound: {},
       round: 0,
       totalRounds: prevTotalRounds,
-      allowSelfVote: prevAllowSelfVote,
+      allowSelfVote: true,
       paused: false,
       secondsLeft: 30,
       timerRef: null,

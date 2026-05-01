@@ -34,7 +34,6 @@ export default function LobbyPage() {
       socket.emit('mlt:start', {
         code: state.roomCode,
         rounds: state.mlt.totalRounds,
-        allowSelfVote: state.mlt.allowSelfVote,
       });
     } else {
       if (state.gameType === 'who-said-that' && state.mode === 'custom' && (!state.customQuestions || state.customQuestions.length < state.totalRounds)) {
@@ -121,9 +120,16 @@ export default function LobbyPage() {
          </div>
       </div>
 
-      {!isMlt && state.mode === 'custom' && (
+      {state.isHost && (
         <div className="bg-[#1A1A2E] rounded-2xl w-full max-w-md border border-[#2D2D44] p-4 mb-32 text-left">
-           <h3 className="text-lg font-bold mb-2 font-['Fredoka_One'] text-[#A8E6CF]">{t.customQuestions} ({state.customQuestions?.length || 0})</h3>
+           <h3 className="text-lg font-bold mb-2 font-['Fredoka_One'] text-[#A8E6CF]">
+             {isMlt ? '✨ Custom MLT Prompts' : t.customQuestions} ({state.customQuestions?.length || 0})
+           </h3>
+           {isMlt && (
+             <p className="text-xs text-gray-500 mb-3 font-['Nunito']">
+               Add your own "Who is most likely to..." prompts — they'll be used first.
+             </p>
+           )}
            <div className="max-h-32 overflow-y-auto mb-4 space-y-2 pr-2">       
              {state.customQuestions?.length > 0 ? state.customQuestions.map(q => (
                <p key={q.id} className="bg-[#0D0D1A] p-2 rounded-md text-sm border border-[#2D2D44] font-['Nunito'] text-gray-300">
