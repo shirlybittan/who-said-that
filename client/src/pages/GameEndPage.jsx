@@ -19,7 +19,7 @@ export default function GameEndPage() {
     window.location.reload();
   };
 
-  const sortedPlayers = [...state.players].sort((a, b) => b.score - a.score);   
+  const sortedPlayers = state.players.filter(p => p.isPlaying).sort((a, b) => (state.scores[b.id] || 0) - (state.scores[a.id] || 0));   
   const winner = sortedPlayers[0];
 
   return (
@@ -35,7 +35,7 @@ export default function GameEndPage() {
           <div className="mb-8 p-6 bg-[#2D2D44] rounded-xl text-center transform hover:scale-105 transition">
             <h2 className="text-2xl font-bold font-['Nunito'] text-[#4ECDC4] mb-2">{t.winner}</h2>
             <div className="text-4xl font-['Fredoka_One'] mb-2" style={{ color: winner.color }}>{winner.name}</div>
-            <div className="text-xl font-bold">{t.points.replace('{score}', winner.score)}</div>      
+            <div className="text-xl font-bold">{t.points.replace('{score}', state.scores[winner.id] || 0)}</div>      
           </div>
         )}
 
@@ -49,7 +49,7 @@ export default function GameEndPage() {
                 <span className="w-4 h-4 rounded-full" style={{ backgroundColor: player.color }}></span>
                 <span className="font-['Fredoka_One'] text-lg">{player.name}</span>
               </div>
-              <span className="font-bold text-[#FF6B6B]">{t.pts.replace('{score}', player.score)}</span>
+              <span className="font-bold text-[#FF6B6B]">{t.pts.replace('{score}', state.scores[player.id] || 0)}</span>
             </div>
           ))}
         </div>

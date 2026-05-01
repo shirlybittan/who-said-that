@@ -1,16 +1,14 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { translations } from '../locales/translations';
 
 export default function RoundEndPage() {
   const { state } = useGame();
-  const [isReady, setIsReady] = useState(false);
   const t = translations[state.lang].roundEnd;
 
   const handleNextRound = () => {
-    socket.emit('ready_next_round', { code: state.roomCode, playerId: state.playerId });
-    setIsReady(true);
+    socket.emit('ready_next_round', { code: state.roomCode });
   };
 
   return (
@@ -21,7 +19,7 @@ export default function RoundEndPage() {
         <h3 className="text-2xl font-bold font-['Nunito'] text-[#FFE66D] sticky top-0 bg-[#1A1A2E] pb-2 z-10 flex justify-between items-center">
           <span>{t.summary}</span>
           <span className="text-sm font-normal text-gray-400">
-            {t.readyStatus.replace('{ready}', state.playersReady?.length || 0).replace('{total}', state.players.length)}
+            {state.currentRound} / {state.totalRounds}
           </span>
         </h3>
 
@@ -59,13 +57,16 @@ export default function RoundEndPage() {
         ))}
       </div>
 
-      <button
-        onClick={handleNextRound}
-        disabled={isReady}
-        className={`w-full max-w-md ${isReady ? 'bg-gray-600 cursor-not-allowed' : 'bg-[#FFE66D] hover:bg-[#ffdd33]'} text-black font-bold py-4 px-6 rounded-xl transition transform active:scale-95 text-xl font-['Fredoka_One'] shadow-lg uppercase`}
-      >
-        {isReady ? t.waitingBtn : (state.currentRound < state.totalRounds ? t.nextRoundBtn : t.finalScoresBtn)}
-      </button>
+      {state.isHost ? (
+        <button
+          onClick={handleNextRound}
+          className="w-full max-w-md bg-[#FFE66D] hover:bg-[#ffdd33] text-black font-bold py-4 px-6 rounded-xl transition transform active:scale-95 text-xl font-['Fredoka_One'] shadow-lg uppercase"
+        >
+          {state.currentRound < state.totalRounds ? t.nextRoundBtn : t.finalScoresBtn}
+        </button>
+      ) : (
+        <p className="text-gray-400 font-['Nunito'] mt-2">{t.waitingHost}</p>
+      )}
     </div>
   );
 }

@@ -189,7 +189,19 @@ export const useSocket = () => {
       dispatch({ type: 'TOT_SET_END', payload: data });
       navigate('/tot-end');
     };
-    // ────────────────────────────────────────────────────────────────────────
+    // ─── Situational handlers ──────────────────────────────────────────────
+    const onSitVotingStarted = (data) => {
+      dispatch({ type: 'SIT_VOTING_STARTED', payload: data });
+      navigate('/sit-vote');
+    };
+
+    const onSitVoteReceived = (data) => {
+      dispatch({ type: 'SIT_VOTE_RECEIVED', payload: data });
+    };
+
+    const onSitResults = (data) => {
+      dispatch({ type: 'SIT_SET_RESULTS', payload: data });
+    };    // ────────────────────────────────────────────────────────────────────────
 
     socket.on('connect', onConnect);
     socket.on('room_created', onRoomCreated);
@@ -224,6 +236,9 @@ export const useSocket = () => {
     socket.on('tot:vote_received', onTotVoteReceived);
     socket.on('tot:results', onTotResults);
     socket.on('tot:end', onTotEnd);
+    socket.on('sit:voting_started', onSitVotingStarted);
+    socket.on('sit:vote_received', onSitVoteReceived);
+    socket.on('sit:results', onSitResults);
 
     return () => {
       socket.off('connect', onConnect);
@@ -259,6 +274,9 @@ export const useSocket = () => {
       socket.off('tot:vote_received', onTotVoteReceived);
       socket.off('tot:results', onTotResults);
       socket.off('tot:end', onTotEnd);
+      socket.off('sit:voting_started', onSitVotingStarted);
+      socket.off('sit:vote_received', onSitVoteReceived);
+      socket.off('sit:results', onSitResults);
     };
   }, [dispatch, navigate, state.playerId]);
 };

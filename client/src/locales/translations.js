@@ -89,7 +89,8 @@ export const translations = {
       noOneGuessed: "No one guessed correctly",
       waitingBtn: "Waiting...",
       nextRoundBtn: "Start Next Round",
-      finalScoresBtn: "See Final Scores"
+      finalScoresBtn: "See Final Scores",
+      waitingHost: "Waiting for host..."
     },
     gameEnd: {
       title: "Game Over!",
@@ -147,6 +148,14 @@ export const translations = {
       gameLabelShort: "🎭 Situational",
       targetBadge: "This round is about",
       gameDesc: "Answer as if you were them!",
+      votePrompt: "Vote for the best answer!",
+      noSelfVote: "You can't vote for your own answer",
+      resultsTitle: "Results",
+      continueBtn: "Continue →",
+      waitingHost: "Waiting for host to continue...",
+      voteLockedMsg: "Vote locked in! 🔒",
+      waitingOthers: "Waiting for others to vote... ({count}/{total})",
+      bestAnswer: "Best Answer ⭐",
     },
     tot: {
       gameLabel: "This or That",
@@ -271,7 +280,8 @@ export const translations = {
       noOneGuessed: "Personne n'a deviné !",
       waitingBtn: "En attente...",
       nextRoundBtn: "Lancer la manche suivante",
-      finalScoresBtn: "Voir les scores finaux"
+      finalScoresBtn: "Voir les scores finaux",
+      waitingHost: "En attente de l'hôte..."
     },
     gameEnd: {
       title: "Partie terminée !",
@@ -329,6 +339,14 @@ export const translations = {
       gameLabelShort: "🎭 Situationnel",
       targetBadge: "Ce tour parle de",
       gameDesc: "Réponds comme si c'était toi !",
+      votePrompt: "Vote pour la meilleure réponse !",
+      noSelfVote: "Tu ne peux pas voter pour ta propre réponse",
+      resultsTitle: "Résultats",
+      continueBtn: "Continuer →",
+      waitingHost: "En attente de l'hôte pour continuer...",
+      voteLockedMsg: "Vote validé ! 🔒",
+      waitingOthers: "En attente des autres... ({count}/{total})",
+      bestAnswer: "Meilleure réponse ⭐",
     },
     tot: {
       gameLabel: "Ceci ou Cela",

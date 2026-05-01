@@ -69,6 +69,7 @@ const createRoom = (socketId, playerName = 'Host', gameType = 'most-likely-to', 
     timer: null,
     sit: {
       targetPlayerIndex: 0,   // cycles through non-host players
+      votes: {},              // { voterPlayerId: authorPlayerId }
     },
     tot: {
       roundState: 'waiting',  // 'voting' | 'results'
