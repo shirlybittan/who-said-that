@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { translations } from '../locales/translations';
+import { motion } from 'framer-motion';
 
 export default function QuestionPage() {
   const { state, dispatch } = useGame();
@@ -53,7 +54,10 @@ export default function QuestionPage() {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 text-center shadow-lg">
+    <motion.div
+      className="flex flex-col items-center justify-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 text-center shadow-lg"
+      initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}
+    >
       <div className="mb-8 w-full max-w-lg">
         <h3 className="text-xl font-['Fredoka_One'] text-[#FFE66D] uppercase tracking-widest mb-2">
           {t.round} {state.currentRound} {t.of} {state.totalRounds}
@@ -146,6 +150,6 @@ export default function QuestionPage() {
           {hasVotedSkip ? t.votedSkip : t.voteSkip}
         </button>
       )}
-    </div>
+    </motion.div>
   );
 }

@@ -4,6 +4,7 @@ import { useGame } from '../store/gameStore.jsx';
 import { translations } from '../locales/translations';
 import { socket } from '../socket';
 import Confetti from 'react-confetti';
+import { motion } from 'framer-motion';
 
 export default function MostLikelyToEndPage() {
   const { state } = useGame();
@@ -41,7 +42,10 @@ export default function MostLikelyToEndPage() {
   const podiumPositions = [1, 0, 2]; // indices in top3 for left/center/right
 
   return (
-    <div className="flex flex-col items-center justify-start min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 pb-24">
+    <motion.div
+      className="flex flex-col items-center justify-start min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 pb-24"
+      initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, ease: 'easeOut' }}
+    >
       <Confetti width={windowDimension.width} height={windowDimension.height} />
 
       <h1 className="text-5xl font-['Fredoka_One'] text-[#FFE66D] mb-2 mt-4 animate-bounce">
@@ -141,6 +145,6 @@ export default function MostLikelyToEndPage() {
       >
         🏠 Main Menu
       </button>
-    </div>
+    </motion.div>
   );
 }

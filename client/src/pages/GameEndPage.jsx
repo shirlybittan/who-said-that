@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useGame } from '../store/gameStore.jsx';
 import { translations } from '../locales/translations';
 import Confetti from 'react-confetti';
+import { motion } from 'framer-motion';
 
 export default function GameEndPage() {
   const { state } = useGame();
@@ -25,7 +26,10 @@ export default function GameEndPage() {
   const winner = sortedPlayers[0];
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 text-center">
+    <motion.div
+      className="flex flex-col items-center justify-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 text-center"
+      initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, ease: 'easeOut' }}
+    >
       <Confetti width={windowDimension.width} height={windowDimension.height} />
 
       <h1 className="text-5xl font-['Fredoka_One'] text-[#FFE66D] mb-8 animate-bounce">
@@ -69,6 +73,6 @@ export default function GameEndPage() {
       >
         🏠 Main Menu
       </button>
-    </div>
+    </motion.div>
   );
 }

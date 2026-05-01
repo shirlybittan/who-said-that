@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { socket } from '../socket';
 import { useGame } from '../store/gameStore.jsx';
 import { translations } from '../locales/translations';
+import { motion } from 'framer-motion';
 
 export default function HomePage() {
   const [searchParams] = useSearchParams();
@@ -91,7 +92,7 @@ export default function HomePage() {
   const accentColor = currentSelection.length > 1 ? '#FF8B94' : (games.find(g => g.id === currentSelection[0])?.accent || '#FF6B6B');
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-4 text-center">
+    <motion.div className="flex flex-col items-center justify-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-4 text-center" initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}>
       <h1 className="text-5xl font-['Fredoka_One'] mb-1 text-[#FFE66D]">🎉 Party Pack</h1>
       <p className="text-lg mb-8 font-['Nunito'] text-gray-400">{t.subtitle}</p>
 
@@ -200,6 +201,6 @@ export default function HomePage() {
           TV Mode →
         </a>
       </div>
-    </div>
+    </motion.div>
   );
 }

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { translations } from '../locales/translations';
+import { motion } from 'framer-motion';
 
 const TimerRing = ({ secondsLeft, total = 30, paused }) => {
   const radius = 40;
@@ -77,7 +78,7 @@ export default function MostLikelyToVotingPage() {
   const gameName = mlt.gameName || state.gameName || '';
 
   return (
-    <div className="flex flex-col items-center justify-start min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 pb-8">
+    <motion.div className="flex flex-col items-center justify-start min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 pb-8" initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}>
       {/* Game name + round header */}
       {gameName ? (
         <p className="text-lg font-['Fredoka_One'] text-[#4ECDC4] mb-1">{gameName}</p>
@@ -253,6 +254,6 @@ export default function MostLikelyToVotingPage() {
           )}
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }

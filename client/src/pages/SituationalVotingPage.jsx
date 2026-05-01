@@ -2,6 +2,30 @@ import React from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { translations } from '../locales/translations';
+import { motion } from 'framer-motion';
+
+const VoteCoin = ({ coinIndex, cardIndex }) => (
+  <motion.div
+    className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold select-none flex-shrink-0"
+    style={{
+      background: 'radial-gradient(circle at 35% 35%, #fef08a, #ca8a04)',
+      border: '2px solid #facc15',
+      boxShadow: '0 3px 6px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.25)',
+      color: '#713f12',
+    }}
+    initial={{ y: -64, opacity: 0, scale: 0.3, rotate: -40 }}
+    animate={{ y: 0, opacity: 1, scale: 1, rotate: 0 }}
+    transition={{
+      delay: 0.4 + cardIndex * 0.22 + coinIndex * 0.12,
+      type: 'spring',
+      stiffness: 460,
+      damping: 14,
+      mass: 0.6,
+    }}
+  >
+    ★
+  </motion.div>
+);
 
 export default function SituationalVotingPage() {
   const { state, dispatch } = useGame();
@@ -26,17 +50,25 @@ export default function SituationalVotingPage() {
     const maxVotes = sorted[0]?.votes ?? 0;
 
     return (
-      <div className="flex flex-col items-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6">
+      <motion.div
+        className="flex flex-col items-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6"
+        initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}
+      >
         <h1 className="text-3xl font-['Fredoka_One'] text-[#FF6B6B] mb-2 mt-4">{t.resultsTitle}</h1>
         <p className="text-gray-400 font-['Nunito'] mb-6 italic text-center">"{sit.question}"</p>
 
-        <div className="w-full max-w-md space-y-3 mb-6">
-          {sorted.map((ans) => {
+        <motion.div
+          className="w-full max-w-md space-y-3 mb-6"
+          initial="hidden" animate="show"
+          variants={{ hidden: {}, show: { transition: { staggerChildren: 0.1, delayChildren: 0.15 } } }}
+        >
+          {sorted.map((ans, ansIdx) => {
             const isWinner = ans.votes === maxVotes && maxVotes > 0;
             return (
-              <div
+              <motion.div
                 key={ans.id}
                 className={`rounded-2xl p-4 border-2 ${isWinner ? 'border-[#FFE66D] bg-[#FFE66D]/10' : 'border-[#2D2D44] bg-[#1A1A2E]'}`}
+                variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { duration: 0.3 } } }}
               >
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
@@ -52,10 +84,18 @@ export default function SituationalVotingPage() {
                   </span>
                 </div>
                 <p className="text-white font-['Nunito'] italic">"{ans.text}"</p>
-              </div>
+                {/* Vote coins */}
+                {ans.votes > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {Array.from({ length: Math.min(ans.votes, 10) }).map((_, j) => (
+                      <VoteCoin key={j} coinIndex={j} cardIndex={ansIdx} />
+                    ))}
+                  </div>
+                )}
+              </motion.div>
             );
           })}
-        </div>
+        </motion.div>
 
         {/* Scoreboard */}
         <div className="w-full max-w-md bg-[#1A1A2E] rounded-2xl border border-[#2D2D44] p-4 mb-6">
@@ -83,13 +123,13 @@ export default function SituationalVotingPage() {
         ) : (
           <p className="text-gray-400 font-['Nunito'] mt-4">{t.waitingHost}</p>
         )}
-      </div>
+      </motion.div>
     );
   }
 
   // ── VOTING VIEW ───────────────────────────────────────────────────────────
   return (
-    <div className="flex flex-col items-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6">
+    <motion.div className="flex flex-col items-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6" initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}>
       <h1 className="text-3xl font-['Fredoka_One'] text-[#4ECDC4] mb-2 mt-4">{t.votePrompt}</h1>
       <p className="text-gray-400 font-['Nunito'] mb-1 italic text-center">"{sit.question}"</p>
 
@@ -152,6 +192,6 @@ export default function SituationalVotingPage() {
           )}
         </>
       )}
-    </div>
+    </motion.div>
   );
 }

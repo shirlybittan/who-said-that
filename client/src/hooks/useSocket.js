@@ -284,7 +284,45 @@ export const useSocket = () => {
 
     const onSitResults = (data) => {
       dispatch({ type: 'SIT_SET_RESULTS', payload: data });
-    };    // ────────────────────────────────────────────────────────────────────────
+    };
+
+    // ─── Drawing handlers ─────────────────────────────────────────────────
+    const onDrawRoundStart = (data) => {
+      dispatch({ type: 'SET_ROOM', payload: { joinedMidRound: false } });
+      dispatch({ type: 'DRAW_SET_ROUND', payload: data });
+      navigate('/draw');
+    };
+
+    const onDrawTimer = (data) => {
+      dispatch({ type: 'DRAW_TIMER', payload: data });
+    };
+
+    const onDrawSubmissionReceived = (data) => {
+      dispatch({ type: 'DRAW_SUBMISSION_RECEIVED', payload: data });
+    };
+
+    const onDrawVotingStarted = (data) => {
+      dispatch({ type: 'DRAW_VOTING_STARTED', payload: data });
+    };
+
+    const onDrawVoteReceived = (data) => {
+      dispatch({ type: 'DRAW_VOTE_RECEIVED', payload: data });
+    };
+
+    const onDrawResults = (data) => {
+      dispatch({ type: 'DRAW_SET_RESULTS', payload: data });
+    };
+
+    const onDrawEnd = (data) => {
+      dispatch({ type: 'DRAW_SET_END', payload: data });
+      navigate('/draw-end');
+    };
+
+    const onDrawRestarted = (data) => {
+      dispatch({ type: 'DRAW_RESTARTED', payload: data });
+      navigate('/lobby');
+    };
+    // ────────────────────────────────────────────────────────────────────────
 
     socket.on('connect', onConnect);
     socket.on('room_created', onRoomCreated);
@@ -322,6 +360,14 @@ export const useSocket = () => {
     socket.on('sit:voting_started', onSitVotingStarted);
     socket.on('sit:vote_received', onSitVoteReceived);
     socket.on('sit:results', onSitResults);
+    socket.on('draw:round_start', onDrawRoundStart);
+    socket.on('draw:timer', onDrawTimer);
+    socket.on('draw:submission_received', onDrawSubmissionReceived);
+    socket.on('draw:voting_started', onDrawVotingStarted);
+    socket.on('draw:vote_received', onDrawVoteReceived);
+    socket.on('draw:results', onDrawResults);
+    socket.on('draw:end', onDrawEnd);
+    socket.on('draw:restarted', onDrawRestarted);
 
     return () => {
       socket.off('connect', onConnect);
@@ -360,6 +406,14 @@ export const useSocket = () => {
       socket.off('sit:voting_started', onSitVotingStarted);
       socket.off('sit:vote_received', onSitVoteReceived);
       socket.off('sit:results', onSitResults);
+      socket.off('draw:round_start', onDrawRoundStart);
+      socket.off('draw:timer', onDrawTimer);
+      socket.off('draw:submission_received', onDrawSubmissionReceived);
+      socket.off('draw:voting_started', onDrawVotingStarted);
+      socket.off('draw:vote_received', onDrawVoteReceived);
+      socket.off('draw:results', onDrawResults);
+      socket.off('draw:end', onDrawEnd);
+      socket.off('draw:restarted', onDrawRestarted);
     };
   }, [dispatch, navigate, state.playerId]);
 };

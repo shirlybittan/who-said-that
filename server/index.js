@@ -12,6 +12,7 @@ const {
 } = require('./game/roomManager');
 const { selectQuestions, selectSituationalQuestions, selectThisOrThatQuestions, selectMixedQuestions, shuffleAnswers } = require('./game/gameLogic');
 const mltPromptBank = require('./questions/mostLikelyTo');
+const drawWordBank = require('./questions/drawing');
 
 const app = express();
 app.use(cors());
@@ -26,6 +27,62 @@ const io = new Server(server, {
     methods: ['GET', 'POST'],
   },
 });
+
+// ─── Draw helpers ────────────────────────────────────────────────────────────
+
+const pickDrawWord = () => drawWordBank[Math.floor(Math.random() * drawWordBank.length)];
+
+const startDrawTimer = (io, room, code, seconds) => {
+  if (room.draw.timerRef) { clearInterval(room.draw.timerRef); room.draw.timerRef = null; }
+  room.draw.secondsLeft = seconds;
+  room.draw.timerRef = setInterval(() => {
+    if (!room.draw || room.draw.phase !== 'drawing') {
+      clearInterval(room.draw.timerRef); room.draw.timerRef = null; return;
+    }
+    room.draw.secondsLeft = Math.max(0, room.draw.secondsLeft - 1);
+    io.to(code).emit('draw:timer', { secondsLeft: room.draw.secondsLeft });
+    if (room.draw.secondsLeft <= 0) {
+      clearInterval(room.draw.timerRef); room.draw.timerRef = null;
+      startDrawVoting(io, room, code);
+    }
+  }, 1000);
+};
+
+const startDrawVoting = (io, room, code) => {
+  if (!room.draw || room.draw.phase !== 'drawing') return;
+  room.draw.phase = 'voting';
+  const submissions = Object.entries(room.draw.submissions).map(([playerId, sub]) => {
+    const player = room.players.find(p => p.id === playerId);
+    return { playerId, name: player?.name || 'Unknown', color: player?.color || '#fff', strokes: sub.strokes };
+  });
+  // Shuffle so submission order doesn't reveal authorship
+  for (let i = submissions.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1)); [submissions[i], submissions[j]] = [submissions[j], submissions[i]];
+  }
+  io.to(code).emit('draw:voting_started', { submissions, round: room.draw.round, word: room.draw.word });
+};
+
+const resolveDrawVoting = (io, room, code) => {
+  if (!room.draw || room.draw.phase !== 'voting') return;
+  room.draw.phase = 'results';
+  const playingPlayers = room.players.filter(p => p.isPlaying);
+  // Tally votes
+  const voteCounts = {};
+  playingPlayers.forEach(p => { voteCounts[p.id] = 0; });
+  Object.values(room.draw.votes).forEach(votedFor => { if (voteCounts[votedFor] !== undefined) voteCounts[votedFor]++; });
+  // Add to running scores
+  Object.entries(voteCounts).forEach(([pid, v]) => { room.draw.scores[pid] = (room.draw.scores[pid] || 0) + v; });
+  const roundScores = { ...voteCounts };
+  // Build sorted results
+  const results = Object.entries(room.draw.submissions).map(([playerId, sub]) => {
+    const player = room.players.find(p => p.id === playerId);
+    return { playerId, name: player?.name || 'Unknown', color: player?.color || '#fff', strokes: sub.strokes, votes: voteCounts[playerId] || 0 };
+  }).sort((a, b) => b.votes - a.votes);
+  const leaderboard = playingPlayers
+    .map(p => ({ id: p.id, name: p.name, color: p.color, score: room.draw.scores[p.id] || 0 }))
+    .sort((a, b) => b.score - a.score);
+  io.to(code).emit('draw:results', { results, scores: room.draw.scores, roundScores, round: room.draw.round, totalRounds: room.draw.totalRounds, leaderboard, word: room.draw.word });
+};
 
 // ─── MLT helpers ─────────────────────────────────────────────────────────────
 
@@ -1102,6 +1159,159 @@ io.on('connection', (socket) => {
     room.mlt.paused = false;
     io.to(code).emit('mlt:resumed', { secondsLeft: room.mlt.secondsLeft });
     startMltTimer(io, room, code, room.mlt.secondsLeft);
+  });
+
+  // ─── Drawing (Sketch It!) handlers ────────────────────────────────────────
+
+  socket.on('draw:start', ({ code, rounds }) => {
+    const room = getRoom(code);
+    if (!room) return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+
+    room.players.forEach(p => { p.joinedMidRound = false; });
+    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    if (playingPlayers.length < 2) return;
+
+    const totalRounds = Math.min(Math.max(parseInt(rounds) || room.totalRounds || 3, 1), 10);
+    const scores = {};
+    playingPlayers.forEach(p => { scores[p.id] = 0; });
+
+    room.phase = 'drawing';
+    room.draw = {
+      phase: 'drawing',
+      round: 1,
+      totalRounds,
+      word: pickDrawWord(),
+      timeLimit: 90,
+      secondsLeft: 90,
+      submissions: {},
+      votes: {},
+      scores,
+      timerRef: null,
+    };
+
+    const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
+    io.to(code).emit('draw:round_start', {
+      word: room.draw.word,
+      round: room.draw.round,
+      totalRounds: room.draw.totalRounds,
+      timeLimit: room.draw.timeLimit,
+      players,
+    });
+    startDrawTimer(io, room, code, room.draw.timeLimit);
+  });
+
+  socket.on('draw:submit', ({ code, strokes }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'drawing' || !room.draw || room.draw.phase !== 'drawing') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isPlaying) return;
+    if (room.draw.submissions[player.id]) return; // already submitted
+
+    // Sanitize: cap strokes, cap points, validate hex color, limit width
+    if (!Array.isArray(strokes)) return;
+    const sanitized = strokes.slice(0, 500).map(s => ({
+      color: /^#[0-9A-Fa-f]{3,6}$/.test(s.color) ? s.color : '#000000',
+      width: Math.min(Math.max(Number(s.width) || 4, 1), 40),
+      type: s.type === 'eraser' ? 'eraser' : 'pen',
+      points: Array.isArray(s.points) ? s.points.slice(0, 300).map(p => ({
+        x: Math.round(Number(p.x) || 0),
+        y: Math.round(Number(p.y) || 0),
+      })) : [],
+    }));
+
+    room.draw.submissions[player.id] = { strokes: sanitized, submittedAt: Date.now() };
+    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const submittedCount = Object.keys(room.draw.submissions).length;
+    const submittedPlayerIds = Object.keys(room.draw.submissions);
+    io.to(code).emit('draw:submission_received', { submittedCount, totalDrawers: playingPlayers.length, submittedPlayerIds });
+
+    if (submittedCount >= playingPlayers.length) {
+      if (room.draw.timerRef) { clearInterval(room.draw.timerRef); room.draw.timerRef = null; }
+      startDrawVoting(io, room, code);
+    }
+  });
+
+  socket.on('draw:skip_to_vote', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'drawing' || !room.draw || room.draw.phase !== 'drawing') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+    if (room.draw.timerRef) { clearInterval(room.draw.timerRef); room.draw.timerRef = null; }
+    startDrawVoting(io, room, code);
+  });
+
+  socket.on('draw:vote', ({ code, votedForPlayerId }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'drawing' || !room.draw || room.draw.phase !== 'voting') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isPlaying) return;
+    if (room.draw.votes[player.id]) return; // already voted
+    if (votedForPlayerId === player.id) return; // no self-vote
+    if (!room.draw.submissions[votedForPlayerId]) return; // must vote for a submission
+
+    room.draw.votes[player.id] = votedForPlayerId;
+    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const voteCount = Object.keys(room.draw.votes).length;
+    io.to(code).emit('draw:vote_received', { voteCount, totalVoters: playingPlayers.length });
+
+    if (voteCount >= playingPlayers.length) {
+      resolveDrawVoting(io, room, code);
+    }
+  });
+
+  socket.on('draw:show_results', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'drawing' || !room.draw || room.draw.phase !== 'voting') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+    resolveDrawVoting(io, room, code);
+  });
+
+  socket.on('draw:next_round', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'drawing' || !room.draw || room.draw.phase !== 'results') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+
+    if (room.draw.round >= room.draw.totalRounds) {
+      room.phase = 'drawEnd';
+      const leaderboard = room.players.filter(p => p.isPlaying)
+        .map(p => ({ id: p.id, name: p.name, color: p.color, score: room.draw.scores[p.id] || 0 }))
+        .sort((a, b) => b.score - a.score);
+      io.to(code).emit('draw:end', { leaderboard });
+      return;
+    }
+
+    room.draw.round++;
+    room.draw.phase = 'drawing';
+    room.draw.word = pickDrawWord();
+    room.draw.submissions = {};
+    room.draw.votes = {};
+    room.draw.secondsLeft = room.draw.timeLimit;
+
+    const players = room.players.filter(p => p.isConnected && p.isPlaying).map(p => ({ id: p.id, name: p.name, color: p.color }));
+    io.to(code).emit('draw:round_start', {
+      word: room.draw.word,
+      round: room.draw.round,
+      totalRounds: room.draw.totalRounds,
+      timeLimit: room.draw.timeLimit,
+      players,
+    });
+    startDrawTimer(io, room, code, room.draw.timeLimit);
+  });
+
+  socket.on('draw:restart', ({ code }) => {
+    const room = getRoom(code);
+    if (!room) return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+    if (room.draw?.timerRef) { clearInterval(room.draw.timerRef); room.draw.timerRef = null; }
+    room.phase = 'lobby';
+    room.draw = { phase: 'waiting', round: 0, totalRounds: room.draw?.totalRounds || 3, word: null, submissions: {}, votes: {}, scores: {}, timerRef: null, secondsLeft: 90 };
+    room.players.forEach(p => { p.isReady = false; });
+    io.to(code).emit('draw:restarted', { code, players: room.players });
   });
 
   // ──────────────────────────────────────────────────────────────────────────

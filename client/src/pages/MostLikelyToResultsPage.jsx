@@ -2,6 +2,35 @@ import React, { useEffect, useState } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { translations } from '../locales/translations';
+import { motion } from 'framer-motion';
+
+const VoteCoin = ({ coinIndex, cardIndex, isJoker = false }) => (
+  <motion.div
+    className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold select-none flex-shrink-0"
+    style={isJoker ? {
+      background: 'radial-gradient(circle at 35% 35%, #e879f9, #7c3aed)',
+      border: '2px solid #d946ef',
+      boxShadow: '0 0 10px rgba(217,70,239,0.6)',
+      color: '#fff',
+    } : {
+      background: 'radial-gradient(circle at 35% 35%, #fef08a, #ca8a04)',
+      border: '2px solid #facc15',
+      boxShadow: '0 3px 6px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.25)',
+      color: '#713f12',
+    }}
+    initial={{ y: -64, opacity: 0, scale: 0.3, rotate: -40 }}
+    animate={{ y: 0, opacity: 1, scale: 1, rotate: 0 }}
+    transition={{
+      delay: 0.4 + cardIndex * 0.25 + coinIndex * 0.12,
+      type: 'spring',
+      stiffness: 460,
+      damping: 14,
+      mass: 0.6,
+    }}
+  >
+    {isJoker ? '🃏' : '★'}
+  </motion.div>
+);
 
 export default function MostLikelyToResultsPage() {
   const { state } = useGame();
@@ -24,7 +53,7 @@ export default function MostLikelyToResultsPage() {
   const majorityIds = mlt.majorityPlayerIds || [];
 
   return (
-    <div className="flex flex-col items-center justify-start min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 pb-32">
+    <motion.div className="flex flex-col items-center justify-start min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 pb-32" initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}>
       {/* Round header */}
       <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest mb-3">
         {t.round} {mlt.round} {t.of} {mlt.totalRounds}
@@ -37,16 +66,21 @@ export default function MostLikelyToResultsPage() {
       </div>
 
       {/* Results */}
-      <div className="w-full max-w-lg space-y-4 mb-6">
-        {mlt.results.map((player) => {
+      <motion.div
+        className="w-full max-w-lg space-y-4 mb-6"
+        initial="hidden" animate="show"
+        variants={{ hidden: {}, show: { transition: { staggerChildren: 0.1, delayChildren: 0.15 } } }}
+      >
+        {mlt.results.map((player, idx) => {
           const isMajority = majorityIds.includes(player.playerId);
           const usedJoker = (mlt.jokersUsed || []).includes(player.playerId);
           const barWidth = revealed && maxCount > 0 ? `${(player.count / maxCount) * 100}%` : '0%';
 
           return (
-            <div
+            <motion.div
               key={player.playerId}
-              className="rounded-2xl p-4 border-2 transition-all duration-500"
+              className="rounded-2xl p-4 border-2"
+              variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { duration: 0.35 } } }}
               style={isMajority
                 ? { borderColor: '#FFE66D', backgroundColor: '#1A1A2E', boxShadow: '0 0 20px rgba(255,230,109,0.25)' }
                 : { borderColor: '#2D2D44', backgroundColor: '#1A1A2E' }}
@@ -78,6 +112,18 @@ export default function MostLikelyToResultsPage() {
                 </div>
               </div>
 
+              {/* Vote coins */}
+              {player.count > 0 && (
+                <div className="flex flex-wrap gap-1.5 mb-2 mt-1">
+                  {Array.from({ length: Math.min(player.count, 12) }).map((_, j) => (
+                    <VoteCoin key={j} coinIndex={j} cardIndex={idx} isJoker={j === 0 && usedJoker} />
+                  ))}
+                  {player.count > 12 && (
+                    <span className="text-xs text-gray-500 font-['Nunito'] self-center">+{player.count - 12}</span>
+                  )}
+                </div>
+              )}
+
               {/* Vote bar */}
               <div className="w-full bg-[#2D2D44] rounded-full h-3 overflow-hidden">
                 <div
@@ -85,14 +131,14 @@ export default function MostLikelyToResultsPage() {
                   style={{ width: barWidth, backgroundColor: isMajority ? '#FFE66D' : '#4ECDC4' }}
                 />
               </div>
-            </div>
+            </motion.div>
           );
         })}
 
         {majorityIds.length === 0 && mlt.results.length > 0 && (
           <p className="text-center text-gray-500 italic font-['Nunito']">{t.noVotesCast}</p>
         )}
-      </div>
+      </motion.div>
 
       {/* Points key */}
       {majorityIds.length > 0 && (
@@ -176,6 +222,6 @@ export default function MostLikelyToResultsPage() {
           {t.waitingHost}
         </p>
       )}
-    </div>
+    </motion.div>
   );
 }

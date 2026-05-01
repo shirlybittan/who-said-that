@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { translations } from '../locales/translations';
+import { motion } from 'framer-motion';
 
 export default function VotingPage() {
   const { state, dispatch } = useGame();
@@ -49,7 +50,10 @@ export default function VotingPage() {
   if (!currentAnswer) return <div className="text-white p-6">{t.loading}</div>;
 
   return (
-    <div className="flex flex-col items-center justify-start min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 pb-24">
+    <motion.div
+      className="flex flex-col items-center justify-start min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 pb-24"
+      initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}
+    >
       <div className="flex justify-between w-full max-w-md items-center py-4 mb-4">
          <p className="text-xl font-['Fredoka_One'] text-[#FFE66D] uppercase tracking-widest text-center w-full relative">
            {t.answerNum.replace('{current}', state.currentAnswerIndex + 1).replace('{total}', state.answers.length)}
@@ -93,20 +97,26 @@ export default function VotingPage() {
 
       {/* Voting Section */}
       {/* Voting buttons — hidden for cast-screen host */}
-      <div className="w-full max-w-md grid grid-cols-2 gap-4 auto-rows-fr">
+      <motion.div
+        className="w-full max-w-md grid grid-cols-2 gap-4 auto-rows-fr"
+        initial="hidden" animate="show"
+        variants={{ hidden: {}, show: { transition: { staggerChildren: 0.06, delayChildren: 0.1 } } }}
+      >
         {state.isPlaying && !state.hasVoted && !isRevealed && !isMyAnswer && state.players.filter(p => p.isConnected && p.id !== state.playerId).map(p => (
-           <button 
+           <motion.button
              key={p.id}
              onClick={() => handleVote(p.id)}
+             variants={{ hidden: { opacity: 0, scale: 0.85 }, show: { opacity: 1, scale: 1, transition: { duration: 0.25 } } }}
              className="flex flex-col items-center space-y-2 bg-[#1A1A2E] hover:bg-[#2D2D44] rounded-2xl py-6 px-4 transition-all duration-200 border-2 border-transparent hover:border-[#FFE66D]"
+           >
            >
               <div className="w-12 h-12 rounded-full flex items-center justify-center text-black font-bold shadow-sm text-xl border-2 border-white" style={{ backgroundColor: p.color }}>
                 {p.name.charAt(0).toUpperCase()}
               </div>
               <span className="font-['Fredoka_One'] text-lg overflow-hidden text-ellipsis whitespace-nowrap w-full text-center">{p.name}</span>
-           </button>
+           </motion.button>
         ))}
-      </div>
+      </motion.div>
 
       {!state.hasVoted && !isRevealed && isMyAnswer && !state.allVotesIn && (
         <div className="mt-8 text-center flex flex-col items-center">
@@ -145,14 +155,20 @@ export default function VotingPage() {
           <div className="w-full space-y-2 mb-4">
             {[...state.players]
               .sort((a, b) => (state.scores?.[b.id] || 0) - (state.scores?.[a.id] || 0))
-              .map((p) => (
-                <div key={p.id} className="flex justify-between items-center bg-[#2D2D44] p-2 rounded-lg">
+              .map((p, idx) => (
+                <motion.div
+                  key={p.id}
+                  className="flex justify-between items-center bg-[#2D2D44] p-2 rounded-lg"
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: idx * 0.06, duration: 0.3 }}
+                >
                   <div className="flex items-center space-x-2">
                     <span className="w-4 h-4 rounded-full inline-block" style={{ backgroundColor: p.color }}></span>
                     <span className="font-['Fredoka_One'] text-sm">{p.name}</span>
                   </div>
                   <span className="font-bold text-[#FFE66D]">{state.scores?.[p.id] || 0} pts</span>
-                </div>
+                </motion.div>
             ))}
           </div>
           {state.isHost ? (
@@ -167,6 +183,6 @@ export default function VotingPage() {
           )}
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }
