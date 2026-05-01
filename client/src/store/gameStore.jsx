@@ -5,6 +5,8 @@ const initialState = {
   playerName: localStorage.getItem('wst_playerName') || null,
   roomCode: localStorage.getItem('wst_roomCode') || null,
   isHost: false,
+  isPlaying: true,
+  joinedMidRound: false,
   phase: null,
   players: [],
   mode: "friends",
@@ -73,6 +75,18 @@ const initialState = {
     scores: {},
     prevScores: {},
     scorePlayers: [],
+  },
+  sit: {
+    phase: 'voting',       // 'voting' | 'results'
+    question: '',
+    answers: [],           // [{id, text}] during voting; [{id,text,authorName,authorColor,votes}] in results
+    hasVoted: false,
+    myVote: null,
+    voteCount: 0,
+    totalVoters: 0,
+    scores: {},
+    scorePlayers: [],
+    winners: [],
   },
 };
 
@@ -152,7 +166,46 @@ export const gameReducer = (state, action) => {
     case 'SET_ROUND_ENDED':
       return { ...state, phase: 'roundEnd', scores: action.payload.scores, players: action.payload.players, answers: action.payload.answers, stats: action.payload.stats };
     case 'SET_PLAYERS_READY':
-      return { ...state, playersReady: action.payload.readyPlayers };
+      return { ...state, playersReady: { readyCount: action.payload.readyCount, totalPlayers: action.payload.totalPlayers } };
+    // ─── Situational actions ─────────────────────────────────────────────────
+    case 'SIT_VOTING_STARTED':
+      return {
+        ...state,
+        phase: 'sit-voting',
+        sit: {
+          ...state.sit,
+          phase: 'voting',
+          question: action.payload.question,
+          answers: action.payload.answers,
+          totalVoters: action.payload.totalVoters,
+          hasVoted: false,
+          myVote: null,
+          voteCount: 0,
+          winners: [],
+        },
+      };
+    case 'SIT_VOTE_RECEIVED':
+      return {
+        ...state,
+        sit: { ...state.sit, voteCount: action.payload.voteCount, totalVoters: action.payload.totalVoters },
+      };
+    case 'SIT_MARK_VOTED':
+      return {
+        ...state,
+        sit: { ...state.sit, hasVoted: true, myVote: action.payload.answerId },
+      };
+    case 'SIT_SET_RESULTS':
+      return {
+        ...state,
+        sit: {
+          ...state.sit,
+          phase: 'results',
+          answers: action.payload.answers,
+          scores: action.payload.scores,
+          scorePlayers: action.payload.players,
+          winners: action.payload.winners,
+        },
+      };
     case 'SET_GAME_ENDED':
       return { ...state, gameEnded: true, phase: 'game_end', stats: action.payload.stats, players: action.payload.players || state.players };
     case 'SET_ERROR':

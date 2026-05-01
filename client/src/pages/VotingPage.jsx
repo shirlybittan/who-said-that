@@ -17,6 +17,7 @@ export default function VotingPage() {
   }, [state.currentAnswerIndex]);
 
   useEffect(() => {
+    if (!state.isPlaying) return;   // cast screen never auto-votes
     if (state.hasVoted || isRevealed || state.allVotesIn || isMyAnswer) return;
     if (timeLeft <= 0) {
        const eligiblePlayers = state.players.filter(p => p.isConnected && p.id !== state.playerId);
@@ -91,8 +92,9 @@ export default function VotingPage() {
       )}
 
       {/* Voting Section */}
+      {/* Voting buttons — hidden for cast-screen host */}
       <div className="w-full max-w-md grid grid-cols-2 gap-4 auto-rows-fr">
-        {!state.hasVoted && !isRevealed && !isMyAnswer && state.players.filter(p => p.isConnected && p.id !== state.playerId).map(p => (
+        {state.isPlaying && !state.hasVoted && !isRevealed && !isMyAnswer && state.players.filter(p => p.isConnected && p.id !== state.playerId).map(p => (
            <button 
              key={p.id}
              onClick={() => handleVote(p.id)}

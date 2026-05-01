@@ -29,7 +29,7 @@ export default function LobbyPage() {
   const activeType = GAME_TYPES.find(g => g.id === state.gameType) || GAME_TYPES[0];
 
   const handleStartGame = () => {
-    if (state.players.length < 3) return alert('Need at least 3 players to start!');
+    if (state.players.filter(p => p.isPlaying).length < 3) return alert('Need at least 3 players to start!');
     if (isMlt) {
       socket.emit('mlt:start', {
         code: state.roomCode,
@@ -64,6 +64,20 @@ export default function LobbyPage() {
     setSaveToBank(false);
   };
 
+  if (state.joinedMidRound) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 gap-6">
+        <div className="text-6xl">⚡</div>
+        <h1 className="text-3xl font-['Fredoka_One'] text-[#FFE66D] text-center">You've joined!</h1>
+        <p className="text-gray-300 font-['Nunito'] text-center text-lg">A round is in progress. Hang tight — you'll jump in at the next round.</p>
+        <div className="bg-[#1A1A2E] border-2 border-[#2D2D44] p-5 rounded-2xl text-center">
+          <p className="text-gray-400 font-['Nunito'] text-sm uppercase tracking-widest mb-1">Room Code</p>
+          <p className="text-4xl font-['Fredoka_One'] tracking-widest text-white">{state.roomCode}</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col items-center justify-start min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 pb-24">
       <h2 className="text-3xl font-['Fredoka_One'] text-[#FFE66D] mb-4">{t.title}</h2>
@@ -84,9 +98,9 @@ export default function LobbyPage() {
       </div>
 
       <div className="bg-[#1A1A2E] rounded-2xl w-full max-w-md border border-[#2D2D44] p-4 mb-8 text-left h-full flex flex-col justify-between">
-         <h3 className="text-xl font-bold mb-4 font-['Fredoka_One'] text-[#FF6B6B]">{t.players} ({state.players?.filter(p => !p.isHost).length || 0})</h3>
+         <h3 className="text-xl font-bold mb-4 font-['Fredoka_One'] text-[#FF6B6B]">{t.players} ({state.players?.filter(p => p.isPlaying).length || 0})</h3>
          <div className="flex flex-wrap gap-3">
-          {state.players?.filter(p => !p.isHost).map((p, idx) => (
+          {state.players?.filter(p => p.isPlaying).map((p, idx) => (
              <div key={idx} className="flex items-center space-x-2 bg-black bg-opacity-30 rounded-full px-3 py-2 border border-gray-800">
                <div className="w-8 h-8 rounded-full flex items-center justify-center text-black font-bold border-2 border-white shadow-sm" style={{ backgroundColor: p.color }}>
                  {p.name.charAt(0).toUpperCase()}
@@ -233,10 +247,10 @@ export default function LobbyPage() {
           )}
 
           <button
-            disabled={state.players?.length < 3}
+            disabled={state.players?.filter(p => p.isPlaying).length < 3}
             onClick={handleStartGame}
-            style={state.players?.length >= 3 ? { backgroundColor: activeType.color } : {}}
-            className={`w-full max-w-sm font-bold py-4 px-6 rounded-xl transition transform active:scale-95 text-xl font-['Fredoka_One'] shadow-lg uppercase tracking-wide text-black ${state.players?.length < 3 ? 'bg-gray-600 cursor-not-allowed text-white' : 'hover:opacity-90'}`}
+            style={state.players?.filter(p => p.isPlaying).length >= 3 ? { backgroundColor: activeType.color } : {}}
+            className={`w-full max-w-sm font-bold py-4 px-6 rounded-xl transition transform active:scale-95 text-xl font-['Fredoka_One'] shadow-lg uppercase tracking-wide text-black ${state.players?.filter(p => p.isPlaying).length < 3 ? 'bg-gray-600 cursor-not-allowed text-white' : 'hover:opacity-90'}`}
           >
             {t.startBtn}
           </button>

@@ -62,6 +62,7 @@ export default function ThisOrThatPage() {
       {/* A/B Choices */}
       {!tot.resultsVisible ? (
         <div className="w-full max-w-lg flex flex-col gap-4 mb-6">
+          {state.isPlaying ? (<>
           {/* Choice A */}
           <button
             onClick={() => handleVote('a')}
@@ -118,6 +119,19 @@ export default function ThisOrThatPage() {
             <p className="text-center text-gray-500 font-['Nunito'] text-sm mt-2 animate-pulse">
               {t.waitingReveal.replace('waiting', 'Pick one!')}
             </p>
+          )}
+          </>) : (
+            // Cast-screen spectator: show vote progress only
+            <div className="w-full bg-[#1A1A2E] rounded-2xl border border-[#2D2D44] p-8 text-center">
+              <p className="text-4xl font-['Fredoka_One'] text-[#FFE66D]">
+                {tot.voteCount} <span className="text-gray-400 text-2xl">/ {tot.totalVoters}</span>
+              </p>
+              <p className="text-sm font-['Nunito'] text-gray-400 mt-2 uppercase tracking-wider">{t.votesIn}</p>
+              <div className="mt-4 w-full bg-[#2D2D44] rounded-full h-2">
+                <div className="bg-[#4ECDC4] h-2 rounded-full transition-all duration-500"
+                  style={{ width: tot.totalVoters > 0 ? `${(tot.voteCount / tot.totalVoters) * 100}%` : '0%' }} />
+              </div>
+            </div>
           )}
         </div>
       ) : (
