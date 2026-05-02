@@ -10,9 +10,9 @@ const {
   removePlayerBySocketId,
   setGameOptions,
 } = require('./game/roomManager');
-const { selectQuestions, selectSituationalQuestions, selectThisOrThatQuestions, selectMixedQuestions, shuffleAnswers } = require('./game/gameLogic');
+const { selectQuestions, selectSituationalQuestions, selectThisOrThatQuestions, selectDrawingQuestion, selectMixedQuestions, shuffleAnswers } = require('./game/gameLogic');
 const mltPromptBank = require('./questions/mostLikelyTo');
-const drawWordBank = require('./questions/drawing');
+const { words: drawWordBank, prompts: drawPrompts } = require('./questions/drawing');
 
 const app = express();
 app.use(cors());
@@ -30,7 +30,14 @@ const io = new Server(server, {
 
 // ─── Draw helpers ────────────────────────────────────────────────────────────
 
-const pickDrawWord = () => drawWordBank[Math.floor(Math.random() * drawWordBank.length)];
+const pickDrawWord = (players) => {
+  if (players && players.length > 0 && drawPrompts.length > 0 && Math.random() < 0.4) {
+    const prompt = drawPrompts[Math.floor(Math.random() * drawPrompts.length)];
+    const target = players[Math.floor(Math.random() * players.length)];
+    return prompt.replace('{name}', target.name);
+  }
+  return drawWordBank[Math.floor(Math.random() * drawWordBank.length)];
+};
 
 const startDrawTimer = (io, room, code, seconds) => {
   if (room.draw.timerRef) { clearInterval(room.draw.timerRef); room.draw.timerRef = null; }
@@ -298,7 +305,34 @@ const emitNextQuestion = (io, room, code) => {
   // Let mid-round joiners participate from here on
   room.players.forEach(p => { p.joinedMidRound = false; });
 
-  if (q.type === 'this-or-that') {
+  if (q.type === 'drawing') {
+    room.phase = 'drawing';
+    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const drawScores = room.draw?.scores || {};
+    playingPlayers.forEach(p => { if (drawScores[p.id] === undefined) drawScores[p.id] = 0; });
+    room.draw = {
+      phase: 'drawing',
+      round: 1,
+      totalRounds: 1,
+      word: q.word || pickDrawWord(playingPlayers),
+      timeLimit: 90,
+      secondsLeft: 90,
+      submissions: {},
+      votes: {},
+      scores: drawScores,
+      timerRef: null,
+      mixedMode: true,
+    };
+    const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
+    io.to(code).emit('draw:round_start', {
+      word: room.draw.word,
+      round: room.currentRound,
+      totalRounds: room.totalRounds,
+      timeLimit: room.draw.timeLimit,
+      players,
+    });
+    startDrawTimer(io, room, code, room.draw.timeLimit);
+  } else if (q.type === 'this-or-that') {
     room.phase = 'tot';
     emitTotQuestion(io, room, code);
   } else {
@@ -514,6 +548,8 @@ io.on('connection', (socket) => {
       room.phase = 'tot';
     } else if (room.gameType === 'mixed') {
       room.questions = selectMixedQuestions(count, room.mode, room.customQuestions, room.selectedSubGames);
+      room.miniGameSelectedTypes = room.selectedSubGames || ['who-said-that', 'situational', 'this-or-that'];
+      room.miniGamePlayedTypes = [];
     } else {
       // who-said-that
       room.questions = selectQuestions(room.mode, count, room.customQuestions);
@@ -568,30 +604,73 @@ io.on('connection', (socket) => {
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isHost) return;
 
-    // Only meaningful in mixed mode
-    if (room.gameType !== 'mixed') return;
+    // Determine current mini-game type
+    const currentType = room.questions[room.currentQuestionIndex]?.type || (room.phase === 'drawing' ? 'drawing' : null);
+    if (!currentType) return;
 
-    const currentType = room.questions[room.currentQuestionIndex]?.type;
+    // Mark current type as played in this cycle
+    if (!room.miniGamePlayedTypes) room.miniGamePlayedTypes = [];
+    if (!room.miniGamePlayedTypes.includes(currentType)) {
+      room.miniGamePlayedTypes.push(currentType);
+    }
 
-    // Find the next question index that has a different type
+    // The full list of selected types for this mixed game
+    const allTypes = room.miniGameSelectedTypes || room.selectedSubGames || [];
+
+    // Find the next type: prefer unplayed types, then cycle through all types
+    const unplayed = allTypes.filter(t => !room.miniGamePlayedTypes.includes(t) && t !== currentType);
+    let nextType;
+    if (unplayed.length > 0) {
+      nextType = unplayed[Math.floor(Math.random() * unplayed.length)];
+    } else {
+      // All types played — reset cycle and pick any type different from current
+      room.miniGamePlayedTypes = [currentType];
+      const others = allTypes.filter(t => t !== currentType);
+      if (others.length === 0) {
+        // Only one game type, just skip to next question of same type
+        nextType = currentType;
+      } else {
+        nextType = others[Math.floor(Math.random() * others.length)];
+      }
+    }
+
+    // Normalize: 'who-said-that' → 'wst' for comparison
+    const normalizeType = (t) => t === 'who-said-that' ? 'wst' : t;
+    const targetType = normalizeType(nextType);
+
+    // Reset any in-progress state for the current mini-game
+    room.answers = [];
+    room.skipVotes = [];
+    room.sit = room.sit || {};
+    room.sit.votes = {};
+    room.tot = room.tot || {};
+    room.tot.votesA = {};
+    room.tot.votesB = {};
+    if (room.phase === 'drawing' && room.draw?.timerRef) {
+      clearInterval(room.draw.timerRef);
+      room.draw.timerRef = null;
+    }
+
+    // Find next question of targetType in the pre-built list
     let nextIndex = room.currentQuestionIndex + 1;
-    while (nextIndex < room.questions.length && room.questions[nextIndex]?.type === currentType) {
+    while (nextIndex < room.questions.length && normalizeType(room.questions[nextIndex]?.type) !== targetType) {
       nextIndex++;
     }
 
-    // Reset any in-progress state
-    room.answers = [];
-    room.skipVotes = [];
-    room.sit.votes = {};
-    room.tot.votesA = {};
-    room.tot.votesB = {};
-
     if (nextIndex >= room.questions.length) {
-      // No more different mini-games — end the game
-      room.phase = 'gameEnd';
-      const finalStats = require('./game/gameLogic').computeStats(room.players, [], room.scores);
-      io.to(code).emit('game_ended', { finalScores: room.scores, players: room.players, stats: finalStats });
-      return;
+      // No remaining question of target type — generate one and append
+      let newQ;
+      if (targetType === 'situational') {
+        [newQ] = selectSituationalQuestions(1);
+      } else if (targetType === 'this-or-that') {
+        [newQ] = selectThisOrThatQuestions(1);
+      } else if (targetType === 'drawing') {
+        newQ = selectDrawingQuestion();
+      } else {
+        [newQ] = selectQuestions(room.mode, 1, room.customQuestions);
+      }
+      room.questions.push(newQ);
+      room.totalRounds = room.questions.length;
     }
 
     room.currentRound = nextIndex + 1;
@@ -1241,7 +1320,7 @@ io.on('connection', (socket) => {
       phase: 'drawing',
       round: 1,
       totalRounds,
-      word: pickDrawWord(),
+      word: pickDrawWord(playingPlayers),
       timeLimit: 90,
       secondsLeft: 90,
       submissions: {},
@@ -1335,6 +1414,21 @@ io.on('connection', (socket) => {
     if (!player || !player.isHost) return;
 
     if (room.draw.round >= room.draw.totalRounds) {
+      // In mixed mode, advance to the next question in the mixed game instead of ending
+      if (room.draw.mixedMode) {
+        room.currentQuestionIndex++;
+        room.currentRound++;
+        if (room.currentQuestionIndex >= room.questions.length) {
+          room.phase = 'gameEnd';
+          const { computeStats } = require('./game/gameLogic');
+          const finalStats = computeStats(room.players, [], room.scores);
+          io.to(code).emit('game_ended', { finalScores: room.scores, players: room.players, stats: finalStats });
+        } else {
+          emitNextQuestion(io, room, code);
+        }
+        return;
+      }
+
       room.phase = 'drawEnd';
       const leaderboard = room.players.filter(p => p.isPlaying)
         .map(p => ({ id: p.id, name: p.name, color: p.color, score: room.draw.scores[p.id] || 0 }))
@@ -1345,7 +1439,7 @@ io.on('connection', (socket) => {
 
     room.draw.round++;
     room.draw.phase = 'drawing';
-    room.draw.word = pickDrawWord();
+    room.draw.word = pickDrawWord(room.players.filter(p => p.isConnected && p.isPlaying));
     room.draw.submissions = {};
     room.draw.votes = {};
     room.draw.secondsLeft = room.draw.timeLimit;

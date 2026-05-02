@@ -223,6 +223,7 @@ export default function LobbyPage() {
                   { id: 'situational',   emoji: '🎭', label: tSit.gameLabelShort, color: '#A8E6CF' },
                   { id: 'this-or-that',  emoji: '⚡', label: tTot.gameLabelShort, color: '#6C5CE7' },
                   { id: 'most-likely-to',emoji: '👑', label: tMlt.gameLabelShort, color: '#4ECDC4' },
+                  { id: 'drawing',       emoji: '🎨', label: tDraw.gameLabelShort, color: '#C39BD3' },
                 ].map(sg => {
                   const included = (state.selectedSubGames || []).includes(sg.id);
                   const toggle = () => {

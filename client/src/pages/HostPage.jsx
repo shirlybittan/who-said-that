@@ -17,6 +17,7 @@ const GAME_TYPE_LABELS = {
   'this-or-that': '⚡ This or That',
   'most-likely-to': '👑 Most Likely To',
   'mixed': '🎲 Mixed',
+  'drawing': '🎨 Sketch It!',
 };
 
 // ─── Shared sub-components ───────────────────────────────────────────────────
@@ -872,11 +873,62 @@ function TotEndPanel({ totData }) {
 
 // ─── Setup screens ────────────────────────────────────────────────────────────
 
+function DrawingHostPanel({ drawData, players }) {
+  const activePlayers = players.filter(p => p.isConnected && p.isPlaying);
+  const phaseLabel = drawData.phase === 'drawing' ? '🎨 Drawing in progress...'
+    : drawData.phase === 'voting' ? '🗳️ Voting in progress...'
+    : drawData.phase === 'results' ? '🏆 Results'
+    : '🎨 Drawing Round';
+  return (
+    <div className="flex flex-col items-center gap-6 w-full max-w-xl">
+      <motion.div
+        className="text-center"
+        initial={{ opacity: 0, y: -12 }}
+        animate={{ opacity: 1, y: 0 }}
+      >
+        <p className="text-5xl mb-2">🎨</p>
+        <h1 className="text-4xl font-['Fredoka_One'] text-[#C39BD3]">Sketch It!</h1>
+        <p className="text-gray-400 font-['Nunito'] mt-1">{phaseLabel}</p>
+      </motion.div>
+      <div className="w-full bg-[#1A1A2E] border-2 border-[#C39BD3]/40 rounded-2xl p-5 text-center">
+        <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-1">Word to draw</p>
+        <p className="text-3xl font-['Fredoka_One'] text-[#FFE66D]">{drawData.word || '...'}</p>
+      </div>
+      {drawData.phase === 'drawing' && (
+        <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">Drawings submitted</p>
+            <p className="text-2xl font-['Fredoka_One'] text-white">
+              {drawData.submittedCount}<span className="text-gray-500">/{drawData.totalDrawers || activePlayers.length}</span>
+            </p>
+          </div>
+          <ProgressBar value={drawData.submittedCount} total={drawData.totalDrawers || activePlayers.length} color="#C39BD3" />
+        </div>
+      )}
+      {drawData.phase === 'voting' && (
+        <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">Votes in</p>
+            <p className="text-2xl font-['Fredoka_One'] text-white">
+              {drawData.voteCount}<span className="text-gray-500">/{drawData.totalVoters || activePlayers.length}</span>
+            </p>
+          </div>
+          <ProgressBar value={drawData.voteCount} total={drawData.totalVoters || activePlayers.length} color="#C39BD3" />
+        </div>
+      )}
+      <div className="flex flex-wrap gap-4 justify-center">
+        {activePlayers.map(p => <PlayerAvatar key={p.id} player={p} size="sm" />)}
+      </div>
+    </div>
+  );
+}
+
 const GAME_TYPES_FOR_CREATE = [
   { id: 'most-likely-to', label: '👑 Most Likely To', desc: 'Who fits the prompt?', accent: '#4ECDC4' },
   { id: 'who-said-that',  label: '🤔 Who Said That?', desc: 'Guess who wrote it!',  accent: '#FFE66D' },
   { id: 'situational',   label: '🎭 Situational',   desc: 'Answer for someone!',   accent: '#A8E6CF' },
   { id: 'this-or-that',  label: '⚡ This or That',  desc: 'Pick a side!',           accent: '#6C5CE7' },
+  { id: 'drawing',       label: '🎨 Sketch It!',    desc: 'Draw and guess!',        accent: '#C39BD3' },
   { id: 'mixed',         label: '🎲 Mixed',         desc: 'All modes shuffled!',    accent: '#FF8B94' },
 ];
 
@@ -1010,7 +1062,7 @@ function CreateRoomForm({ onSubmit, onBack }) {
 
 // ─── Host control bar (creator only) ─────────────────────────────────────────
 
-function HostControlBar({ status, isRoomCreator, players, mlt, votingData, isMixedMode, onStart, onMltPauseResume, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer }) {
+function HostControlBar({ status, isRoomCreator, players, mlt, votingData, isMixedMode, onStart, onMltPauseResume, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound }) {
   if (!isRoomCreator) return null;
 
   const playingCount = players.filter(p => p.isPlaying && p.isConnected).length;
@@ -1124,7 +1176,46 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, isMix
         {votingData?.allVotesIn ? 'Next Answer →' : '⏳ Waiting for votes...'}
       </button>
     );
-  } else if (status === 'game-end' || status === 'mlt-end' || status === 'tot-end') {
+  } else if (status === 'drawing') {
+    controls = (
+      <div className="flex gap-3">
+        <button onClick={onDrawSkipToVote} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#C39BD3] hover:text-[#C39BD3] active:scale-95 transition">
+          ⏭ Skip to Vote
+        </button>
+        {isMixedMode && (
+          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+            🔀 Skip Mini Game
+          </button>
+        )}
+      </div>
+    );
+  } else if (status === 'draw-voting') {
+    controls = (
+      <div className="flex gap-3">
+        <button onClick={onDrawShowResults} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#C39BD3] text-[#C39BD3] hover:bg-[#C39BD3]/10 active:scale-95 transition">
+          🏆 Show Results
+        </button>
+        {isMixedMode && (
+          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+            🔀 Skip Mini Game
+          </button>
+        )}
+      </div>
+    );
+  } else if (status === 'draw-results') {
+    controls = (
+      <div className="flex gap-3">
+        <button onClick={onDrawNextRound} className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#C39BD3] text-black hover:bg-[#b085c4] active:scale-95 transition" style={{ boxShadow: '0 0 20px #C39BD340' }}>
+          Next Round →
+        </button>
+        {isMixedMode && (
+          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+            🔀 Skip Mini Game
+          </button>
+        )}
+      </div>
+    );
+  } else if (status === 'game-end' || status === 'mlt-end' || status === 'tot-end' || status === 'draw-end') {
     controls = (
       <button
         onClick={() => { window.location.href = '/host'; }}
@@ -1188,6 +1279,12 @@ export default function HostPage() {
   const [sitData, setSitData] = useState({
     question: '', target: null, answers: [],
     voteCount: 0, totalVoters: 0, hasResults: false, votingStarted: false, winners: [], scores: {},
+  });
+
+  const [drawData, setDrawData] = useState({
+    word: '', round: 0, totalRounds: 0, phase: 'drawing',
+    submittedCount: 0, totalDrawers: 0, voteCount: 0, totalVoters: 0,
+    results: [], scores: {}, leaderboard: [],
   });
 
   const socketRef = useRef(null);
@@ -1320,6 +1417,42 @@ export default function HostPage() {
       setStatus('sit-results');
     });
 
+    sock.on('draw:round_start', (data) => {
+      setDrawData({
+        word: data.word || '',
+        round: data.round || 1,
+        totalRounds: data.totalRounds || 1,
+        phase: 'drawing',
+        submittedCount: 0,
+        totalDrawers: data.players?.length || 0,
+        voteCount: 0,
+      });
+      setStatus('drawing');
+    });
+
+    sock.on('draw:submission_received', ({ submittedCount, totalDrawers }) => {
+      setDrawData(prev => ({ ...prev, submittedCount, totalDrawers }));
+    });
+
+    sock.on('draw:voting_started', (data) => {
+      setDrawData(prev => ({ ...prev, phase: 'voting', voteCount: 0, totalVoters: data.totalVoters || 0 }));
+      setStatus('draw-voting');
+    });
+
+    sock.on('draw:vote_received', ({ voteCount, totalVoters }) => {
+      setDrawData(prev => ({ ...prev, voteCount, totalVoters }));
+    });
+
+    sock.on('draw:results', (data) => {
+      setDrawData(prev => ({ ...prev, phase: 'results', results: data.results || [], scores: data.scores || {} }));
+      setStatus('draw-results');
+    });
+
+    sock.on('draw:end', (data) => {
+      setDrawData(prev => ({ ...prev, leaderboard: data.leaderboard || [] }));
+      setStatus('draw-end');
+    });
+
     sock.on('error', ({ message }) => {
       setErrorMsg(message);
       setStatus('error');
@@ -1342,6 +1475,12 @@ export default function HostPage() {
       if (roomPhase === 'gameEnd') return 'game-end';
       if (roomPhase === 'tot') return 'tot';
       if (roomPhase === 'totEnd') return 'tot-end';
+      if (roomPhase === 'drawing') {
+        if (roomData?.draw?.phase === 'voting') return 'draw-voting';
+        if (roomData?.draw?.phase === 'results') return 'draw-results';
+        return 'drawing';
+      }
+      if (roomPhase === 'drawEnd') return 'draw-end';
       return 'lobby';
     };
 
@@ -1423,6 +1562,8 @@ export default function HostPage() {
     if (!sock || !gameInfo.code) return;
     if (creatorSettings.gameType === 'most-likely-to') {
       sock.emit('mlt:start', { code: gameInfo.code, rounds: creatorSettings.rounds, allowSelfVote: true });
+    } else if (creatorSettings.gameType === 'drawing') {
+      sock.emit('draw:start', { code: gameInfo.code, rounds: creatorSettings.rounds });
     } else {
       sock.emit('start_game', { code: gameInfo.code });
     }
@@ -1513,6 +1654,11 @@ export default function HostPage() {
       case 'sit-voting':
       case 'sit-results':
         return <SitPanel sitData={sitData} players={players} />;
+      case 'drawing':
+      case 'draw-voting':
+      case 'draw-results':
+      case 'draw-end':
+        return <DrawingHostPanel drawData={drawData} players={players} />;
       default:
         return null;
     }
@@ -1543,7 +1689,7 @@ export default function HostPage() {
         </div>
       </div>
 
-      {['game-end', 'mlt-end', 'tot-end'].includes(status) && (
+      {['game-end', 'mlt-end', 'tot-end', 'draw-end'].includes(status) && (
         <Confetti width={window.innerWidth} height={window.innerHeight} recycle={false} numberOfPieces={400} />
       )}
       <div className="flex-1 flex items-center justify-center p-6 overflow-auto">
@@ -1578,6 +1724,9 @@ export default function HostPage() {
         onTotNext={handleTotNext}
         onSitNext={handleSitNext}
         onNextAnswer={handleNextAnswer}
+        onDrawSkipToVote={() => socketRef.current?.emit('draw:skip_to_vote', { code: gameInfo.code })}
+        onDrawShowResults={() => socketRef.current?.emit('draw:show_results', { code: gameInfo.code })}
+        onDrawNextRound={() => socketRef.current?.emit('draw:next_round', { code: gameInfo.code })}
       />
     </div>
   );
