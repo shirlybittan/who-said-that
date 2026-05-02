@@ -240,6 +240,11 @@ export default function DrawingPage() {
   const handleNextRound = () => socket.emit('draw:next_round', { code: roomCode });
   const handleRestart = () => socket.emit('draw:restart', { code: roomCode });
 
+  // Derived drawing-phase state
+  const canSkip = draw.skipsUsed < draw.maxSkips && !draw.hasSubmitted;
+  const skipsRemaining = draw.maxSkips - draw.skipsUsed;
+  const displayWord = draw.yourWord || draw.word;
+
   // ── Render: Drawing phase ─────────────────────────────────────────────────
   if (draw.phase === 'drawing') {
     return (
@@ -251,8 +256,10 @@ export default function DrawingPage() {
               {t.round} {draw.round} {t.of} {draw.totalRounds}
             </p>
             <div className="flex items-center gap-2 mt-1">
-              <span className="text-xs font-['Nunito'] text-[#C39BD3] uppercase tracking-wider">{t.wordPrompt}</span>
-              <span className="text-xl font-['Fredoka_One'] text-[#FFE66D] uppercase">{draw.word}</span>
+              <span className="text-xs font-['Nunito'] text-[#C39BD3] uppercase tracking-wider">
+                {draw.mode === 'secret' ? (t.yourSecretWord || 'Your word:') : t.wordPrompt}
+              </span>
+              <span className="text-xl font-['Fredoka_One'] text-[#FFE66D] uppercase">{displayWord}</span>
             </div>
           </div>
           <TimerRing secondsLeft={draw.secondsLeft} total={draw.timeLimit} />
