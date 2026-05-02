@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { translations } from '../locales/translations';
+import Confetti from 'react-confetti';
+import { motion } from 'framer-motion';
 
 export default function ThisOrThatEndPage() {
   const { state } = useGame();
@@ -10,25 +12,41 @@ export default function ThisOrThatEndPage() {
 
   const leaderboard = tot.leaderboard || [];
 
+  const [win, setWin] = useState({ width: window.innerWidth, height: window.innerHeight });
+  useEffect(() => {
+    const fn = () => setWin({ width: window.innerWidth, height: window.innerHeight });
+    window.addEventListener('resize', fn);
+    return () => window.removeEventListener('resize', fn);
+  }, []);
+
   const handlePlayAgain = () => {
-    // Navigate back to lobby root (simplest restart — host creates new room)
     window.location.href = '/';
   };
 
   return (
-    <div className="flex flex-col items-center justify-start min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 pb-12">
+    <motion.div
+      className="flex flex-col items-center justify-start min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 pb-12"
+      initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, ease: 'easeOut' }}
+    >
+      <Confetti width={win.width} height={win.height} recycle={false} numberOfPieces={300} />
       {/* Header */}
       <div className="text-center mb-8 mt-6">
         <h1 className="text-4xl font-['Fredoka_One'] text-[#FFE66D] mb-2">{t.gameOverTitle}</h1>
         <p className="text-gray-400 font-['Nunito']">{t.gameOverSub}</p>
       </div>
 
-      {/* Podium / Leaderboard */}
+      {/* Leaderboard */}
       {leaderboard.length > 0 && (
-        <div className="w-full max-w-lg space-y-3 mb-8">
+        <motion.div
+          className="w-full max-w-lg space-y-3 mb-8"
+          initial="hidden"
+          animate="show"
+          variants={{ hidden: {}, show: { transition: { staggerChildren: 0.08, delayChildren: 0.2 } } }}
+        >
           {leaderboard.map((entry, i) => (
-            <div
+            <motion.div
               key={entry.playerId}
+              variants={{ hidden: { opacity: 0, x: -30 }, show: { opacity: 1, x: 0, transition: { duration: 0.35 } } }}
               className={`flex items-center gap-4 rounded-2xl p-4 border-2 transition-all ${
                 i === 0
                   ? 'bg-[#FFE66D]/10 border-[#FFE66D] shadow-[0_0_20px_rgba(255,230,109,0.2)]'
@@ -65,9 +83,9 @@ export default function ThisOrThatEndPage() {
                 </span>
                 <span className="text-gray-400 text-sm ml-1 font-['Nunito']">{t.pts}</span>
               </div>
-            </div>
+            </motion.div>
           ))}
-        </div>
+        </motion.div>
       )}
 
       <button
@@ -76,6 +94,12 @@ export default function ThisOrThatEndPage() {
       >
         {t.playAgain}
       </button>
-    </div>
+      <button
+        onClick={() => { window.location.href = '/'; }}
+        className="w-full max-w-sm mt-3 border border-[#2D2D44] text-gray-400 font-bold py-3 px-6 rounded-xl transition transform active:scale-95 text-base font-['Fredoka_One'] hover:border-gray-500 hover:text-gray-300"
+      >
+        🏠 Main Menu
+      </button>
+    </motion.div>
   );
 }

@@ -88,6 +88,28 @@ const initialState = {
     scorePlayers: [],
     winners: [],
   },
+  draw: {
+    phase: 'waiting',      // 'waiting' | 'drawing' | 'voting' | 'results' | 'end'
+    round: 0,
+    totalRounds: 3,
+    word: null,
+    timeLimit: 90,
+    secondsLeft: 90,
+    players: [],
+    submittedCount: 0,
+    submittedPlayerIds: [],
+    submissions: [],       // [{playerId, name, color, strokes}]
+    results: [],           // [{playerId, name, color, strokes, votes}]
+    scores: {},
+    roundScores: {},
+    leaderboard: [],
+    hasSubmitted: false,
+    hasVoted: false,
+    votedForPlayerId: null,
+    voteCount: 0,
+    totalVoters: 0,
+    wordResult: null,
+  },
 };
 
 export const gameReducer = (state, action) => {
@@ -207,7 +229,7 @@ export const gameReducer = (state, action) => {
         },
       };
     case 'SET_GAME_ENDED':
-      return { ...state, gameEnded: true, phase: 'game_end', stats: action.payload.stats, players: action.payload.players || state.players };
+      return { ...state, gameEnded: true, phase: 'game_end', stats: action.payload.stats, players: action.payload.players || state.players, scores: action.payload.finalScores || state.scores };
     case 'SET_ERROR':
       return { ...state, error: action.payload };
     // ─── This or That actions ────────────────────────────────────────────────
@@ -349,6 +371,80 @@ export const gameReducer = (state, action) => {
           allowSelfVote: state.mlt.allowSelfVote,
           gameName: action.payload.gameName !== undefined ? action.payload.gameName : state.mlt.gameName,
         },
+      };
+    // ─── Drawing (Sketch It!) actions ───────────────────────────────────────
+    case 'DRAW_SET_ROUND':
+      return {
+        ...state,
+        phase: 'drawing',
+        draw: {
+          ...state.draw,
+          phase: 'drawing',
+          round: action.payload.round,
+          totalRounds: action.payload.totalRounds,
+          word: action.payload.word,
+          timeLimit: action.payload.timeLimit,
+          secondsLeft: action.payload.timeLimit,
+          players: action.payload.players || state.draw.players,
+          submissions: [],
+          results: [],
+          submittedCount: 0,
+          submittedPlayerIds: [],
+          hasSubmitted: false,
+          hasVoted: false,
+          votedForPlayerId: null,
+          voteCount: 0,
+          totalVoters: (action.payload.players || state.draw.players).length,
+          wordResult: null,
+        },
+      };
+    case 'DRAW_TIMER':
+      return { ...state, draw: { ...state.draw, secondsLeft: action.payload.secondsLeft } };
+    case 'DRAW_SUBMISSION_RECEIVED':
+      return { ...state, draw: { ...state.draw, submittedCount: action.payload.submittedCount, totalDrawers: action.payload.totalDrawers, submittedPlayerIds: action.payload.submittedPlayerIds } };
+    case 'DRAW_MARK_SUBMITTED':
+      return { ...state, draw: { ...state.draw, hasSubmitted: true } };
+    case 'DRAW_VOTING_STARTED':
+      return {
+        ...state,
+        draw: {
+          ...state.draw,
+          phase: 'voting',
+          submissions: action.payload.submissions,
+          wordResult: action.payload.word,
+          votes: {},
+          voteCount: 0,
+        },
+      };
+    case 'DRAW_VOTE_RECEIVED':
+      return { ...state, draw: { ...state.draw, voteCount: action.payload.voteCount, totalVoters: action.payload.totalVoters } };
+    case 'DRAW_MARK_VOTED':
+      return { ...state, draw: { ...state.draw, hasVoted: true, votedForPlayerId: action.payload.votedForPlayerId } };
+    case 'DRAW_SET_RESULTS':
+      return {
+        ...state,
+        draw: {
+          ...state.draw,
+          phase: 'results',
+          results: action.payload.results,
+          scores: action.payload.scores,
+          roundScores: action.payload.roundScores,
+          leaderboard: action.payload.leaderboard,
+          wordResult: action.payload.word,
+        },
+      };
+    case 'DRAW_SET_END':
+      return {
+        ...state,
+        phase: 'drawEnd',
+        draw: { ...state.draw, phase: 'end', leaderboard: action.payload.leaderboard },
+      };
+    case 'DRAW_RESTARTED':
+      return {
+        ...state,
+        phase: 'lobby',
+        players: action.payload.players || state.players,
+        draw: { ...initialState.draw },
       };
     // ────────────────────────────────────────────────────────────────────────
     default:

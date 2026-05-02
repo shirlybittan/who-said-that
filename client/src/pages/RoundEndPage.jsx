@@ -2,6 +2,7 @@ import React from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { translations } from '../locales/translations';
+import { motion } from 'framer-motion';
 
 export default function RoundEndPage() {
   const { state } = useGame();
@@ -12,7 +13,10 @@ export default function RoundEndPage() {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 text-center">
+    <motion.div
+      className="flex flex-col items-center justify-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 text-center"
+      initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}
+    >
       <h1 className="text-4xl font-['Fredoka_One'] text-[#FF6B6B] mb-8">{t.title.replace('{round}', state.currentRound)}</h1>
 
       <div className="w-full max-w-md bg-[#1A1A2E] p-6 rounded-2xl border border-[#2D2D44] shadow-xl mb-8 text-left space-y-4 max-h-96 overflow-y-auto scrollbar-thin">
@@ -67,6 +71,6 @@ export default function RoundEndPage() {
       ) : (
         <p className="text-gray-400 font-['Nunito'] mt-2">{t.waitingHost}</p>
       )}
-    </div>
+    </motion.div>
   );
 }

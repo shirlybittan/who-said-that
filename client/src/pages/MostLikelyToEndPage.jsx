@@ -1,11 +1,14 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useGame } from '../store/gameStore.jsx';
 import { translations } from '../locales/translations';
 import { socket } from '../socket';
 import Confetti from 'react-confetti';
+import { motion } from 'framer-motion';
 
 export default function MostLikelyToEndPage() {
   const { state } = useGame();
+  const navigate = useNavigate();
   const t = translations[state.lang].mlt;
   const { mlt } = state;
 
@@ -39,7 +42,10 @@ export default function MostLikelyToEndPage() {
   const podiumPositions = [1, 0, 2]; // indices in top3 for left/center/right
 
   return (
-    <div className="flex flex-col items-center justify-start min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 pb-24">
+    <motion.div
+      className="flex flex-col items-center justify-start min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 pb-24"
+      initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, ease: 'easeOut' }}
+    >
       <Confetti width={windowDimension.width} height={windowDimension.height} />
 
       <h1 className="text-5xl font-['Fredoka_One'] text-[#FFE66D] mb-2 mt-4 animate-bounce">
@@ -128,15 +134,17 @@ export default function MostLikelyToEndPage() {
       {state.isHost ? (
         <button
           onClick={handlePlayAgain}
-          className="w-full max-w-md bg-[#FFE66D] hover:bg-[#ffdd33] text-black font-bold py-4 px-6 rounded-xl transition transform active:scale-95 text-xl font-['Fredoka_One'] shadow-[0_0_15px_rgba(255,230,109,0.3)] uppercase tracking-wider"
+          className="w-full max-w-md bg-[#FFE66D] hover:bg-[#ffdd33] text-black font-bold py-4 px-6 rounded-xl transition transform active:scale-95 text-xl font-['Fredoka_One'] shadow-[0_0_15px_rgba(255,230,109,0.3)] uppercase tracking-wider mb-3"
         >
           {t.playAgain}
         </button>
-      ) : (
-        <p className="text-gray-500 font-['Nunito'] text-sm">
-          Waiting for host to start a new game...
-        </p>
-      )}
-    </div>
+      ) : null}
+      <button
+        onClick={() => navigate('/')}
+        className="w-full max-w-md border border-[#2D2D44] text-gray-400 font-bold py-3 px-6 rounded-xl transition transform active:scale-95 text-base font-['Fredoka_One'] hover:border-gray-500 hover:text-gray-300"
+      >
+        🏠 Main Menu
+      </button>
+    </motion.div>
   );
 }

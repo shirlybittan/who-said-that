@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { translations } from '../locales/translations';
+import { motion } from 'framer-motion';
 
 export default function ThisOrThatPage() {
   const { state, dispatch } = useGame();
@@ -39,7 +40,7 @@ export default function ThisOrThatPage() {
   const myPlayerObj = players.find(p => p.id === playerId);
 
   return (
-    <div className="flex flex-col items-center justify-start min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 pb-32">
+    <motion.div className="flex flex-col items-center justify-start min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 pb-32" initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}>
       {/* Round header */}
       <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest mb-1">
         {t.round} {tot.round} {t.of} {tot.totalRounds}
@@ -213,7 +214,7 @@ export default function ThisOrThatPage() {
           <p className="text-[#6C5CE7] font-['Fredoka_One'] text-lg animate-pulse">{t.waitingHost}</p>
         </div>
       )}
-    </div>
+    </motion.div>
   );
 }
 

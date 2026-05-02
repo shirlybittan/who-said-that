@@ -2,6 +2,7 @@ const familyQuestions = require('../questions/family');
 const friendsQuestions = require('../questions/friends');
 const situationalQuestions = require('../questions/situational');
 const thisOrThatQuestions = require('../questions/thisOrThat');
+const { words: drawingWords } = require('../questions/drawing');
 
 const shuffle = (arr) => {
   const a = [...arr];
@@ -28,21 +29,39 @@ const selectThisOrThatQuestions = (count) => {
   return shuffle(thisOrThatQuestions).slice(0, count).map((q, i) => ({ id: `tot-${i}`, text: q.text, a: q.a, b: q.b, type: 'this-or-that' }));
 };
 
-// Build a mixed question list of the given total length, randomly drawn from all three types
-const selectMixedQuestions = (count, mode, customQuestions = []) => {
-  const wstPool = shuffle(mode === 'family' ? familyQuestions : friendsQuestions).slice(0, count).map(q => ({ ...q, type: 'wst' }));
-  const sitPool = shuffle(situationalQuestions).slice(0, count).map(text => ({ id: `sit-${Math.random()}`, text, type: 'situational' }));
-  const totPool = shuffle(thisOrThatQuestions).slice(0, count).map((q, i) => ({ id: `tot-${i}`, text: q.text, a: q.a, b: q.b, type: 'this-or-that' }));
+const selectDrawingQuestion = () => {
+  const word = shuffle([...drawingWords])[0];
+  return { id: `draw-${Math.random()}`, word, type: 'drawing' };
+};
 
-  // Interleave so no more than 2 of the same type in a row
-  const types = shuffle(['wst', 'situational', 'this-or-that', 'wst', 'situational', 'this-or-that', 'wst', 'situational', 'this-or-that', 'wst', 'situational', 'this-or-that', 'wst', 'situational', 'this-or-that', 'wst', 'situational', 'this-or-that', 'wst', 'situational']);
+// Build a mixed question list of the given total length, randomly drawn from all three types
+const selectMixedQuestions = (count, mode, customQuestions = [], selectedTypes = null) => {
+  const useWst = !selectedTypes || selectedTypes.includes('who-said-that');
+  const useSit = !selectedTypes || selectedTypes.includes('situational');
+  const useTot = !selectedTypes || selectedTypes.includes('this-or-that');
+  const useDraw = selectedTypes && selectedTypes.includes('drawing');
+
+  const wstPool = useWst ? shuffle(mode === 'family' ? familyQuestions : friendsQuestions).slice(0, count).map(q => ({ ...q, type: 'wst' })) : [];
+  const sitPool = useSit ? shuffle(situationalQuestions).slice(0, count).map(text => ({ id: `sit-${Math.random()}`, text, type: 'situational' })) : [];
+  const totPool = useTot ? shuffle(thisOrThatQuestions).slice(0, count).map((q, i) => ({ id: `tot-${i}`, text: q.text, a: q.a, b: q.b, type: 'this-or-that' })) : [];
+  const drawPool = useDraw ? shuffle(drawingWords).slice(0, count).map(word => ({ id: `draw-${Math.random()}`, word, type: 'drawing' })) : [];
+
+  // Build type slots based on active types — each type gets equal representation
+  const activeTypes = [
+    ...(useWst ? new Array(7).fill('wst') : []),
+    ...(useSit ? new Array(7).fill('situational') : []),
+    ...(useTot ? new Array(7).fill('this-or-that') : []),
+    ...(useDraw ? new Array(7).fill('drawing') : []),
+  ];
+  const types = shuffle(activeTypes);
   const picks = [];
-  const wstIdx = { i: 0 }; const sitIdx = { i: 0 }; const totIdx = { i: 0 };
+  const wstIdx = { i: 0 }; const sitIdx = { i: 0 }; const totIdx = { i: 0 }; const drawIdx = { i: 0 };
   for (const type of types) {
     if (picks.length >= count) break;
     if (type === 'wst' && wstIdx.i < wstPool.length) { picks.push(wstPool[wstIdx.i++]); }
     else if (type === 'situational' && sitIdx.i < sitPool.length) { picks.push(sitPool[sitIdx.i++]); }
     else if (type === 'this-or-that' && totIdx.i < totPool.length) { picks.push(totPool[totIdx.i++]); }
+    else if (type === 'drawing' && drawIdx.i < drawPool.length) { picks.push(drawPool[drawIdx.i++]); }
   }
   return picks.slice(0, count);
 };
@@ -97,6 +116,7 @@ module.exports = {
   selectQuestions,
   selectSituationalQuestions,
   selectThisOrThatQuestions,
+  selectDrawingQuestion,
   selectMixedQuestions,
   shuffleAnswers,
   calculateScores,

@@ -10,8 +10,9 @@ const {
   removePlayerBySocketId,
   setGameOptions,
 } = require('./game/roomManager');
-const { selectQuestions, selectSituationalQuestions, selectThisOrThatQuestions, selectMixedQuestions, shuffleAnswers } = require('./game/gameLogic');
+const { selectQuestions, selectSituationalQuestions, selectThisOrThatQuestions, selectDrawingQuestion, selectMixedQuestions, shuffleAnswers } = require('./game/gameLogic');
 const mltPromptBank = require('./questions/mostLikelyTo');
+const { words: drawWordBank, prompts: drawPrompts } = require('./questions/drawing');
 
 const app = express();
 app.use(cors());
@@ -26,6 +27,69 @@ const io = new Server(server, {
     methods: ['GET', 'POST'],
   },
 });
+
+// ─── Draw helpers ────────────────────────────────────────────────────────────
+
+const pickDrawWord = (players) => {
+  if (players && players.length > 0 && drawPrompts.length > 0 && Math.random() < 0.4) {
+    const prompt = drawPrompts[Math.floor(Math.random() * drawPrompts.length)];
+    const target = players[Math.floor(Math.random() * players.length)];
+    return prompt.replace('{name}', target.name);
+  }
+  return drawWordBank[Math.floor(Math.random() * drawWordBank.length)];
+};
+
+const startDrawTimer = (io, room, code, seconds) => {
+  if (room.draw.timerRef) { clearInterval(room.draw.timerRef); room.draw.timerRef = null; }
+  room.draw.secondsLeft = seconds;
+  room.draw.timerRef = setInterval(() => {
+    if (!room.draw || room.draw.phase !== 'drawing') {
+      clearInterval(room.draw.timerRef); room.draw.timerRef = null; return;
+    }
+    room.draw.secondsLeft = Math.max(0, room.draw.secondsLeft - 1);
+    io.to(code).emit('draw:timer', { secondsLeft: room.draw.secondsLeft });
+    if (room.draw.secondsLeft <= 0) {
+      clearInterval(room.draw.timerRef); room.draw.timerRef = null;
+      startDrawVoting(io, room, code);
+    }
+  }, 1000);
+};
+
+const startDrawVoting = (io, room, code) => {
+  if (!room.draw || room.draw.phase !== 'drawing') return;
+  room.draw.phase = 'voting';
+  const submissions = Object.entries(room.draw.submissions).map(([playerId, sub]) => {
+    const player = room.players.find(p => p.id === playerId);
+    return { playerId, name: player?.name || 'Unknown', color: player?.color || '#fff', strokes: sub.strokes };
+  });
+  // Shuffle so submission order doesn't reveal authorship
+  for (let i = submissions.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1)); [submissions[i], submissions[j]] = [submissions[j], submissions[i]];
+  }
+  io.to(code).emit('draw:voting_started', { submissions, round: room.draw.round, word: room.draw.word });
+};
+
+const resolveDrawVoting = (io, room, code) => {
+  if (!room.draw || room.draw.phase !== 'voting') return;
+  room.draw.phase = 'results';
+  const playingPlayers = room.players.filter(p => p.isPlaying);
+  // Tally votes
+  const voteCounts = {};
+  playingPlayers.forEach(p => { voteCounts[p.id] = 0; });
+  Object.values(room.draw.votes).forEach(votedFor => { if (voteCounts[votedFor] !== undefined) voteCounts[votedFor]++; });
+  // Add to running scores
+  Object.entries(voteCounts).forEach(([pid, v]) => { room.draw.scores[pid] = (room.draw.scores[pid] || 0) + v; });
+  const roundScores = { ...voteCounts };
+  // Build sorted results
+  const results = Object.entries(room.draw.submissions).map(([playerId, sub]) => {
+    const player = room.players.find(p => p.id === playerId);
+    return { playerId, name: player?.name || 'Unknown', color: player?.color || '#fff', strokes: sub.strokes, votes: voteCounts[playerId] || 0 };
+  }).sort((a, b) => b.votes - a.votes);
+  const leaderboard = playingPlayers
+    .map(p => ({ id: p.id, name: p.name, color: p.color, score: room.draw.scores[p.id] || 0 }))
+    .sort((a, b) => b.score - a.score);
+  io.to(code).emit('draw:results', { results, scores: room.draw.scores, roundScores, round: room.draw.round, totalRounds: room.draw.totalRounds, leaderboard, word: room.draw.word });
+};
 
 // ─── MLT helpers ─────────────────────────────────────────────────────────────
 
@@ -241,7 +305,34 @@ const emitNextQuestion = (io, room, code) => {
   // Let mid-round joiners participate from here on
   room.players.forEach(p => { p.joinedMidRound = false; });
 
-  if (q.type === 'this-or-that') {
+  if (q.type === 'drawing') {
+    room.phase = 'drawing';
+    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const drawScores = room.draw?.scores || {};
+    playingPlayers.forEach(p => { if (drawScores[p.id] === undefined) drawScores[p.id] = 0; });
+    room.draw = {
+      phase: 'drawing',
+      round: 1,
+      totalRounds: 1,
+      word: q.word || pickDrawWord(playingPlayers),
+      timeLimit: 90,
+      secondsLeft: 90,
+      submissions: {},
+      votes: {},
+      scores: drawScores,
+      timerRef: null,
+      mixedMode: true,
+    };
+    const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
+    io.to(code).emit('draw:round_start', {
+      word: room.draw.word,
+      round: room.currentRound,
+      totalRounds: room.totalRounds,
+      timeLimit: room.draw.timeLimit,
+      players,
+    });
+    startDrawTimer(io, room, code, room.draw.timeLimit);
+  } else if (q.type === 'this-or-that') {
     room.phase = 'tot';
     emitTotQuestion(io, room, code);
   } else {
@@ -383,6 +474,13 @@ io.on('connection', (socket) => {
   socket.on('join_room', ({ code, playerName, playerId }) => {
     try {
       const { room, player, isRejoin } = joinRoom(code, socket.id, playerName, playerId);
+      // Prevent cast/screen-mirror devices from counting as players
+      if (!isRejoin) {
+        const castNames = ['screen cast', 'chromecast', 'cast screen', 'google cast', 'firestick'];
+        if (castNames.some(cn => (playerName || '').toLowerCase().includes(cn))) {
+          player.isPlaying = false;
+        }
+      }
       socket.join(room.code);
       socket.emit('join_success', { room, playerId: player.id, isRejoin });
       socket.to(room.code).emit('player_joined', { players: room.players });
@@ -449,7 +547,9 @@ io.on('connection', (socket) => {
       room.tot.totalRounds = count;
       room.phase = 'tot';
     } else if (room.gameType === 'mixed') {
-      room.questions = selectMixedQuestions(count, room.mode, room.customQuestions);
+      room.questions = selectMixedQuestions(count, room.mode, room.customQuestions, room.selectedSubGames);
+      room.miniGameSelectedTypes = room.selectedSubGames || ['who-said-that', 'situational', 'this-or-that'];
+      room.miniGamePlayedTypes = [];
     } else {
       // who-said-that
       room.questions = selectQuestions(room.mode, count, room.customQuestions);
@@ -466,21 +566,116 @@ io.on('connection', (socket) => {
 
   socket.on('skip_question', ({ code }) => {
     const room = getRoom(code);
-    if (!room || room.phase !== 'question') return;
+    if (!room) return;
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isHost) return;
 
-    // Only applies to WST/Situational rounds
     const qType = room.questions[room.currentQuestionIndex]?.type || 'wst';
-    if (qType === 'wst' || qType === 'situational') {
-      const [replacement] = qType === 'situational'
-        ? selectSituationalQuestions(1)
-        : selectQuestions(room.mode, 1, room.customQuestions);
+
+    if (qType === 'this-or-that' && room.phase === 'tot') {
+      const [replacement] = selectThisOrThatQuestions(1);
+      room.questions[room.currentQuestionIndex] = replacement;
+      room.tot.votesA = {};
+      room.tot.votesB = {};
+      room.tot.roundState = 'voting';
+      room.phase = 'tot';
+      emitTotQuestion(io, room, code);
+    } else if (qType === 'situational' && (room.phase === 'question' || room.phase === 'sit-voting' || room.phase === 'sit-results')) {
+      const [replacement] = selectSituationalQuestions(1);
+      room.questions[room.currentQuestionIndex] = replacement;
+      room.answers = [];
+      room.sit.votes = {};
+      room.skipVotes = [];
+      room.phase = 'question';
+      emitWstQuestion(io, room, code);
+    } else if (qType === 'wst' && (room.phase === 'question' || room.phase === 'voting')) {
+      const [replacement] = selectQuestions(room.mode, 1, room.customQuestions);
       room.questions[room.currentQuestionIndex] = replacement;
       room.answers = [];
       room.skipVotes = [];
+      room.phase = 'question';
       emitWstQuestion(io, room, code);
     }
+  });
+
+  socket.on('skip_mini_game', ({ code }) => {
+    const room = getRoom(code);
+    if (!room) return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+
+    // Determine current mini-game type
+    const currentType = room.questions[room.currentQuestionIndex]?.type || (room.phase === 'drawing' ? 'drawing' : null);
+    if (!currentType) return;
+
+    // Mark current type as played in this cycle
+    if (!room.miniGamePlayedTypes) room.miniGamePlayedTypes = [];
+    if (!room.miniGamePlayedTypes.includes(currentType)) {
+      room.miniGamePlayedTypes.push(currentType);
+    }
+
+    // The full list of selected types for this mixed game
+    const allTypes = room.miniGameSelectedTypes || room.selectedSubGames || [];
+
+    // Find the next type: prefer unplayed types, then cycle through all types
+    const unplayed = allTypes.filter(t => !room.miniGamePlayedTypes.includes(t) && t !== currentType);
+    let nextType;
+    if (unplayed.length > 0) {
+      nextType = unplayed[Math.floor(Math.random() * unplayed.length)];
+    } else {
+      // All types played — reset cycle and pick any type different from current
+      room.miniGamePlayedTypes = [currentType];
+      const others = allTypes.filter(t => t !== currentType);
+      if (others.length === 0) {
+        // Only one game type, just skip to next question of same type
+        nextType = currentType;
+      } else {
+        nextType = others[Math.floor(Math.random() * others.length)];
+      }
+    }
+
+    // Normalize: 'who-said-that' → 'wst' for comparison
+    const normalizeType = (t) => t === 'who-said-that' ? 'wst' : t;
+    const targetType = normalizeType(nextType);
+
+    // Reset any in-progress state for the current mini-game
+    room.answers = [];
+    room.skipVotes = [];
+    room.sit = room.sit || {};
+    room.sit.votes = {};
+    room.tot = room.tot || {};
+    room.tot.votesA = {};
+    room.tot.votesB = {};
+    if (room.phase === 'drawing' && room.draw?.timerRef) {
+      clearInterval(room.draw.timerRef);
+      room.draw.timerRef = null;
+    }
+
+    // Find next question of targetType in the pre-built list
+    let nextIndex = room.currentQuestionIndex + 1;
+    while (nextIndex < room.questions.length && normalizeType(room.questions[nextIndex]?.type) !== targetType) {
+      nextIndex++;
+    }
+
+    if (nextIndex >= room.questions.length) {
+      // No remaining question of target type — generate one and append
+      let newQ;
+      if (targetType === 'situational') {
+        [newQ] = selectSituationalQuestions(1);
+      } else if (targetType === 'this-or-that') {
+        [newQ] = selectThisOrThatQuestions(1);
+      } else if (targetType === 'drawing') {
+        newQ = selectDrawingQuestion();
+      } else {
+        [newQ] = selectQuestions(room.mode, 1, room.customQuestions);
+      }
+      room.questions.push(newQ);
+      room.totalRounds = room.questions.length;
+    }
+
+    room.currentRound = nextIndex + 1;
+    room.currentQuestionIndex = nextIndex;
+    emitNextQuestion(io, room, code);
   });
 
   socket.on('vote_skip_question', ({ code }) => {
@@ -775,6 +970,62 @@ io.on('connection', (socket) => {
 
   // ──────────────────────────────────────────────────────────────────────────
 
+  // ─── Host screen spectator ──────────────────────────────────────────────────
+
+  socket.on('join_spectator', ({ code } = {}) => {
+    if (!code || typeof code !== 'string') { socket.emit('error', { message: 'Room code required' }); return; }
+    const room = getRoom(code.toUpperCase().slice(0, 8));
+    if (!room) { socket.emit('error', { message: 'Room not found' }); return; }
+
+    socket.join(room.code);
+
+    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+
+    socket.emit('spectator_joined', {
+      room: {
+        code: room.code,
+        gameName: room.gameName,
+        gameType: room.gameType,
+        phase: room.phase,
+        players: room.players,
+        scores: room.scores,
+        currentRound: room.currentRound,
+        totalRounds: room.totalRounds,
+        currentQuestion: room.currentQuestion,
+        answersCount: room.answers?.length || 0,
+        mlt: {
+          prompt: room.mlt.currentPrompt,
+          round: room.mlt.round,
+          totalRounds: room.mlt.totalRounds,
+          roundState: room.mlt.roundState,
+          voteCount: Object.keys(room.mlt.votes || {}).length,
+          totalVoters: playingPlayers.length,
+          scores: room.mlt.scores,
+          secondsLeft: room.mlt.secondsLeft,
+          paused: room.mlt.paused,
+        },
+        tot: {
+          question: room.tot.question?.text || '',
+          a: room.tot.a || '',
+          b: room.tot.b || '',
+          round: room.tot.round,
+          totalRounds: room.tot.totalRounds,
+          voteCount: Object.keys(room.tot.votesA || {}).length + Object.keys(room.tot.votesB || {}).length,
+          totalVoters: playingPlayers.length,
+          scores: room.tot.scores,
+        },
+        sit: {
+          question: room.currentQuestion || '',
+          answers: room.answers?.map(a => ({ id: a.playerId, text: a.text })) || [],
+          voteCount: Object.keys(room.sit.votes || {}).length,
+          totalVoters: playingPlayers.length,
+        },
+      },
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────────────────
+
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
     const room = getRoomBySocketId(socket.id);
@@ -808,9 +1059,14 @@ io.on('connection', (socket) => {
     const nonHostPlayers = connectedPlayers; // since p.isPlaying excludes non-playing hosts
     if (nonHostPlayers.length < 2) return; // need at least 2 votable players
 
-    const totalRounds = Math.min(Math.max(parseInt(rounds) || 5, 1), mltPromptBank.length);
+    const customMltPrompts = (room.customQuestions || []).map(q => q.text).filter(Boolean);
+    const promptPool = customMltPrompts.length > 0
+      ? [...customMltPrompts, ...mltPromptBank]
+      : [...mltPromptBank];
 
-    const shuffled = [...mltPromptBank];
+    const totalRounds = Math.min(Math.max(parseInt(rounds) || 5, 1), promptPool.length);
+
+    const shuffled = [...promptPool];
     for (let i = shuffled.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
@@ -833,7 +1089,7 @@ io.on('connection', (socket) => {
       jokersThisRound: {},
       round: 1,
       totalRounds,
-      allowSelfVote: !!allowSelfVote,
+      allowSelfVote: true,
       paused: false,
       secondsLeft: 30,
       timerRef: null,
@@ -985,8 +1241,6 @@ io.on('connection', (socket) => {
 
     // Keep config from previous game
     const prevTotalRounds = room.mlt.totalRounds;
-    const prevAllowSelfVote = room.mlt.allowSelfVote;
-
     // Reset room to lobby state
     room.phase = 'lobby';
     room.mlt = {
@@ -1001,7 +1255,7 @@ io.on('connection', (socket) => {
       jokersThisRound: {},
       round: 0,
       totalRounds: prevTotalRounds,
-      allowSelfVote: prevAllowSelfVote,
+      allowSelfVote: true,
       paused: false,
       secondsLeft: 30,
       timerRef: null,
@@ -1043,6 +1297,174 @@ io.on('connection', (socket) => {
     room.mlt.paused = false;
     io.to(code).emit('mlt:resumed', { secondsLeft: room.mlt.secondsLeft });
     startMltTimer(io, room, code, room.mlt.secondsLeft);
+  });
+
+  // ─── Drawing (Sketch It!) handlers ────────────────────────────────────────
+
+  socket.on('draw:start', ({ code, rounds }) => {
+    const room = getRoom(code);
+    if (!room) return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+
+    room.players.forEach(p => { p.joinedMidRound = false; });
+    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    if (playingPlayers.length < 2) return;
+
+    const totalRounds = Math.min(Math.max(parseInt(rounds) || room.totalRounds || 3, 1), 10);
+    const scores = {};
+    playingPlayers.forEach(p => { scores[p.id] = 0; });
+
+    room.phase = 'drawing';
+    room.draw = {
+      phase: 'drawing',
+      round: 1,
+      totalRounds,
+      word: pickDrawWord(playingPlayers),
+      timeLimit: 90,
+      secondsLeft: 90,
+      submissions: {},
+      votes: {},
+      scores,
+      timerRef: null,
+    };
+
+    const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
+    io.to(code).emit('draw:round_start', {
+      word: room.draw.word,
+      round: room.draw.round,
+      totalRounds: room.draw.totalRounds,
+      timeLimit: room.draw.timeLimit,
+      players,
+    });
+    startDrawTimer(io, room, code, room.draw.timeLimit);
+  });
+
+  socket.on('draw:submit', ({ code, strokes }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'drawing' || !room.draw || room.draw.phase !== 'drawing') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isPlaying) return;
+    if (room.draw.submissions[player.id]) return; // already submitted
+
+    // Sanitize: cap strokes, cap points, validate hex color, limit width
+    if (!Array.isArray(strokes)) return;
+    const sanitized = strokes.slice(0, 500).map(s => ({
+      color: /^#[0-9A-Fa-f]{3,6}$/.test(s.color) ? s.color : '#000000',
+      width: Math.min(Math.max(Number(s.width) || 4, 1), 40),
+      type: s.type === 'eraser' ? 'eraser' : 'pen',
+      points: Array.isArray(s.points) ? s.points.slice(0, 300).map(p => ({
+        x: Math.round(Number(p.x) || 0),
+        y: Math.round(Number(p.y) || 0),
+      })) : [],
+    }));
+
+    room.draw.submissions[player.id] = { strokes: sanitized, submittedAt: Date.now() };
+    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const submittedCount = Object.keys(room.draw.submissions).length;
+    const submittedPlayerIds = Object.keys(room.draw.submissions);
+    io.to(code).emit('draw:submission_received', { submittedCount, totalDrawers: playingPlayers.length, submittedPlayerIds });
+
+    if (submittedCount >= playingPlayers.length) {
+      if (room.draw.timerRef) { clearInterval(room.draw.timerRef); room.draw.timerRef = null; }
+      startDrawVoting(io, room, code);
+    }
+  });
+
+  socket.on('draw:skip_to_vote', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'drawing' || !room.draw || room.draw.phase !== 'drawing') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+    if (room.draw.timerRef) { clearInterval(room.draw.timerRef); room.draw.timerRef = null; }
+    startDrawVoting(io, room, code);
+  });
+
+  socket.on('draw:vote', ({ code, votedForPlayerId }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'drawing' || !room.draw || room.draw.phase !== 'voting') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isPlaying) return;
+    if (room.draw.votes[player.id]) return; // already voted
+    if (votedForPlayerId === player.id) return; // no self-vote
+    if (!room.draw.submissions[votedForPlayerId]) return; // must vote for a submission
+
+    room.draw.votes[player.id] = votedForPlayerId;
+    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const voteCount = Object.keys(room.draw.votes).length;
+    io.to(code).emit('draw:vote_received', { voteCount, totalVoters: playingPlayers.length });
+
+    if (voteCount >= playingPlayers.length) {
+      resolveDrawVoting(io, room, code);
+    }
+  });
+
+  socket.on('draw:show_results', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'drawing' || !room.draw || room.draw.phase !== 'voting') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+    resolveDrawVoting(io, room, code);
+  });
+
+  socket.on('draw:next_round', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'drawing' || !room.draw || room.draw.phase !== 'results') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+
+    if (room.draw.round >= room.draw.totalRounds) {
+      // In mixed mode, advance to the next question in the mixed game instead of ending
+      if (room.draw.mixedMode) {
+        room.currentQuestionIndex++;
+        room.currentRound++;
+        if (room.currentQuestionIndex >= room.questions.length) {
+          room.phase = 'gameEnd';
+          const { computeStats } = require('./game/gameLogic');
+          const finalStats = computeStats(room.players, [], room.scores);
+          io.to(code).emit('game_ended', { finalScores: room.scores, players: room.players, stats: finalStats });
+        } else {
+          emitNextQuestion(io, room, code);
+        }
+        return;
+      }
+
+      room.phase = 'drawEnd';
+      const leaderboard = room.players.filter(p => p.isPlaying)
+        .map(p => ({ id: p.id, name: p.name, color: p.color, score: room.draw.scores[p.id] || 0 }))
+        .sort((a, b) => b.score - a.score);
+      io.to(code).emit('draw:end', { leaderboard });
+      return;
+    }
+
+    room.draw.round++;
+    room.draw.phase = 'drawing';
+    room.draw.word = pickDrawWord(room.players.filter(p => p.isConnected && p.isPlaying));
+    room.draw.submissions = {};
+    room.draw.votes = {};
+    room.draw.secondsLeft = room.draw.timeLimit;
+
+    const players = room.players.filter(p => p.isConnected && p.isPlaying).map(p => ({ id: p.id, name: p.name, color: p.color }));
+    io.to(code).emit('draw:round_start', {
+      word: room.draw.word,
+      round: room.draw.round,
+      totalRounds: room.draw.totalRounds,
+      timeLimit: room.draw.timeLimit,
+      players,
+    });
+    startDrawTimer(io, room, code, room.draw.timeLimit);
+  });
+
+  socket.on('draw:restart', ({ code }) => {
+    const room = getRoom(code);
+    if (!room) return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+    if (room.draw?.timerRef) { clearInterval(room.draw.timerRef); room.draw.timerRef = null; }
+    room.phase = 'lobby';
+    room.draw = { phase: 'waiting', round: 0, totalRounds: room.draw?.totalRounds || 3, word: null, submissions: {}, votes: {}, scores: {}, timerRef: null, secondsLeft: 90 };
+    room.players.forEach(p => { p.isReady = false; });
+    io.to(code).emit('draw:restarted', { code, players: room.players });
   });
 
   // ──────────────────────────────────────────────────────────────────────────

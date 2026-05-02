@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { translations } from '../locales/translations';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const GAME_TYPES = [
   { id: 'who-said-that',  emoji: '🤔', key: 'gameWst',   color: '#FFE66D',  dark: '#0D0D1A' },
@@ -9,6 +10,7 @@ const GAME_TYPES = [
   { id: 'this-or-that',   emoji: '⚡', key: 'gameTot',   color: '#6C5CE7',  dark: '#F7F7F7' },
   { id: 'most-likely-to', emoji: '👑', key: 'gameMlt',   color: '#4ECDC4',  dark: '#0D0D1A' },
   { id: 'mixed',          emoji: '🎲', key: 'gameMixed', color: '#FF8B94',  dark: '#0D0D1A' },
+  { id: 'drawing',        emoji: '🎨', key: 'gameDraw',  color: '#C39BD3',  dark: '#0D0D1A' },
 ];
 
 export default function LobbyPage() {
@@ -22,9 +24,11 @@ export default function LobbyPage() {
   const tTot = translations[state.lang].tot;
   const tMixed = translations[state.lang].mixed;
   const tHome = translations[state.lang].home;
+  const tDraw = translations[state.lang].draw;
   const isMlt = state.gameType === 'most-likely-to';
   const isWstLike = ['who-said-that', 'situational', 'mixed'].includes(state.gameType);
   const isTot = state.gameType === 'this-or-that';
+  const isDraw = state.gameType === 'drawing';
 
   const activeType = GAME_TYPES.find(g => g.id === state.gameType) || GAME_TYPES[0];
 
@@ -34,8 +38,10 @@ export default function LobbyPage() {
       socket.emit('mlt:start', {
         code: state.roomCode,
         rounds: state.mlt.totalRounds,
-        allowSelfVote: state.mlt.allowSelfVote,
       });
+    } else if (isDraw) {
+      socket.emit('draw:start', { code: state.roomCode, rounds: state.totalRounds });
+      return;
     } else {
       if (state.gameType === 'who-said-that' && state.mode === 'custom' && (!state.customQuestions || state.customQuestions.length < state.totalRounds)) {
         return alert(t.needCustom.replace('{count}', state.totalRounds));
@@ -82,7 +88,7 @@ export default function LobbyPage() {
     <div className="flex flex-col items-center justify-start min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 pb-24">
       <h2 className="text-3xl font-['Fredoka_One'] text-[#FFE66D] mb-4">{t.title}</h2>
 
-      <div className="bg-[#1A1A2E] border-2 border-[#2D2D44] p-6 rounded-2xl shadow-xl w-full max-w-md text-center mb-8 relative">
+      <div className="bg-[#1A1A2E] border-2 border-[#2D2D44] p-6 rounded-2xl shadow-xl w-full max-w-md text-center mb-4 relative">
         <p className="text-gray-400 font-['Nunito'] text-sm uppercase tracking-widest mb-2">{t.roomCode}</p>
         <h1 className="text-6xl font-['Fredoka_One'] tracking-widest text-white">{state.roomCode}</h1>
       </div>
@@ -100,8 +106,17 @@ export default function LobbyPage() {
       <div className="bg-[#1A1A2E] rounded-2xl w-full max-w-md border border-[#2D2D44] p-4 mb-8 text-left h-full flex flex-col justify-between">
          <h3 className="text-xl font-bold mb-4 font-['Fredoka_One'] text-[#FF6B6B]">{t.players} ({state.players?.filter(p => p.isPlaying).length || 0})</h3>
          <div className="flex flex-wrap gap-3">
+          <AnimatePresence>
           {state.players?.filter(p => p.isPlaying).map((p, idx) => (
-             <div key={idx} className="flex items-center space-x-2 bg-black bg-opacity-30 rounded-full px-3 py-2 border border-gray-800">
+             <motion.div
+               key={p.id}
+               layout
+               initial={{ opacity: 0, scale: 0.7 }}
+               animate={{ opacity: 1, scale: 1 }}
+               exit={{ opacity: 0, scale: 0.7 }}
+               transition={{ type: 'spring', stiffness: 400, damping: 22 }}
+               className="flex items-center space-x-2 bg-black bg-opacity-30 rounded-full px-3 py-2 border border-gray-800"
+             >
                <div className="w-8 h-8 rounded-full flex items-center justify-center text-black font-bold border-2 border-white shadow-sm" style={{ backgroundColor: p.color }}>
                  {p.name.charAt(0).toUpperCase()}
                </div>
@@ -116,14 +131,22 @@ export default function LobbyPage() {
                    {t.kick}
                  </button>
                )}
-             </div>
+             </motion.div>
           ))}
+          </AnimatePresence>
          </div>
       </div>
 
-      {!isMlt && state.mode === 'custom' && (
+      {state.isHost && (
         <div className="bg-[#1A1A2E] rounded-2xl w-full max-w-md border border-[#2D2D44] p-4 mb-32 text-left">
-           <h3 className="text-lg font-bold mb-2 font-['Fredoka_One'] text-[#A8E6CF]">{t.customQuestions} ({state.customQuestions?.length || 0})</h3>
+           <h3 className="text-lg font-bold mb-2 font-['Fredoka_One'] text-[#A8E6CF]">
+             {isMlt ? '✨ Custom MLT Prompts' : t.customQuestions} ({state.customQuestions?.length || 0})
+           </h3>
+           {isMlt && (
+             <p className="text-xs text-gray-500 mb-3 font-['Nunito']">
+               Add your own "Who is most likely to..." prompts — they'll be used first.
+             </p>
+           )}
            <div className="max-h-32 overflow-y-auto mb-4 space-y-2 pr-2">       
              {state.customQuestions?.length > 0 ? state.customQuestions.map(q => (
                <p key={q.id} className="bg-[#0D0D1A] p-2 rounded-md text-sm border border-[#2D2D44] font-['Nunito'] text-gray-300">
@@ -158,8 +181,8 @@ export default function LobbyPage() {
       {state.isHost ? (
         <div className={`fixed bottom-0 w-full bg-[#1A1A2E] p-4 border-t-2 border-[${activeType.color}] flex flex-col items-center shadow-[0_-10px_30px_rgba(0,0,0,0.5)] z-50 gap-3`}>
 
-          {/* Game type picker — 5 buttons */}
-          <div className="grid grid-cols-5 w-full max-w-sm gap-1">
+          {/* Game type picker — 6 buttons */}
+          <div className="grid grid-cols-3 w-full max-w-sm gap-1">
             {GAME_TYPES.map(gt => {
               const isSelected = state.gameType === gt.id || (state.gameType === 'mixed' && state.selectedSubGames?.includes(gt.id));
               
@@ -184,11 +207,49 @@ export default function LobbyPage() {
                   title={gt.id}
                 >
                   <span className="text-lg leading-none">{gt.emoji}</span>
-                  <span className="mt-0.5 leading-tight text-center" style={{ fontSize: '0.6rem' }}>{gt.id === 'who-said-that' ? t.gameLabelShort : gt.id === 'most-likely-to' ? tMlt.gameLabelShort : gt.id === 'situational' ? tSit.gameLabelShort : gt.id === 'this-or-that' ? tTot.gameLabelShort : tMixed.gameLabelShort}</span>
+                  <span className="mt-0.5 leading-tight text-center" style={{ fontSize: '0.6rem' }}>{gt.id === 'who-said-that' ? t.gameLabelShort : gt.id === 'most-likely-to' ? tMlt.gameLabelShort : gt.id === 'situational' ? tSit.gameLabelShort : gt.id === 'this-or-that' ? tTot.gameLabelShort : gt.id === 'drawing' ? tDraw.gameLabelShort : tMixed.gameLabelShort}</span>
                 </button>
               );
             })}
           </div>
+
+          {/* Mixed mode: sub-game selector */}
+          {state.gameType === 'mixed' && (
+            <div className="w-full max-w-sm bg-[#0D0D1A] border border-[#FF8B94]/40 rounded-xl p-3">
+              <p className="text-xs font-['Nunito'] text-[#FF8B94] uppercase tracking-widest mb-2">Include in mix:</p>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { id: 'who-said-that', emoji: '🤔', label: t.gameLabelShort, color: '#FFE66D' },
+                  { id: 'situational',   emoji: '🎭', label: tSit.gameLabelShort, color: '#A8E6CF' },
+                  { id: 'this-or-that',  emoji: '⚡', label: tTot.gameLabelShort, color: '#6C5CE7' },
+                  { id: 'most-likely-to',emoji: '👑', label: tMlt.gameLabelShort, color: '#4ECDC4' },
+                  { id: 'drawing',       emoji: '🎨', label: tDraw.gameLabelShort, color: '#C39BD3' },
+                ].map(sg => {
+                  const included = (state.selectedSubGames || []).includes(sg.id);
+                  const toggle = () => {
+                    const cur = state.selectedSubGames || [];
+                    const updated = included ? cur.filter(id => id !== sg.id) : [...cur, sg.id];
+                    if (updated.length === 0) return; // need at least one
+                    handleOptionsChange('gameType', updated);
+                  };
+                  return (
+                    <button
+                      key={sg.id}
+                      onClick={toggle}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-['Fredoka_One'] border-2 transition"
+                      style={included
+                        ? { backgroundColor: sg.color + '33', borderColor: sg.color, color: sg.color }
+                        : { backgroundColor: 'transparent', borderColor: '#2D2D44', color: '#555' }}
+                    >
+                      <span>{sg.emoji}</span>
+                      <span>{sg.label}</span>
+                      {included ? <span>✓</span> : <span style={{ opacity: 0.4 }}>✗</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* WST / Situational / Mixed options */}
           {isWstLike && (
@@ -227,6 +288,21 @@ export default function LobbyPage() {
                 <option value={5}>5 {t.rounds}</option>
                 <option value={7}>7 {t.rounds}</option>
                 <option value={10}>10 {t.rounds}</option>
+              </select>
+            </div>
+          )}
+
+          {/* Drawing rounds */}
+          {isDraw && (
+            <div className="flex w-full max-w-sm">
+              <select
+                value={state.totalRounds}
+                onChange={(e) => handleOptionsChange('rounds', parseInt(e.target.value))}
+                className="bg-[#0D0D1A] text-white p-2 rounded-lg border border-[#2D2D44] font-['Nunito'] w-full"
+              >
+                {[3, 4, 5, 6].map(n => (
+                  <option key={n} value={n}>{n} {tDraw.rounds}</option>
+                ))}
               </select>
             </div>
           )}
