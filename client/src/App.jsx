@@ -1,7 +1,8 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import { GameProvider, useGame } from './store/gameStore.jsx';
+import { soundManager } from './sounds/SoundManager';
 import HomePage from './pages/HomePage';
 import LobbyPage from './pages/LobbyPage';
 import QuestionPage from './pages/QuestionPage.jsx';
@@ -16,6 +17,12 @@ import ThisOrThatEndPage from './pages/ThisOrThatEndPage.jsx';
 import SituationalVotingPage from './pages/SituationalVotingPage.jsx';
 import DrawingPage from './pages/DrawingPage.jsx';
 import DrawingEndPage from './pages/DrawingEndPage.jsx';
+import FillBlankPage from './pages/FillBlankPage.jsx';
+import FillBlankEndPage from './pages/FillBlankEndPage.jsx';
+import SelfiePhotoPage from './pages/SelfiePhotoPage.jsx';
+import SelfieDrawPage from './pages/SelfieDrawPage.jsx';
+import SelfieVotePage from './pages/SelfieVotePage.jsx';
+import SelfieResultsPage from './pages/SelfieResultsPage.jsx';
 import HostPage from './pages/HostPage.jsx';
 import { useSocket } from './hooks/useSocket';
 
@@ -43,6 +50,12 @@ const AnimatedRoutes = () => {
         <Route path="/sit-vote" element={<SituationalVotingPage />} />
         <Route path="/draw" element={<DrawingPage />} />
         <Route path="/draw-end" element={<DrawingEndPage />} />
+        <Route path="/fitb" element={<FillBlankPage />} />
+        <Route path="/fitb-end" element={<FillBlankEndPage />} />
+        <Route path="/selfie-photo" element={<SelfiePhotoPage />} />
+        <Route path="/selfie-draw" element={<SelfieDrawPage />} />
+        <Route path="/selfie-vote" element={<SelfieVotePage />} />
+        <Route path="/selfie-results" element={<SelfieResultsPage />} />
       </Routes>
     </AnimatePresence>
   );
@@ -56,6 +69,25 @@ const RoomCodeBadge = () => {
       <p className="text-[10px] font-['Nunito'] text-gray-500 uppercase tracking-widest leading-none mb-0.5">Room</p>
       <p className="text-lg font-['Fredoka_One'] text-[#FFE66D] tracking-widest leading-tight">{state.roomCode}</p>
     </div>
+  );
+};
+
+const SoundToggle = () => {
+  const [muted, setMuted] = useState(() => soundManager.muted);
+  const handleToggle = () => {
+    const nowMuted = soundManager.toggleMute();
+    setMuted(nowMuted);
+    if (!nowMuted) soundManager.playClick();
+  };
+  return (
+    <button
+      onClick={handleToggle}
+      title={muted ? 'Unmute sounds' : 'Mute sounds'}
+      className="absolute top-4 right-20 bg-[#2D2D44] text-white px-3 py-1 rounded-full text-sm font-bold z-50 border border-gray-600 hover:bg-[#4ECDC4] hover:text-black transition"
+      aria-label={muted ? 'Unmute sounds' : 'Mute sounds'}
+    >
+      {muted ? '🔇' : '🔊'}
+    </button>
   );
 };
 
@@ -92,6 +124,7 @@ function App() {
           <GameProvider>
             <SocketHandler>
               <div className="font-['Nunito'] min-h-screen bg-[#0D0D1A] text-[#F7F7F7] relative">
+                <SoundToggle />
                 <LangSwitcher />
                 <RoomCodeBadge />
                 <AnimatedRoutes />

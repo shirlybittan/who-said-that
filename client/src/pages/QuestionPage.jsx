@@ -3,6 +3,7 @@ import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { translations } from '../locales/translations';
 import { motion } from 'framer-motion';
+import { useSounds } from '../hooks/useSounds';
 
 export default function QuestionPage() {
   const { state, dispatch } = useGame();
@@ -11,6 +12,7 @@ export default function QuestionPage() {
   const [answer, setAnswer] = useState('');
   const [timeLeft, setTimeLeft] = useState(60);
   const [hasVotedSkip, setHasVotedSkip] = useState(false);
+  const sounds = useSounds();
 
   const isSituational = state.currentRoundType === 'situational';
   const target = state.situationalTarget;
@@ -18,6 +20,8 @@ export default function QuestionPage() {
   useEffect(() => {
     setTimeLeft(60);
     setHasVotedSkip(false);
+    sounds.reveal();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.currentQuestion]);
 
   useEffect(() => {
@@ -31,24 +35,33 @@ export default function QuestionPage() {
       }
       return;
     }
-    const timer = setInterval(() => setTimeLeft(prev => prev - 1), 1000);
+    const timer = setInterval(() => {
+      setTimeLeft(prev => {
+        const next = prev - 1;
+        if (next > 0 && next <= 5) sounds.tickUrgent();
+        else if (next > 0 && next <= 15) sounds.tick();
+        return next;
+      });
+    }, 1000);
     return () => clearInterval(timer);
-  }, [timeLeft, state.hasAnswered, state.roomCode, dispatch]);
+  }, [timeLeft, state.hasAnswered, state.roomCode, dispatch, sounds]);
 
   const submitAnswer = (e) => {
     e.preventDefault();
     if (!answer.trim()) return;
-
+    sounds.success();
     socket.emit('submit_answer', { code: state.roomCode, text: answer.trim() });
     dispatch({ type: 'MARK_ANSWERED', payload: { myAnswer: answer.trim() } });
   };
 
   const handleSkip = () => {
+    sounds.click();
     socket.emit('skip_question', { code: state.roomCode });
   };
 
   const handleVoteSkip = () => {
     if (hasVotedSkip) return;
+    sounds.click();
     socket.emit('vote_skip_question', { code: state.roomCode });
     setHasVotedSkip(true);
   };

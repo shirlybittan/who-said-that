@@ -3,6 +3,7 @@ import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { translations } from '../locales/translations';
 import { motion } from 'framer-motion';
+import { useSounds } from '../hooks/useSounds';
 
 const VoteCoin = ({ coinIndex, cardIndex, isJoker = false }) => (
   <motion.div
@@ -36,16 +37,19 @@ export default function MostLikelyToResultsPage() {
   const { state } = useGame();
   const t = translations[state.lang].mlt;
   const { mlt, isHost, roomCode } = state;
+  const sounds = useSounds();
 
   const [phase, setPhase] = useState(0); // 0=hidden, 1=bars grow, 2=winner highlight
 
   useEffect(() => {
-    const t1 = setTimeout(() => setPhase(1), 500);
+    const t1 = setTimeout(() => { setPhase(1); sounds.roundEnd(); }, 500);
     const t2 = setTimeout(() => setPhase(2), 950);
     return () => { clearTimeout(t1); clearTimeout(t2); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleNextRound = () => {
+    sounds.click();
     socket.emit('mlt:next_round', { code: roomCode });
   };
 

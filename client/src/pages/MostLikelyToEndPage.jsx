@@ -5,18 +5,22 @@ import { translations } from '../locales/translations';
 import { socket } from '../socket';
 import Confetti from 'react-confetti';
 import { motion } from 'framer-motion';
+import { useSounds } from '../hooks/useSounds';
 
 export default function MostLikelyToEndPage() {
   const { state } = useGame();
   const navigate = useNavigate();
   const t = translations[state.lang].mlt;
   const { mlt } = state;
+  const sounds = useSounds();
 
   const [windowDimension, setWindowDimension] = useState({
     width: window.innerWidth,
     height: window.innerHeight,
   });
   const [podiumVisible, setPodiumVisible] = useState(false);
+
+  useEffect(() => { sounds.gameEnd(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const handleResize = () =>

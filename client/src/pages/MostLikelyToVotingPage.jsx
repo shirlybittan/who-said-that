@@ -3,6 +3,7 @@ import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { translations } from '../locales/translations';
 import { motion } from 'framer-motion';
+import { useSounds } from '../hooks/useSounds';
 
 const TimerRing = ({ secondsLeft, total = 30, paused }) => {
   const radius = 40;
@@ -38,26 +39,31 @@ export default function MostLikelyToVotingPage() {
   const { state, dispatch } = useGame();
   const t = translations[state.lang].mlt;
   const { mlt, isHost, roomCode, playerId, isPlaying } = state;
+  const sounds = useSounds();
 
   const [pendingVote, setPendingVote] = useState(null); // { id, name, color }
 
   const handleSelectPlayer = (player) => {
     if (mlt.hasVoted) return;
+    sounds.click();
     setPendingVote(player);
   };
 
   const handleConfirmVote = () => {
     if (!pendingVote || mlt.hasVoted) return;
+    sounds.vote();
     socket.emit('mlt:vote', { code: roomCode, targetPlayerId: pendingVote.id });
     dispatch({ type: 'MLT_MARK_VOTED', payload: { votedPlayerId: pendingVote.id } });
     setPendingVote(null);
   };
 
   const handleCancelVote = () => {
+    sounds.click();
     setPendingVote(null);
   };
 
   const handleToggleJoker = () => {
+    sounds.joker();
     socket.emit('mlt:toggle_joker', { code: roomCode });
   };
 

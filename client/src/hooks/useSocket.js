@@ -322,6 +322,90 @@ export const useSocket = () => {
       dispatch({ type: 'DRAW_RESTARTED', payload: data });
       navigate('/lobby');
     };
+
+    const onDrawSecretWord = (data) => {
+      dispatch({ type: 'DRAW_SECRET_WORD', payload: data });
+    };
+
+    const onDrawWordChanged = (data) => {
+      dispatch({ type: 'DRAW_WORD_CHANGED', payload: data });
+    };
+
+    // ─── Fill-in-the-Blank handlers ──────────────────────────────────────────
+    const onFitbRoundStart = (data) => {
+      dispatch({ type: 'SET_ROOM', payload: { joinedMidRound: false } });
+      dispatch({ type: 'FITB_ROUND_START', payload: data });
+      navigate('/fitb');
+    };
+
+    const onFitbAnswerReceived = (data) => {
+      dispatch({ type: 'FITB_ANSWER_RECEIVED', payload: data });
+    };
+
+    const onFitbVotingStarted = (data) => {
+      dispatch({ type: 'FITB_VOTING_STARTED', payload: data });
+    };
+
+    const onFitbVoteReceived = (data) => {
+      dispatch({ type: 'FITB_VOTE_RECEIVED', payload: data });
+    };
+
+    const onFitbResults = (data) => {
+      dispatch({ type: 'FITB_RESULTS', payload: data });
+    };
+
+    const onFitbEnd = (data) => {
+      dispatch({ type: 'FITB_END', payload: data });
+      navigate('/fitb-end');
+    };
+
+    const onFitbRestarted = (data) => {
+      dispatch({ type: 'FITB_RESTARTED', payload: data });
+      navigate('/lobby');
+    };
+
+    // ─── Selfie Roast handlers ────────────────────────────────────────────────
+    const onSelfiePhotoPhase = (data) => {
+      dispatch({ type: 'SET_ROOM', payload: { joinedMidRound: false } });
+      dispatch({ type: 'SELFIE_PHOTO_PHASE', payload: data });
+      navigate('/selfie-photo');
+    };
+
+    const onSelfiePhotoReceived = (data) => {
+      dispatch({ type: 'SELFIE_PHOTO_RECEIVED', payload: data });
+    };
+
+    const onSelfieDrawAssigned = (data) => {
+      dispatch({ type: 'SELFIE_DRAW_ASSIGNED', payload: data });
+      navigate('/selfie-draw');
+    };
+
+    const onSelfieDrawingPhase = (data) => {
+      dispatch({ type: 'SELFIE_DRAWING_PHASE', payload: data });
+    };
+
+    const onSelfieDrawingReceived = (data) => {
+      dispatch({ type: 'SELFIE_DRAWING_RECEIVED', payload: data });
+    };
+
+    const onSelfieVotingStarted = (data) => {
+      dispatch({ type: 'SELFIE_VOTING_STARTED', payload: data });
+      navigate('/selfie-vote');
+    };
+
+    const onSelfieVoteReceived = (data) => {
+      dispatch({ type: 'SELFIE_VOTE_RECEIVED', payload: data });
+    };
+
+    const onSelfieResults = (data) => {
+      dispatch({ type: 'SELFIE_RESULTS', payload: data });
+      navigate('/selfie-results');
+    };
+
+    const onSelfieRestarted = (data) => {
+      dispatch({ type: 'SELFIE_RESTARTED', payload: data });
+      navigate('/lobby');
+    };
     // ────────────────────────────────────────────────────────────────────────
 
     socket.on('connect', onConnect);
@@ -368,6 +452,24 @@ export const useSocket = () => {
     socket.on('draw:results', onDrawResults);
     socket.on('draw:end', onDrawEnd);
     socket.on('draw:restarted', onDrawRestarted);
+    socket.on('draw:secret_word', onDrawSecretWord);
+    socket.on('draw:word_changed', onDrawWordChanged);
+    socket.on('fitb:round_start', onFitbRoundStart);
+    socket.on('fitb:answer_received', onFitbAnswerReceived);
+    socket.on('fitb:voting_started', onFitbVotingStarted);
+    socket.on('fitb:vote_received', onFitbVoteReceived);
+    socket.on('fitb:results', onFitbResults);
+    socket.on('fitb:end', onFitbEnd);
+    socket.on('fitb:restarted', onFitbRestarted);
+    socket.on('selfie:photo_phase', onSelfiePhotoPhase);
+    socket.on('selfie:photo_received', onSelfiePhotoReceived);
+    socket.on('selfie:draw_assigned', onSelfieDrawAssigned);
+    socket.on('selfie:drawing_phase', onSelfieDrawingPhase);
+    socket.on('selfie:drawing_received', onSelfieDrawingReceived);
+    socket.on('selfie:voting_started', onSelfieVotingStarted);
+    socket.on('selfie:vote_received', onSelfieVoteReceived);
+    socket.on('selfie:results', onSelfieResults);
+    socket.on('selfie:restarted', onSelfieRestarted);
 
     return () => {
       socket.off('connect', onConnect);
@@ -414,6 +516,24 @@ export const useSocket = () => {
       socket.off('draw:results', onDrawResults);
       socket.off('draw:end', onDrawEnd);
       socket.off('draw:restarted', onDrawRestarted);
+      socket.off('draw:secret_word', onDrawSecretWord);
+      socket.off('draw:word_changed', onDrawWordChanged);
+      socket.off('fitb:round_start', onFitbRoundStart);
+      socket.off('fitb:answer_received', onFitbAnswerReceived);
+      socket.off('fitb:voting_started', onFitbVotingStarted);
+      socket.off('fitb:vote_received', onFitbVoteReceived);
+      socket.off('fitb:results', onFitbResults);
+      socket.off('fitb:end', onFitbEnd);
+      socket.off('fitb:restarted', onFitbRestarted);
+      socket.off('selfie:photo_phase', onSelfiePhotoPhase);
+      socket.off('selfie:photo_received', onSelfiePhotoReceived);
+      socket.off('selfie:draw_assigned', onSelfieDrawAssigned);
+      socket.off('selfie:drawing_phase', onSelfieDrawingPhase);
+      socket.off('selfie:drawing_received', onSelfieDrawingReceived);
+      socket.off('selfie:voting_started', onSelfieVotingStarted);
+      socket.off('selfie:vote_received', onSelfieVoteReceived);
+      socket.off('selfie:results', onSelfieResults);
+      socket.off('selfie:restarted', onSelfieRestarted);
     };
   }, [dispatch, navigate, state.playerId]);
 };

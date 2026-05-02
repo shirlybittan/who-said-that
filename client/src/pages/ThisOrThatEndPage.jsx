@@ -4,11 +4,15 @@ import { socket } from '../socket';
 import { translations } from '../locales/translations';
 import Confetti from 'react-confetti';
 import { motion } from 'framer-motion';
+import { useSounds } from '../hooks/useSounds';
 
 export default function ThisOrThatEndPage() {
   const { state } = useGame();
   const t = translations[state.lang].tot;
   const { tot, roomCode } = state;
+  const sounds = useSounds();
+
+  useEffect(() => { sounds.gameEnd(); }, []);
 
   const leaderboard = tot.leaderboard || [];
 

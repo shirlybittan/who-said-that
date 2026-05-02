@@ -4,6 +4,7 @@ import { socket } from '../socket';
 import { useGame } from '../store/gameStore.jsx';
 import { translations } from '../locales/translations';
 import { motion } from 'framer-motion';
+import { useSounds } from '../hooks/useSounds';
 
 export default function HomePage() {
   const [searchParams] = useSearchParams();
@@ -17,8 +18,10 @@ export default function HomePage() {
   const { state, dispatch } = useGame();
   const t = translations[state.lang].home;
   const navigate = useNavigate();
+  const sounds = useSounds();
 
   const handleCreateRoom = () => {
+    sounds.click();
     localStorage.removeItem('wst_roomCode');
     localStorage.removeItem('wst_playerId');
 
@@ -35,6 +38,7 @@ export default function HomePage() {
   const handleJoinRoom = () => {
     if (!joinNickname.trim()) return alert('Please enter a nickname');
     if (!roomCode.trim() || roomCode.length !== 4) return alert('Enter a 4-letter room code');
+    sounds.click();
 
     const code = roomCode.toUpperCase();
 
@@ -78,6 +82,27 @@ export default function HomePage() {
       desc: t?.gameMltDesc || 'Who fits the prompt?',
       accent: '#4ECDC4',
       icon: '👑',
+    },
+    {
+      id: 'drawing',
+      label: t?.gameDraw || 'Sketch It!',
+      desc: t?.gameDrawDesc || 'Draw and vote for the best!',
+      accent: '#C39BD3',
+      icon: '🎨',
+    },
+    {
+      id: 'fill-in-the-blank',
+      label: t?.gameFitb || 'Fill in the Blank',
+      desc: t?.gameFitbDesc || 'Finish the sentence funnily!',
+      accent: '#F9CA24',
+      icon: '✏️',
+    },
+    {
+      id: 'selfie-roast',
+      label: t?.gameSelfie || 'Selfie Roast',
+      desc: t?.gameSelfieDesc || 'Take a selfie, get roasted!',
+      accent: '#FD79A8',
+      icon: '📸',
     },
     {
       id: 'mixed',

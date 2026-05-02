@@ -88,18 +88,61 @@ const initialState = {
     scorePlayers: [],
     winners: [],
   },
+  fitb: {
+    phase: 'waiting',      // 'waiting' | 'answering' | 'voting' | 'results'
+    round: 0,
+    totalRounds: 3,
+    question: null,
+    answers: [],           // [{id, text}] during voting; [{playerId, playerName, playerColor, text, votes}] in results
+    players: [],
+    hasAnswered: false,
+    hasVoted: false,
+    myAnswer: null,
+    myVote: null,
+    answeredCount: 0,
+    totalAnswerers: 0,
+    voteCount: 0,
+    totalVoters: 0,
+    scores: {},
+    leaderboard: [],
+  },
+  selfie: {
+    phase: 'waiting',      // 'waiting' | 'photo' | 'drawing' | 'voting' | 'results'
+    players: [],
+    photoCount: 0,
+    totalPhotographers: 0,
+    drawingCount: 0,
+    totalDrawers: 0,
+    hasSubmittedPhoto: false,
+    hasSubmittedDrawing: false,
+    hasVoted: false,
+    myVote: null,
+    assignedPhotoData: null,
+    assignedOwnerName: null,
+    assignedOwnerColor: null,
+    assignedOwnerPlayerId: null,
+    submissions: [],       // [{drawerId, drawerName, drawerColor, ownerName, photoData, strokes, votes?}]
+    voteCount: 0,
+    totalVoters: 0,
+    scores: {},
+    leaderboard: [],
+  },
   draw: {
     phase: 'waiting',      // 'waiting' | 'drawing' | 'voting' | 'results' | 'end'
+    mode: 'classic',       // 'classic' | 'secret'
     round: 0,
     totalRounds: 3,
     word: null,
+    yourWord: null,        // player's personal word (classic = same as word; secret = unique)
+    skipsUsed: 0,
+    maxSkips: 2,
     timeLimit: 90,
     secondsLeft: 90,
     players: [],
     submittedCount: 0,
     submittedPlayerIds: [],
-    submissions: [],       // [{playerId, name, color, strokes}]
-    results: [],           // [{playerId, name, color, strokes, votes}]
+    submissions: [],       // [{playerId, name, color, strokes, word}]
+    results: [],           // [{playerId, name, color, strokes, votes, word}]
     scores: {},
     roundScores: {},
     leaderboard: [],
@@ -372,6 +415,195 @@ export const gameReducer = (state, action) => {
           gameName: action.payload.gameName !== undefined ? action.payload.gameName : state.mlt.gameName,
         },
       };
+    // ─── Fill-in-the-Blank actions ───────────────────────────────────────────
+    case 'FITB_ROUND_START':
+      return {
+        ...state,
+        phase: 'fitb',
+        fitb: {
+          ...state.fitb,
+          phase: 'answering',
+          question: action.payload.question,
+          round: action.payload.round,
+          totalRounds: action.payload.totalRounds,
+          players: action.payload.players || state.fitb.players,
+          answers: [],
+          hasAnswered: false,
+          hasVoted: false,
+          myAnswer: null,
+          myVote: null,
+          answeredCount: 0,
+          totalAnswerers: (action.payload.players || state.fitb.players).length,
+          voteCount: 0,
+          totalVoters: 0,
+        },
+      };
+    case 'FITB_ANSWER_RECEIVED':
+      return {
+        ...state,
+        fitb: { ...state.fitb, answeredCount: action.payload.answeredCount, totalAnswerers: action.payload.totalPlayers },
+      };
+    case 'FITB_MARK_ANSWERED':
+      return {
+        ...state,
+        fitb: { ...state.fitb, hasAnswered: true, myAnswer: action.payload.myAnswer },
+      };
+    case 'FITB_VOTING_STARTED':
+      return {
+        ...state,
+        fitb: {
+          ...state.fitb,
+          phase: 'voting',
+          answers: action.payload.answers,
+          question: action.payload.question || state.fitb.question,
+          totalVoters: action.payload.totalVoters,
+          hasVoted: false,
+          myVote: null,
+          voteCount: 0,
+        },
+      };
+    case 'FITB_VOTE_RECEIVED':
+      return {
+        ...state,
+        fitb: { ...state.fitb, voteCount: action.payload.voteCount, totalVoters: action.payload.totalVoters },
+      };
+    case 'FITB_MARK_VOTED':
+      return {
+        ...state,
+        fitb: { ...state.fitb, hasVoted: true, myVote: action.payload.answerId },
+      };
+    case 'FITB_RESULTS':
+      return {
+        ...state,
+        fitb: {
+          ...state.fitb,
+          phase: 'results',
+          answers: action.payload.answers,
+          scores: action.payload.scores || {},
+          leaderboard: action.payload.leaderboard || [],
+          question: action.payload.question || state.fitb.question,
+        },
+      };
+    case 'FITB_END':
+      return {
+        ...state,
+        phase: 'fitbEnd',
+        fitb: { ...state.fitb, phase: 'end', leaderboard: action.payload.leaderboard },
+      };
+    case 'FITB_RESTARTED':
+      return {
+        ...state,
+        phase: 'lobby',
+        players: action.payload.players || state.players,
+        fitb: { ...initialState.fitb },
+      };
+    // ─── Selfie Roast actions ────────────────────────────────────────────────
+    case 'SELFIE_PHOTO_PHASE':
+      return {
+        ...state,
+        phase: 'selfie',
+        selfie: {
+          ...state.selfie,
+          phase: 'photo',
+          players: action.payload.players || [],
+          hasSubmittedPhoto: false,
+          photoCount: 0,
+          totalPhotographers: (action.payload.players || []).length,
+          hasSubmittedDrawing: false,
+          hasVoted: false,
+          myVote: null,
+          assignedPhotoData: null,
+          assignedOwnerName: null,
+          assignedOwnerColor: null,
+          assignedOwnerPlayerId: null,
+          submissions: [],
+        },
+      };
+    case 'SELFIE_PHOTO_RECEIVED':
+      return {
+        ...state,
+        selfie: { ...state.selfie, photoCount: action.payload.photoCount, totalPhotographers: action.payload.totalPlayers },
+      };
+    case 'SELFIE_MARK_PHOTO_SUBMITTED':
+      return {
+        ...state,
+        selfie: { ...state.selfie, hasSubmittedPhoto: true },
+      };
+    case 'SELFIE_DRAW_ASSIGNED':
+      return {
+        ...state,
+        selfie: {
+          ...state.selfie,
+          phase: 'drawing',
+          assignedPhotoData: action.payload.photoData,
+          assignedOwnerName: action.payload.ownerName,
+          assignedOwnerColor: action.payload.ownerColor,
+          assignedOwnerPlayerId: action.payload.ownerPlayerId,
+        },
+      };
+    case 'SELFIE_DRAWING_PHASE':
+      return {
+        ...state,
+        selfie: {
+          ...state.selfie,
+          phase: 'drawing',
+          drawingCount: 0,
+          totalDrawers: action.payload.totalDrawers || state.selfie.totalPhotographers,
+        },
+      };
+    case 'SELFIE_DRAWING_RECEIVED':
+      return {
+        ...state,
+        selfie: { ...state.selfie, drawingCount: action.payload.drawingCount, totalDrawers: action.payload.totalDrawers },
+      };
+    case 'SELFIE_MARK_DRAWING_SUBMITTED':
+      return {
+        ...state,
+        selfie: { ...state.selfie, hasSubmittedDrawing: true },
+      };
+    case 'SELFIE_VOTING_STARTED':
+      return {
+        ...state,
+        selfie: {
+          ...state.selfie,
+          phase: 'voting',
+          submissions: action.payload.submissions,
+          totalVoters: action.payload.totalVoters,
+          hasVoted: false,
+          myVote: null,
+          voteCount: 0,
+        },
+      };
+    case 'SELFIE_VOTE_RECEIVED':
+      return {
+        ...state,
+        selfie: { ...state.selfie, voteCount: action.payload.voteCount, totalVoters: action.payload.totalVoters },
+      };
+    case 'SELFIE_MARK_VOTED':
+      return {
+        ...state,
+        selfie: { ...state.selfie, hasVoted: true, myVote: action.payload.drawerId },
+      };
+    case 'SELFIE_RESULTS':
+      return {
+        ...state,
+        phase: 'selfieEnd',
+        selfie: {
+          ...state.selfie,
+          phase: 'results',
+          submissions: action.payload.submissions,
+          scores: action.payload.scores || {},
+          leaderboard: action.payload.leaderboard || [],
+        },
+      };
+    case 'SELFIE_RESTARTED':
+      return {
+        ...state,
+        phase: 'lobby',
+        players: action.payload.players || state.players,
+        selfie: { ...initialState.selfie },
+      };
+    // ────────────────────────────────────────────────────────────────────────
     // ─── Drawing (Sketch It!) actions ───────────────────────────────────────
     case 'DRAW_SET_ROUND':
       return {
@@ -380,9 +612,13 @@ export const gameReducer = (state, action) => {
         draw: {
           ...state.draw,
           phase: 'drawing',
+          mode: action.payload.mode || 'classic',
           round: action.payload.round,
           totalRounds: action.payload.totalRounds,
-          word: action.payload.word,
+          word: action.payload.word || null,
+          yourWord: action.payload.word || null,
+          skipsUsed: 0,
+          maxSkips: 2,
           timeLimit: action.payload.timeLimit,
           secondsLeft: action.payload.timeLimit,
           players: action.payload.players || state.draw.players,
@@ -396,6 +632,30 @@ export const gameReducer = (state, action) => {
           voteCount: 0,
           totalVoters: (action.payload.players || state.draw.players).length,
           wordResult: null,
+        },
+      };
+    case 'DRAW_SECRET_WORD':
+      return {
+        ...state,
+        draw: {
+          ...state.draw,
+          word: action.payload.word,
+          yourWord: action.payload.word,
+          // If skipped in secret mode, reset submission flag
+          hasSubmitted: action.payload.skipped ? false : state.draw.hasSubmitted,
+          skipsUsed: action.payload.skipped ? state.draw.skipsUsed + 1 : state.draw.skipsUsed,
+        },
+      };
+    case 'DRAW_WORD_CHANGED':
+      return {
+        ...state,
+        draw: {
+          ...state.draw,
+          word: action.payload.word,
+          yourWord: action.payload.word,
+          hasSubmitted: false,
+          skipsUsed: action.payload.skipsUsed || state.draw.skipsUsed + 1,
+          maxSkips: action.payload.maxSkips || state.draw.maxSkips,
         },
       };
     case 'DRAW_TIMER':
@@ -412,6 +672,8 @@ export const gameReducer = (state, action) => {
           phase: 'voting',
           submissions: action.payload.submissions,
           wordResult: action.payload.word,
+          mode: action.payload.mode || state.draw.mode,
+          totalVoters: action.payload.totalVoters || state.draw.players.length,
           votes: {},
           voteCount: 0,
         },
