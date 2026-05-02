@@ -94,6 +94,12 @@ export default function ThisOrThatEndPage() {
       >
         {t.playAgain}
       </button>
+      <button
+        onClick={() => { window.location.href = '/'; }}
+        className="w-full max-w-sm mt-3 border border-[#2D2D44] text-gray-400 font-bold py-3 px-6 rounded-xl transition transform active:scale-95 text-base font-['Fredoka_One'] hover:border-gray-500 hover:text-gray-300"
+      >
+        🏠 Main Menu
+      </button>
     </motion.div>
   );
 }

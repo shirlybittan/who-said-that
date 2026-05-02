@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import { QRCodeSVG } from 'qrcode.react';
+import { motion, AnimatePresence } from 'framer-motion';
+import Confetti from 'react-confetti';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
 
@@ -25,8 +27,14 @@ const TimerRing = ({ secondsLeft, total = 30, paused, size = 100 }) => {
   const progress = Math.max(0, secondsLeft / total);
   const offset = circumference * (1 - progress);
   const color = paused ? '#6C5CE7' : secondsLeft <= 8 ? '#FF6B6B' : secondsLeft <= 15 ? '#FFE66D' : '#4ECDC4';
+  const isUrgent = !paused && secondsLeft <= 8 && secondsLeft > 0;
   return (
-    <svg style={{ width: size, height: size }} viewBox="0 0 100 100">
+    <motion.svg
+      style={{ width: size, height: size }}
+      viewBox="0 0 100 100"
+      animate={isUrgent ? { scale: [1, 1.07, 1] } : { scale: 1 }}
+      transition={isUrgent ? { duration: 0.5, repeat: Infinity, ease: 'easeInOut' } : {}}
+    >
       <circle cx="50" cy="50" r={radius} fill="none" stroke="#2D2D44" strokeWidth="8" />
       <circle
         cx="50" cy="50" r={radius} fill="none" stroke={color} strokeWidth="8"
@@ -37,7 +45,7 @@ const TimerRing = ({ secondsLeft, total = 30, paused, size = 100 }) => {
       <text x="50" y="57" textAnchor="middle" fill="white" fontSize="26" fontWeight="bold" fontFamily="Nunito">
         {paused ? '⏸' : secondsLeft}
       </text>
-    </svg>
+    </motion.svg>
   );
 };
 
@@ -48,16 +56,21 @@ const PlayerAvatar = ({ player, size = 'md', status, subtitle }) => {
     waiting: 'after:bg-gray-500',
     answered: 'after:bg-[#4ECDC4]',
   }[status || 'waiting'];
+  const floatDelay = useRef(Math.random() * 2).current;
 
   return (
-    <div className="flex flex-col items-center gap-1">
+    <motion.div
+      className="flex flex-col items-center gap-1"
+      animate={{ y: [0, -5, 0] }}
+      transition={{ duration: 2.8 + floatDelay * 0.4, repeat: Infinity, ease: 'easeInOut', delay: floatDelay }}
+    >
       <div className={`relative ${sizes[size]} rounded-full flex items-center justify-center font-bold text-black flex-shrink-0 border-2 border-white/20 ${status ? 'after:absolute after:bottom-0 after:right-0 after:w-3 after:h-3 after:rounded-full after:border-2 after:border-[#0D0D1A] ' + statusDot : ''}`}
         style={{ backgroundColor: player.color || COLORS[0] }}>
         {player.name?.charAt(0).toUpperCase()}
       </div>
       <span className="text-xs font-['Nunito'] text-gray-300 text-center leading-tight max-w-[60px] truncate">{player.name}</span>
       {subtitle && <span className="text-xs font-['Fredoka_One'] text-[#FFE66D]">{subtitle}</span>}
-    </div>
+    </motion.div>
   );
 };
 
@@ -81,17 +94,54 @@ const ProgressBar = ({ value, total, color = '#4ECDC4', label, sublabel }) => {
   );
 };
 
+const VoteCoin = ({ coinIndex, cardIndex, isJoker = false }) => (
+  <motion.div
+    className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold select-none flex-shrink-0"
+    style={isJoker ? {
+      background: 'radial-gradient(circle at 35% 35%, #e879f9, #7c3aed)',
+      border: '2px solid #d946ef',
+      boxShadow: '0 0 12px rgba(217,70,239,0.6)',
+      color: '#fff',
+    } : {
+      background: 'radial-gradient(circle at 35% 35%, #fef08a, #ca8a04)',
+      border: '2px solid #facc15',
+      boxShadow: '0 3px 8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.25)',
+      color: '#713f12',
+    }}
+    initial={{ y: -80, opacity: 0, scale: 0.3, rotate: -40 }}
+    animate={{ y: 0, opacity: 1, scale: 1, rotate: 0 }}
+    transition={{
+      delay: 0.5 + cardIndex * 0.3 + coinIndex * 0.1,
+      type: 'spring',
+      stiffness: 460,
+      damping: 14,
+      mass: 0.6,
+    }}
+  >
+    {isJoker ? '🃏' : '★'}
+  </motion.div>
+);
+
 const ScoreList = ({ players, scores, prevScores }) => {
   const sorted = [...players].sort((a, b) => (scores[b.id] || 0) - (scores[a.id] || 0));
   const maxScore = Math.max(...sorted.map(p => scores[p.id] || 0), 1);
   return (
-    <div className="flex flex-col gap-2 w-full">
+    <motion.div
+      className="flex flex-col gap-2 w-full"
+      initial="hidden"
+      animate="show"
+      variants={{ hidden: {}, show: { transition: { staggerChildren: 0.08 } } }}
+    >
       {sorted.map((p, i) => {
         const score = scores[p.id] || 0;
         const prev = prevScores?.[p.id] || 0;
         const delta = score - prev;
         return (
-          <div key={p.id} className="flex items-center gap-3">
+          <motion.div
+            key={p.id}
+            className="flex items-center gap-3"
+            variants={{ hidden: { opacity: 0, x: -20 }, show: { opacity: 1, x: 0, transition: { type: 'spring', stiffness: 300, damping: 20 } } }}
+          >
             <span className="text-sm font-['Fredoka_One'] text-gray-500 w-4">{i + 1}</span>
             <div className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm text-black flex-shrink-0"
               style={{ backgroundColor: p.color }}>
@@ -101,19 +151,31 @@ const ScoreList = ({ players, scores, prevScores }) => {
               <div className="flex justify-between items-center mb-0.5">
                 <span className="text-sm font-['Nunito'] text-white truncate">{p.name}</span>
                 <div className="flex items-center gap-2">
-                  {delta > 0 && <span className="text-xs font-['Fredoka_One'] text-[#4ECDC4]">+{delta}</span>}
+                  {delta > 0 && (
+                    <motion.span
+                      className="text-xs font-['Fredoka_One'] text-[#4ECDC4]"
+                      initial={{ scale: 0, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      transition={{ type: 'spring', stiffness: 500, damping: 15, delay: 0.3 + i * 0.08 }}
+                    >+{delta}</motion.span>
+                  )}
                   <span className="text-base font-['Fredoka_One'] text-[#FFE66D]">{score}</span>
                 </div>
               </div>
-              <div className="w-full bg-[#2D2D44] rounded-full h-1.5">
-                <div className="h-1.5 rounded-full transition-all duration-700"
-                  style={{ width: `${(score / maxScore) * 100}%`, backgroundColor: p.color }} />
+              <div className="w-full bg-[#2D2D44] rounded-full h-1.5 overflow-hidden">
+                <motion.div
+                  className="h-1.5 rounded-full"
+                  style={{ backgroundColor: p.color }}
+                  initial={{ width: '0%' }}
+                  animate={{ width: `${(score / maxScore) * 100}%` }}
+                  transition={{ duration: 0.8, ease: 'easeOut', delay: 0.15 + i * 0.08 }}
+                />
               </div>
             </div>
-          </div>
+          </motion.div>
         );
       })}
-    </div>
+    </motion.div>
   );
 };
 
@@ -249,47 +311,92 @@ function MltResultsPanel({ mlt, players }) {
   const maxCount = Math.max(...(mlt.results || []).map(r => r.count), 1);
   return (
     <div className="flex flex-col items-center gap-8 w-full max-w-4xl">
-      <div className="text-center">
+      <motion.div
+        className="text-center"
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: 'easeOut' }}
+      >
         <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest mb-2">Results · Round {mlt.round}/{mlt.totalRounds}</p>
         <h2 className="text-2xl font-['Fredoka_One'] text-[#FFE66D] leading-snug">"{prompt}"</h2>
-      </div>
+      </motion.div>
 
-      <div className="w-full flex flex-col gap-3">
-        {(mlt.results || []).map((r) => {
+      <motion.div
+        className="w-full flex flex-col gap-3"
+        initial="hidden"
+        animate="show"
+        variants={{ hidden: {}, show: { transition: { staggerChildren: 0.15 } } }}
+      >
+        {(mlt.results || []).map((r, cardIdx) => {
           const isMajority = (mlt.majorityIds || []).includes(r.playerId);
+          const coins = Math.min(r.count, 10);
           return (
-            <div key={r.playerId}
-              className="flex items-center gap-4 bg-[#1A1A2E] rounded-2xl px-5 py-3"
-              style={isMajority ? { border: '2px solid #4ECDC4', boxShadow: '0 0 20px #4ECDC430' } : { border: '1px solid #2D2D44' }}>
-              <div className="w-12 h-12 rounded-full flex items-center justify-center font-bold text-xl text-black flex-shrink-0"
-                style={{ backgroundColor: r.color }}>
-                {r.name?.charAt(0).toUpperCase()}
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="font-['Fredoka_One'] text-lg text-white flex items-center gap-2">
-                    {r.name}
-                    {isMajority && <span className="text-[#4ECDC4] text-sm">👑 Majority</span>}
-                  </span>
-                  <span className="font-['Fredoka_One'] text-xl text-[#FFE66D]">{r.pct}%</span>
+            <motion.div
+              key={r.playerId}
+              variants={{ hidden: { opacity: 0, x: -30, scale: 0.97 }, show: { opacity: 1, x: 0, scale: 1, transition: { type: 'spring', stiffness: 300, damping: 22 } } }}
+              className="bg-[#1A1A2E] rounded-2xl px-5 py-4"
+              style={isMajority ? { border: '2px solid #4ECDC4', boxShadow: '0 0 20px #4ECDC430' } : { border: '1px solid #2D2D44' }}
+            >
+              <div className="flex items-center gap-4">
+                <motion.div
+                  className="w-12 h-12 rounded-full flex items-center justify-center font-bold text-xl text-black flex-shrink-0"
+                  style={{ backgroundColor: r.color }}
+                  animate={isMajority ? { scale: [1, 1.08, 1] } : {}}
+                  transition={{ duration: 1.4, repeat: Infinity, ease: 'easeInOut' }}
+                >
+                  {r.name?.charAt(0).toUpperCase()}
+                </motion.div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-['Fredoka_One'] text-lg text-white flex items-center gap-2">
+                      {r.name}
+                      {isMajority && <span className="text-[#4ECDC4] text-sm">👑 Majority</span>}
+                    </span>
+                    <motion.span
+                      className="font-['Fredoka_One'] text-xl text-[#FFE66D]"
+                      initial={{ opacity: 0, scale: 0.5 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ type: 'spring', stiffness: 400, damping: 15, delay: 0.3 + cardIdx * 0.15 }}
+                    >{r.pct}%</motion.span>
+                  </div>
+                  <div className="w-full bg-[#2D2D44] rounded-full h-3 overflow-hidden">
+                    <motion.div
+                      className="h-3 rounded-full"
+                      style={{ backgroundColor: isMajority ? '#4ECDC4' : r.color }}
+                      initial={{ width: '0%' }}
+                      animate={{ width: `${maxCount > 0 ? (r.count / maxCount) * 100 : 0}%` }}
+                      transition={{ duration: 0.9, ease: 'easeOut', delay: 0.2 + cardIdx * 0.15 }}
+                    />
+                  </div>
+                  <p className="text-xs font-['Nunito'] text-gray-500 mt-1">{r.count} vote{r.count !== 1 ? 's' : ''}</p>
                 </div>
-                <div className="w-full bg-[#2D2D44] rounded-full h-3">
-                  <div className="h-3 rounded-full transition-all duration-700"
-                    style={{ width: `${maxCount > 0 ? (r.count / maxCount) * 100 : 0}%`, backgroundColor: isMajority ? '#4ECDC4' : r.color }} />
-                </div>
-                <p className="text-xs font-['Nunito'] text-gray-500 mt-1">{r.count} vote{r.count !== 1 ? 's' : ''}</p>
               </div>
-            </div>
+              {coins > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-3 pl-16">
+                  {Array.from({ length: coins }).map((_, ci) => (
+                    <VoteCoin key={ci} coinIndex={ci} cardIndex={cardIdx} isJoker={ci === 0 && (mlt.jokersUsed || []).includes(r.playerId)} />
+                  ))}
+                  {r.count > 10 && (
+                    <span className="text-xs font-['Fredoka_One'] text-gray-400 self-center ml-1">+{r.count - 10}</span>
+                  )}
+                </div>
+              )}
+            </motion.div>
           );
         })}
-      </div>
+      </motion.div>
 
       {/* Score summary */}
       {players.filter(p => p.isPlaying).length > 0 && (
-        <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
+        <motion.div
+          className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: 'easeOut', delay: 0.5 }}
+        >
           <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-4">Scores</p>
           <ScoreList players={players.filter(p => p.isPlaying)} scores={mlt.scores} prevScores={mlt.prevScores} />
-        </div>
+        </motion.div>
       )}
     </div>
   );
@@ -298,19 +405,39 @@ function MltResultsPanel({ mlt, players }) {
 function MltEndPanel({ mlt }) {
   return (
     <div className="flex flex-col items-center gap-8 w-full max-w-3xl">
-      <div className="text-center">
-        <p className="text-6xl mb-3">🎉</p>
+      <motion.div
+        className="text-center"
+        initial={{ opacity: 0, scale: 0.7 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 18 }}
+      >
+        <motion.p
+          className="text-6xl mb-3"
+          animate={{ rotate: [0, -10, 10, -10, 0], scale: [1, 1.2, 1] }}
+          transition={{ duration: 0.8, delay: 0.3 }}
+        >🎉</motion.p>
         <h1 className="text-5xl font-['Fredoka_One'] text-[#FFE66D]">Game Over!</h1>
         {mlt.gameName && <p className="text-xl font-['Nunito'] text-gray-400 mt-2">{mlt.gameName}</p>}
-      </div>
+      </motion.div>
 
-      <div className="w-full flex flex-col gap-3">
+      <motion.div
+        className="w-full flex flex-col gap-3"
+        initial="hidden"
+        animate="show"
+        variants={{ hidden: {}, show: { transition: { staggerChildren: 0.1, delayChildren: 0.35 } } }}
+      >
         {(mlt.leaderboard || []).map((entry, i) => (
-          <div key={entry.playerId}
+          <motion.div
+            key={entry.playerId}
+            variants={{
+              hidden: { opacity: 0, x: -25, scale: 0.97 },
+              show: { opacity: 1, x: 0, scale: 1, transition: { type: 'spring', stiffness: 350, damping: 22 } }
+            }}
             className="flex items-center gap-4 rounded-2xl px-5 py-4"
             style={i === 0
               ? { background: 'linear-gradient(135deg, #FFE66D20, #4ECDC420)', border: '2px solid #FFE66D', boxShadow: '0 0 30px #FFE66D30' }
-              : { background: '#1A1A2E', border: '1px solid #2D2D44' }}>
+              : { background: '#1A1A2E', border: '1px solid #2D2D44' }}
+          >
             <span className="text-2xl font-['Fredoka_One'] w-10 text-center" style={{ color: i === 0 ? '#FFE66D' : '#666' }}>
               {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}`}
             </span>
@@ -323,9 +450,9 @@ function MltEndPanel({ mlt }) {
               {entry.title && <p className="text-sm font-['Nunito'] text-[#4ECDC4]">{entry.title}</p>}
             </div>
             <span className="text-3xl font-['Fredoka_One'] text-[#FFE66D]">{entry.score}</span>
-          </div>
+          </motion.div>
         ))}
-      </div>
+      </motion.div>
     </div>
   );
 }
@@ -430,16 +557,59 @@ function VotingPanel({ votingData, players }) {
 function RoundEndPanel({ roundEndData, players }) {
   const activePlayers = players.filter(p => p.isPlaying);
   return (
-    <div className="flex flex-col items-center gap-8 w-full max-w-3xl">
-      <div className="text-center">
-        <p className="text-5xl mb-3">🏆</p>
-        <h1 className="text-4xl font-['Fredoka_One'] text-[#4ECDC4]">Round Over!</h1>
+    <div className="flex flex-col lg:flex-row items-start gap-8 w-full max-w-5xl">
+      {/* Left: Answer Summary */}
+      <div className="flex-1 flex flex-col gap-4">
+        <h2 className="text-2xl font-['Fredoka_One'] text-[#FFE66D]">Answer Summary</h2>
+        <div className="flex flex-col gap-3 max-h-[60vh] overflow-y-auto pr-1">
+          {(roundEndData.answers || []).map((ans, idx) => {
+            const correct = (ans.votes || []).filter(v => v.votedForId === ans.playerId);
+            const author = players.find(p => p.id === ans.playerId);
+            return (
+              <motion.div
+                key={idx}
+                className="bg-[#1A1A2E] border border-[#2D2D44] rounded-xl p-4"
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: idx * 0.1, duration: 0.3 }}
+              >
+                <p className="text-base font-['Nunito'] text-white italic mb-2">""{ans.text}""</p>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: author?.color || '#888' }} />
+                  <span className="font-['Fredoka_One'] text-sm text-gray-300">{ans.playerName}</span>
+                </div>
+                {correct.length > 0 ? (
+                  <div className="flex flex-wrap gap-2">
+                    {correct.map((v, i) => {
+                      const voter = players.find(p => p.id === v.voterId);
+                      return (
+                        <span key={i} className="flex items-center gap-1 bg-[#4ECDC4]/20 border border-[#4ECDC4]/40 rounded-full px-2 py-0.5">
+                          <span className="w-2 h-2 rounded-full" style={{ backgroundColor: voter?.color }} />
+                          <span className="text-xs font-['Fredoka_One'] text-[#4ECDC4]">{voter?.name}</span>
+                        </span>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <span className="text-xs font-['Nunito'] text-gray-500 italic">No one guessed correctly</span>
+                )}
+              </motion.div>
+            );
+          })}
+        </div>
       </div>
-      <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-6">
-        <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-4">Scoreboard</p>
-        <ScoreList players={activePlayers} scores={roundEndData.scores} prevScores={roundEndData.prevScores} />
+      {/* Right: Scoreboard */}
+      <div className="w-full lg:w-80 flex flex-col gap-4">
+        <div className="text-center">
+          <p className="text-5xl mb-2">🏆</p>
+          <h1 className="text-3xl font-['Fredoka_One'] text-[#4ECDC4]">Round Over!</h1>
+        </div>
+        <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
+          <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-4">Scoreboard</p>
+          <ScoreList players={activePlayers} scores={roundEndData.scores} prevScores={roundEndData.prevScores} />
+        </div>
+        <p className="text-sm font-['Nunito'] text-gray-500 italic text-center">Waiting for host to continue...</p>
       </div>
-      <p className="text-sm font-['Nunito'] text-gray-500 italic">Waiting for host to continue...</p>
     </div>
   );
 }
@@ -449,17 +619,37 @@ function GameEndPanel({ gameEndData, players }) {
   const sorted = [...activePlayers].sort((a, b) => (gameEndData.finalScores[b.id] || 0) - (gameEndData.finalScores[a.id] || 0));
   return (
     <div className="flex flex-col items-center gap-8 w-full max-w-3xl">
-      <div className="text-center">
-        <p className="text-6xl mb-3">🎉</p>
+      <motion.div
+        className="text-center"
+        initial={{ opacity: 0, scale: 0.7 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 18 }}
+      >
+        <motion.p
+          className="text-6xl mb-3"
+          animate={{ rotate: [0, -10, 10, -10, 0], scale: [1, 1.2, 1] }}
+          transition={{ duration: 0.8, delay: 0.3 }}
+        >🎉</motion.p>
         <h1 className="text-5xl font-['Fredoka_One'] text-[#FFE66D]">Game Over!</h1>
-      </div>
-      <div className="w-full flex flex-col gap-3">
+      </motion.div>
+      <motion.div
+        className="w-full flex flex-col gap-3"
+        initial="hidden"
+        animate="show"
+        variants={{ hidden: {}, show: { transition: { staggerChildren: 0.1, delayChildren: 0.35 } } }}
+      >
         {sorted.map((p, i) => (
-          <div key={p.id}
+          <motion.div
+            key={p.id}
+            variants={{
+              hidden: { opacity: 0, x: -25, scale: 0.97 },
+              show: { opacity: 1, x: 0, scale: 1, transition: { type: 'spring', stiffness: 350, damping: 22 } }
+            }}
             className="flex items-center gap-4 rounded-2xl px-5 py-4"
             style={i === 0
-              ? { background: 'linear-gradient(135deg, #FFE66D20, #4ECDC420)', border: '2px solid #FFE66D' }
-              : { background: '#1A1A2E', border: '1px solid #2D2D44' }}>
+              ? { background: 'linear-gradient(135deg, #FFE66D20, #4ECDC420)', border: '2px solid #FFE66D', boxShadow: '0 0 30px #FFE66D30' }
+              : { background: '#1A1A2E', border: '1px solid #2D2D44' }}
+          >
             <span className="text-2xl font-['Fredoka_One'] w-10 text-center" style={{ color: i === 0 ? '#FFE66D' : '#666' }}>
               {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}`}
             </span>
@@ -469,9 +659,9 @@ function GameEndPanel({ gameEndData, players }) {
             </div>
             <p className="flex-1 font-['Fredoka_One'] text-xl text-white">{p.name}</p>
             <span className="text-3xl font-['Fredoka_One'] text-[#FFE66D]">{gameEndData.finalScores[p.id] || 0}</span>
-          </div>
+          </motion.div>
         ))}
-      </div>
+      </motion.div>
     </div>
   );
 }
@@ -552,15 +742,23 @@ function SitPanel({ sitData, players }) {
           <p className="text-xs font-['Nunito'] text-gray-400 uppercase tracking-widest mb-2">🎭 Situational · Results</p>
           <h2 className="text-2xl font-['Fredoka_One'] text-[#A8E6CF] leading-snug">{sitData.question}</h2>
         </div>
-        <div className="w-full flex flex-col gap-3">
+        <motion.div
+          className="w-full flex flex-col gap-3"
+          initial="hidden"
+          animate="show"
+          variants={{ hidden: {}, show: { transition: { staggerChildren: 0.12, delayChildren: 0.2 } } }}
+        >
           {(sitData.answers || []).map(answer => {
             const isWinner = (sitData.winners || []).includes(answer.authorId);
             return (
-              <div key={answer.id}
+              <motion.div
+                key={answer.id}
+                variants={{ hidden: { opacity: 0, y: 20, scale: 0.96 }, show: { opacity: 1, y: 0, scale: 1, transition: { type: 'spring', stiffness: 300, damping: 22 } } }}
                 className="rounded-2xl p-5"
                 style={isWinner
                   ? { background: '#A8E6CF15', border: '2px solid #A8E6CF', boxShadow: '0 0 20px #A8E6CF30' }
-                  : { background: '#1A1A2E', border: '1px solid #2D2D44' }}>
+                  : { background: '#1A1A2E', border: '1px solid #2D2D44' }}
+              >
                 <div className="flex items-start gap-4">
                   <div className="w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm text-black flex-shrink-0"
                     style={{ backgroundColor: answer.authorColor || '#888' }}>
@@ -577,10 +775,10 @@ function SitPanel({ sitData, players }) {
                     <p className="text-lg font-['Nunito'] text-gray-200">"{answer.text}"</p>
                   </div>
                 </div>
-              </div>
+              </motion.div>
             );
           })}
-        </div>
+        </motion.div>
       </div>
     );
   }
@@ -620,18 +818,38 @@ function SitPanel({ sitData, players }) {
 function TotEndPanel({ totData }) {
   return (
     <div className="flex flex-col items-center gap-8 w-full max-w-3xl">
-      <div className="text-center">
-        <p className="text-5xl mb-3">⚡</p>
+      <motion.div
+        className="text-center"
+        initial={{ opacity: 0, scale: 0.7 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ type: 'spring', stiffness: 300, damping: 18 }}
+      >
+        <motion.p
+          className="text-5xl mb-3"
+          animate={{ y: [0, -14, 0], scale: [1, 1.2, 1] }}
+          transition={{ duration: 0.7, delay: 0.3, ease: 'easeOut' }}
+        >⚡</motion.p>
         <h1 className="text-5xl font-['Fredoka_One'] text-[#6C5CE7]">This or That!</h1>
         <p className="text-xl font-['Nunito'] text-gray-400 mt-2">Final Results</p>
-      </div>
-      <div className="w-full flex flex-col gap-3">
+      </motion.div>
+      <motion.div
+        className="w-full flex flex-col gap-3"
+        initial="hidden"
+        animate="show"
+        variants={{ hidden: {}, show: { transition: { staggerChildren: 0.1, delayChildren: 0.35 } } }}
+      >
         {(totData.leaderboard || []).map((entry, i) => (
-          <div key={entry.playerId}
+          <motion.div
+            key={entry.playerId}
+            variants={{
+              hidden: { opacity: 0, x: -25, scale: 0.97 },
+              show: { opacity: 1, x: 0, scale: 1, transition: { type: 'spring', stiffness: 350, damping: 22 } }
+            }}
             className="flex items-center gap-4 rounded-2xl px-5 py-4"
             style={i === 0
-              ? { background: 'linear-gradient(135deg, #6C5CE720, #A29BFE10)', border: '2px solid #6C5CE7' }
-              : { background: '#1A1A2E', border: '1px solid #2D2D44' }}>
+              ? { background: 'linear-gradient(135deg, #6C5CE720, #A29BFE10)', border: '2px solid #6C5CE7', boxShadow: '0 0 30px #6C5CE730' }
+              : { background: '#1A1A2E', border: '1px solid #2D2D44' }}
+          >
             <span className="text-2xl font-['Fredoka_One'] w-10 text-center" style={{ color: i === 0 ? '#6C5CE7' : '#666' }}>
               {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}`}
             </span>
@@ -644,9 +862,9 @@ function TotEndPanel({ totData }) {
               {entry.title && <p className="text-sm font-['Nunito'] text-[#6C5CE7]">{entry.title}</p>}
             </div>
             <span className="text-2xl font-['Fredoka_One'] text-[#FFE66D]">{entry.score}</span>
-          </div>
+          </motion.div>
         ))}
-      </div>
+      </motion.div>
     </div>
   );
 }
@@ -792,7 +1010,7 @@ function CreateRoomForm({ onSubmit, onBack }) {
 
 // ─── Host control bar (creator only) ─────────────────────────────────────────
 
-function HostControlBar({ status, isRoomCreator, players, mlt, onStart, onMltPauseResume, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onTotNext, onSitNext }) {
+function HostControlBar({ status, isRoomCreator, players, mlt, votingData, onStart, onMltPauseResume, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onTotNext, onSitNext, onNextAnswer }) {
   if (!isRoomCreator) return null;
 
   const playingCount = players.filter(p => p.isPlaying && p.isConnected).length;
@@ -854,6 +1072,27 @@ function HostControlBar({ status, isRoomCreator, players, mlt, onStart, onMltPau
         Next Round →
       </button>
     );
+  } else if (status === 'voting') {
+    controls = (
+      <button
+        onClick={onNextAnswer}
+        disabled={!votingData?.allVotesIn}
+        className={`px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl transition ${votingData?.allVotesIn ? 'bg-[#6C5CE7] text-white hover:bg-[#7d6fd4] active:scale-95' : 'bg-[#2D2D44] text-gray-500 cursor-not-allowed'}`}
+        style={votingData?.allVotesIn ? { boxShadow: '0 0 20px #6C5CE760' } : {}}
+      >
+        {votingData?.allVotesIn ? 'Next Answer →' : '⏳ Waiting for votes...'}
+      </button>
+    );
+  } else if (status === 'game-end' || status === 'mlt-end' || status === 'tot-end') {
+    controls = (
+      <button
+        onClick={() => { window.location.href = '/host'; }}
+        className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#FFE66D] text-black hover:bg-[#ffdd33] active:scale-95 transition"
+        style={{ boxShadow: '0 0 20px #FFE66D60' }}
+      >
+        🎮 New Game
+      </button>
+    );
   }
 
   if (!controls) return null;
@@ -884,7 +1123,7 @@ export default function HostPage() {
   const [mlt, setMlt] = useState({
     prompt: '', round: 0, totalRounds: 0,
     voteCount: 0, totalVoters: 0, secondsLeft: 30, paused: false,
-    results: [], majorityIds: [], scores: {}, prevScores: {}, leaderboard: [], gameName: '',
+    results: [], majorityIds: [], jokersUsed: [], scores: {}, prevScores: {}, leaderboard: [], gameName: '',
   });
 
   const [questionData, setQuestionData] = useState({
@@ -893,10 +1132,10 @@ export default function HostPage() {
   });
 
   const [votingData, setVotingData] = useState({
-    answers: [], currentIndex: 0, voteCount: 0, totalPlayers: 0,
+    answers: [], currentIndex: 0, voteCount: 0, totalPlayers: 0, allVotesIn: false,
   });
 
-  const [roundEndData, setRoundEndData] = useState({ scores: {}, prevScores: {}, players: [] });
+  const [roundEndData, setRoundEndData] = useState({ scores: {}, prevScores: {}, players: [], answers: [] });
   const [gameEndData, setGameEndData] = useState({ finalScores: {}, players: [] });
 
   const [totData, setTotData] = useState({
@@ -936,6 +1175,7 @@ export default function HostPage() {
       setMlt(prev => ({
         ...prev,
         results: data.results || [], majorityIds: data.majorityPlayerIds || [],
+        jokersUsed: data.jokersUsed || [],
         prevScores: { ...prev.scores }, scores: data.scores || prev.scores,
       }));
       if (data.players) setPlayers(data.players);
@@ -987,12 +1227,16 @@ export default function HostPage() {
       setVotingData(prev => ({ ...prev, voteCount: votedCount, totalPlayers }));
     });
 
+    sock.on('all_votes_in', () => {
+      setVotingData(prev => ({ ...prev, allVotesIn: true }));
+    });
+
     sock.on('next_answer', ({ currentIndex }) => {
-      setVotingData(prev => ({ ...prev, currentIndex, voteCount: 0 }));
+      setVotingData(prev => ({ ...prev, currentIndex, voteCount: 0, allVotesIn: false }));
     });
 
     sock.on('round_ended', (data) => {
-      setRoundEndData(prev => ({ scores: data.scores || {}, prevScores: { ...prev.scores }, players: data.players || [] }));
+      setRoundEndData(prev => ({ scores: data.scores || {}, prevScores: { ...prev.scores }, players: data.players || [], answers: data.answers || [] }));
       setStatus('round-end');
     });
 
@@ -1156,6 +1400,7 @@ export default function HostPage() {
   const handleSkipQuestion = () => socketRef.current?.emit('skip_question', { code: gameInfo.code });
   const handleTotNext = () => socketRef.current?.emit('tot:next_round', { code: gameInfo.code });
   const handleSitNext = () => socketRef.current?.emit('sit:next', { code: gameInfo.code });
+  const handleNextAnswer = () => socketRef.current?.emit('next_answer_request', { code: gameInfo.code });
 
   // ─── Render ───────────────────────────────────────────────────────────────
   if (status === 'setup') {
@@ -1256,8 +1501,22 @@ export default function HostPage() {
         </div>
       </div>
 
+      {['game-end', 'mlt-end', 'tot-end'].includes(status) && (
+        <Confetti width={window.innerWidth} height={window.innerHeight} recycle={false} numberOfPieces={400} />
+      )}
       <div className="flex-1 flex items-center justify-center p-6 overflow-auto">
-        {renderPanel()}
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={status}
+            className="w-full flex justify-center"
+            initial={{ opacity: 0, y: 22, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -22, scale: 0.97 }}
+            transition={{ duration: 0.3, ease: [0.2, 0.8, 0.2, 1] }}
+          >
+            {renderPanel()}
+          </motion.div>
+        </AnimatePresence>
       </div>
 
       <HostControlBar
@@ -1265,6 +1524,7 @@ export default function HostPage() {
         isRoomCreator={isRoomCreator}
         players={players}
         mlt={mlt}
+        votingData={votingData}
         onStart={handleStartGame}
         onMltPauseResume={handleMltPauseResume}
         onMltSkip={handleMltSkip}
@@ -1273,6 +1533,7 @@ export default function HostPage() {
         onSkipQuestion={handleSkipQuestion}
         onTotNext={handleTotNext}
         onSitNext={handleSitNext}
+        onNextAnswer={handleNextAnswer}
       />
     </div>
   );

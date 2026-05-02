@@ -102,13 +102,12 @@ export default function VotingPage() {
         initial="hidden" animate="show"
         variants={{ hidden: {}, show: { transition: { staggerChildren: 0.06, delayChildren: 0.1 } } }}
       >
-        {state.isPlaying && !state.hasVoted && !isRevealed && !isMyAnswer && state.players.filter(p => p.isConnected && p.id !== state.playerId).map(p => (
+        {state.isPlaying && !state.hasVoted && !isRevealed && !isMyAnswer && state.players.filter(p => p.isConnected && p.isPlaying && p.id !== state.playerId).map(p => (
            <motion.button
              key={p.id}
              onClick={() => handleVote(p.id)}
              variants={{ hidden: { opacity: 0, scale: 0.85 }, show: { opacity: 1, scale: 1, transition: { duration: 0.25 } } }}
              className="flex flex-col items-center space-y-2 bg-[#1A1A2E] hover:bg-[#2D2D44] rounded-2xl py-6 px-4 transition-all duration-200 border-2 border-transparent hover:border-[#FFE66D]"
-           >
            >
               <div className="w-12 h-12 rounded-full flex items-center justify-center text-black font-bold shadow-sm text-xl border-2 border-white" style={{ backgroundColor: p.color }}>
                 {p.name.charAt(0).toUpperCase()}

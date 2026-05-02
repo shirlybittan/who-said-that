@@ -148,14 +148,30 @@ export default function MostLikelyToVotingPage() {
             <>
               {/* Confirm overlay */}
               {pendingVote ? (
-                <div className="flex flex-col items-center gap-4 mt-2">
+                <motion.div
+                  className="flex flex-col items-center gap-4 mt-2"
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.22 }}
+                >
                   <p className="text-gray-400 font-['Nunito'] text-sm">{t.confirmVoteLabel || 'Confirm your vote?'}</p>
                   <div className="w-full bg-[#1A1A2E] border-2 border-[#4ECDC4] rounded-2xl p-5 flex items-center gap-4">
-                    <div
-                      className="w-12 h-12 rounded-full flex items-center justify-center text-black font-bold text-xl flex-shrink-0 border-2 border-white/20"
-                      style={{ backgroundColor: pendingVote.color }}
-                    >
-                      {pendingVote.name.charAt(0).toUpperCase()}
+                    <div className="relative flex-shrink-0">
+                      <motion.div
+                        className="absolute rounded-full border-2 border-[#4ECDC4]"
+                        style={{ inset: '-5px' }}
+                        animate={{ scale: [1, 1.35, 1.35], opacity: [0.7, 0, 0] }}
+                        transition={{ duration: 1.1, repeat: Infinity, ease: 'easeOut' }}
+                      />
+                      <motion.div
+                        className="w-12 h-12 rounded-full flex items-center justify-center text-black font-bold text-xl border-2 border-white/20"
+                        style={{ backgroundColor: pendingVote.color }}
+                        initial={{ scale: 0.7, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        transition={{ type: 'spring', stiffness: 400, damping: 14 }}
+                      >
+                        {pendingVote.name.charAt(0).toUpperCase()}
+                      </motion.div>
                     </div>
                     <span className="font-['Fredoka_One'] text-2xl text-[#4ECDC4] flex-1">{pendingVote.name}</span>
                   </div>
@@ -185,16 +201,23 @@ export default function MostLikelyToVotingPage() {
                       {mlt.jokerActive ? `🔥 ${t.jokerActive}` : `🃏 ${t.useJoker} (${mlt.jokersLeft} ${t.left})`}
                     </button>
                   )}
-                </div>
+                </motion.div>
               ) : (
                 <>
                   <p className="text-center text-gray-400 font-['Nunito'] text-sm mb-4">{t.tapToVote}</p>
-                  <div className="flex flex-col gap-3 mb-5">
+                  <motion.div
+                    className="flex flex-col gap-3 mb-5"
+                    initial="hidden"
+                    animate="show"
+                    variants={{ hidden: {}, show: { transition: { staggerChildren: 0.07 } } }}
+                  >
                     {votablePlayers.map((p) => (
-                      <button
+                      <motion.button
                         key={p.id}
+                        variants={{ hidden: { opacity: 0, x: -20 }, show: { opacity: 1, x: 0, transition: { duration: 0.3 } } }}
+                        whileTap={{ scale: 0.93 }}
                         onClick={() => handleSelectPlayer(p)}
-                        className="flex items-center gap-4 w-full bg-[#1A1A2E] hover:bg-[#2D2D44] border-2 border-[#2D2D44] hover:border-[#4ECDC4] rounded-2xl p-4 transition active:scale-95"
+                        className="flex items-center gap-4 w-full bg-[#1A1A2E] hover:bg-[#2D2D44] border-2 border-[#2D2D44] hover:border-[#4ECDC4] rounded-2xl p-4 transition"
                       >
                         <div
                           className="w-10 h-10 rounded-full flex items-center justify-center text-black font-bold text-lg flex-shrink-0 border-2 border-white/20"
@@ -203,9 +226,9 @@ export default function MostLikelyToVotingPage() {
                           {p.name.charAt(0).toUpperCase()}
                         </div>
                         <span className="font-['Fredoka_One'] text-xl text-white">{p.name}</span>
-                      </button>
+                      </motion.button>
                     ))}
-                  </div>
+                  </motion.div>
 
                   {/* Joker button */}
                   {mlt.jokersLeft > 0 || mlt.jokerActive ? (
@@ -225,32 +248,62 @@ export default function MostLikelyToVotingPage() {
               )}
             </>
           ) : (
-            <div className="flex flex-col items-center gap-4 mt-4">
-              <div
+            <motion.div
+              className="flex flex-col items-center gap-4 mt-4"
+              initial={{ opacity: 0, scale: 0.88 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ type: 'spring', stiffness: 280, damping: 18 }}
+            >
+              <motion.div
                 className="w-full rounded-2xl p-8 text-center border-2"
                 style={mlt.jokerActive
                   ? { backgroundColor: '#FF6B6B22', borderColor: '#FF6B6B' }
                   : { backgroundColor: '#1A1A2E', borderColor: '#4ECDC4' }}
               >
-                <p className="text-3xl font-['Fredoka_One'] mb-2" style={{ color: mlt.jokerActive ? '#FF6B6B' : '#4ECDC4' }}>
+                <motion.p
+                  className="text-3xl font-['Fredoka_One'] mb-2"
+                  style={{ color: mlt.jokerActive ? '#FF6B6B' : '#4ECDC4' }}
+                  initial={{ scale: 0.7 }}
+                  animate={{ scale: 1 }}
+                  transition={{ type: 'spring', stiffness: 400, damping: 12, delay: 0.1 }}
+                >
                   {mlt.jokerActive ? `🔥 ${t.voteLocked}` : t.voteLocked}
-                </p>
-                {mlt.votedPlayerId && (
-                  <p className="text-gray-400 font-['Nunito'] text-sm mt-1">
-                    {t.youVotedFor}{' '}
-                    <span className="text-white font-bold">
-                      {mlt.players.find(p => p.id === mlt.votedPlayerId)?.name}
-                    </span>
-                  </p>
-                )}
+                </motion.p>
+                {mlt.votedPlayerId && (() => {
+                  const vp = mlt.players.find(p => p.id === mlt.votedPlayerId);
+                  return (
+                    <div className="flex items-center justify-center gap-3 mt-2">
+                      {vp && (
+                        <div className="relative">
+                          <motion.div
+                            className="absolute rounded-full border-2"
+                            style={{ inset: '-4px', borderColor: mlt.jokerActive ? '#FF6B6B' : '#4ECDC4' }}
+                            animate={{ scale: [1, 1.3, 1.3], opacity: [0.6, 0, 0] }}
+                            transition={{ duration: 1.4, repeat: Infinity, ease: 'easeOut', delay: 0.3 }}
+                          />
+                          <div
+                            className="w-9 h-9 rounded-full flex items-center justify-center text-black font-bold text-base border-2 border-white/20"
+                            style={{ backgroundColor: vp.color }}
+                          >
+                            {vp.name.charAt(0).toUpperCase()}
+                          </div>
+                        </div>
+                      )}
+                      <p className="text-gray-400 font-['Nunito'] text-sm">
+                        {t.youVotedFor}{' '}
+                        <span className="text-white font-bold">{vp?.name}</span>
+                      </p>
+                    </div>
+                  );
+                })()}
                 {mlt.jokerActive && (
                   <p className="text-[#FF6B6B] font-['Nunito'] text-xs mt-2 animate-pulse">🔥 {t.jokerWillDouble}</p>
                 )}
-              </div>
+              </motion.div>
               <p className="text-gray-400 font-['Nunito'] text-sm animate-pulse">
                 {mlt.voteCount} / {mlt.totalVoters} {t.votesIn}
               </p>
-            </div>
+            </motion.div>
           )}
         </div>
       )}

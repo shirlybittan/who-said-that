@@ -229,7 +229,7 @@ export const gameReducer = (state, action) => {
         },
       };
     case 'SET_GAME_ENDED':
-      return { ...state, gameEnded: true, phase: 'game_end', stats: action.payload.stats, players: action.payload.players || state.players };
+      return { ...state, gameEnded: true, phase: 'game_end', stats: action.payload.stats, players: action.payload.players || state.players, scores: action.payload.finalScores || state.scores };
     case 'SET_ERROR':
       return { ...state, error: action.payload };
     // ─── This or That actions ────────────────────────────────────────────────

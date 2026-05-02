@@ -440,6 +440,13 @@ io.on('connection', (socket) => {
   socket.on('join_room', ({ code, playerName, playerId }) => {
     try {
       const { room, player, isRejoin } = joinRoom(code, socket.id, playerName, playerId);
+      // Prevent cast/screen-mirror devices from counting as players
+      if (!isRejoin) {
+        const castNames = ['screen cast', 'chromecast', 'cast screen', 'google cast', 'firestick'];
+        if (castNames.some(cn => (playerName || '').toLowerCase().includes(cn))) {
+          player.isPlaying = false;
+        }
+      }
       socket.join(room.code);
       socket.emit('join_success', { room, playerId: player.id, isRejoin });
       socket.to(room.code).emit('player_joined', { players: room.players });
@@ -506,7 +513,7 @@ io.on('connection', (socket) => {
       room.tot.totalRounds = count;
       room.phase = 'tot';
     } else if (room.gameType === 'mixed') {
-      room.questions = selectMixedQuestions(count, room.mode, room.customQuestions);
+      room.questions = selectMixedQuestions(count, room.mode, room.customQuestions, room.selectedSubGames);
     } else {
       // who-said-that
       room.questions = selectQuestions(room.mode, count, room.customQuestions);

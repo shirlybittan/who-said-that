@@ -213,6 +213,43 @@ export default function LobbyPage() {
             })}
           </div>
 
+          {/* Mixed mode: sub-game selector */}
+          {state.gameType === 'mixed' && (
+            <div className="w-full max-w-sm bg-[#0D0D1A] border border-[#FF8B94]/40 rounded-xl p-3">
+              <p className="text-xs font-['Nunito'] text-[#FF8B94] uppercase tracking-widest mb-2">Include in mix:</p>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { id: 'who-said-that', emoji: '🤔', label: t.gameLabelShort, color: '#FFE66D' },
+                  { id: 'situational',   emoji: '🎭', label: tSit.gameLabelShort, color: '#A8E6CF' },
+                  { id: 'this-or-that',  emoji: '⚡', label: tTot.gameLabelShort, color: '#6C5CE7' },
+                  { id: 'most-likely-to',emoji: '👑', label: tMlt.gameLabelShort, color: '#4ECDC4' },
+                ].map(sg => {
+                  const included = (state.selectedSubGames || []).includes(sg.id);
+                  const toggle = () => {
+                    const cur = state.selectedSubGames || [];
+                    const updated = included ? cur.filter(id => id !== sg.id) : [...cur, sg.id];
+                    if (updated.length === 0) return; // need at least one
+                    handleOptionsChange('gameType', updated);
+                  };
+                  return (
+                    <button
+                      key={sg.id}
+                      onClick={toggle}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-['Fredoka_One'] border-2 transition"
+                      style={included
+                        ? { backgroundColor: sg.color + '33', borderColor: sg.color, color: sg.color }
+                        : { backgroundColor: 'transparent', borderColor: '#2D2D44', color: '#555' }}
+                    >
+                      <span>{sg.emoji}</span>
+                      <span>{sg.label}</span>
+                      {included ? <span>✓</span> : <span style={{ opacity: 0.4 }}>✗</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* WST / Situational / Mixed options */}
           {isWstLike && (
             <div className="flex space-x-4 w-full max-w-sm">

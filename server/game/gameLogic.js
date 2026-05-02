@@ -29,13 +29,22 @@ const selectThisOrThatQuestions = (count) => {
 };
 
 // Build a mixed question list of the given total length, randomly drawn from all three types
-const selectMixedQuestions = (count, mode, customQuestions = []) => {
-  const wstPool = shuffle(mode === 'family' ? familyQuestions : friendsQuestions).slice(0, count).map(q => ({ ...q, type: 'wst' }));
-  const sitPool = shuffle(situationalQuestions).slice(0, count).map(text => ({ id: `sit-${Math.random()}`, text, type: 'situational' }));
-  const totPool = shuffle(thisOrThatQuestions).slice(0, count).map((q, i) => ({ id: `tot-${i}`, text: q.text, a: q.a, b: q.b, type: 'this-or-that' }));
+const selectMixedQuestions = (count, mode, customQuestions = [], selectedTypes = null) => {
+  const useWst = !selectedTypes || selectedTypes.includes('who-said-that');
+  const useSit = !selectedTypes || selectedTypes.includes('situational');
+  const useTot = !selectedTypes || selectedTypes.includes('this-or-that');
 
-  // Interleave so no more than 2 of the same type in a row
-  const types = shuffle(['wst', 'situational', 'this-or-that', 'wst', 'situational', 'this-or-that', 'wst', 'situational', 'this-or-that', 'wst', 'situational', 'this-or-that', 'wst', 'situational', 'this-or-that', 'wst', 'situational', 'this-or-that', 'wst', 'situational']);
+  const wstPool = useWst ? shuffle(mode === 'family' ? familyQuestions : friendsQuestions).slice(0, count).map(q => ({ ...q, type: 'wst' })) : [];
+  const sitPool = useSit ? shuffle(situationalQuestions).slice(0, count).map(text => ({ id: `sit-${Math.random()}`, text, type: 'situational' })) : [];
+  const totPool = useTot ? shuffle(thisOrThatQuestions).slice(0, count).map((q, i) => ({ id: `tot-${i}`, text: q.text, a: q.a, b: q.b, type: 'this-or-that' })) : [];
+
+  // Build type slots based on active types
+  const activeTypes = [
+    ...(useWst ? ['wst', 'wst', 'wst', 'wst', 'wst', 'wst', 'wst'] : []),
+    ...(useSit ? ['situational', 'situational', 'situational', 'situational', 'situational', 'situational', 'situational'] : []),
+    ...(useTot ? ['this-or-that', 'this-or-that', 'this-or-that', 'this-or-that', 'this-or-that', 'this-or-that', 'this-or-that'] : []),
+  ];
+  const types = shuffle(activeTypes);
   const picks = [];
   const wstIdx = { i: 0 }; const sitIdx = { i: 0 }; const totIdx = { i: 0 };
   for (const type of types) {
