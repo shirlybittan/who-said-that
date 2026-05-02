@@ -1010,7 +1010,7 @@ function CreateRoomForm({ onSubmit, onBack }) {
 
 // ─── Host control bar (creator only) ─────────────────────────────────────────
 
-function HostControlBar({ status, isRoomCreator, players, mlt, votingData, onStart, onMltPauseResume, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onTotNext, onSitNext, onNextAnswer }) {
+function HostControlBar({ status, isRoomCreator, players, mlt, votingData, isMixedMode, onStart, onMltPauseResume, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer }) {
   if (!isRoomCreator) return null;
 
   const playingCount = players.filter(p => p.isPlaying && p.isConnected).length;
@@ -1050,27 +1050,68 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, onSta
     );
   } else if (status === 'question') {
     controls = (
-      <button onClick={onSkipQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FFE66D] hover:text-[#FFE66D] active:scale-95 transition">
-        ⏭ Skip Question
-      </button>
+      <div className="flex gap-3">
+        <button onClick={onSkipQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FFE66D] hover:text-[#FFE66D] active:scale-95 transition">
+          ⏭ Skip Question
+        </button>
+        {isMixedMode && (
+          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+            🔀 Skip Mini Game
+          </button>
+        )}
+      </div>
+    );
+  } else if (status === 'sit-voting') {
+    controls = (
+      <div className="flex gap-3">
+        <button onClick={onSkipQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FFE66D] hover:text-[#FFE66D] active:scale-95 transition">
+          ⏭ Skip Question
+        </button>
+        {isMixedMode && (
+          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+            🔀 Skip Mini Game
+          </button>
+        )}
+      </div>
     );
   } else if (status === 'round-end') {
     controls = (
-      <button onClick={onNextRound} className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#4ECDC4] text-black hover:bg-[#3dbdb5] active:scale-95 transition" style={{ boxShadow: '0 0 20px #4ECDC440' }}>
-        Next Round →
-      </button>
+      <div className="flex gap-3">
+        <button onClick={onNextRound} className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#4ECDC4] text-black hover:bg-[#3dbdb5] active:scale-95 transition" style={{ boxShadow: '0 0 20px #4ECDC440' }}>
+          Next Round →
+        </button>
+        {isMixedMode && (
+          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+            🔀 Skip Mini Game
+          </button>
+        )}
+      </div>
     );
   } else if (status === 'tot') {
     controls = (
-      <button onClick={onTotNext} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#6C5CE7] hover:text-[#6C5CE7] active:scale-95 transition">
-        ⏭ Skip / Next →
-      </button>
+      <div className="flex gap-3">
+        <button onClick={onTotNext} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#6C5CE7] hover:text-[#6C5CE7] active:scale-95 transition">
+          ⏭ Skip / Next →
+        </button>
+        {isMixedMode && (
+          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+            🔀 Skip Mini Game
+          </button>
+        )}
+      </div>
     );
   } else if (status === 'sit-results') {
     controls = (
-      <button onClick={onSitNext} className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#A8E6CF] text-black hover:bg-[#8fd4b8] active:scale-95 transition" style={{ boxShadow: '0 0 20px #A8E6CF40' }}>
-        Next Round →
-      </button>
+      <div className="flex gap-3">
+        <button onClick={onSitNext} className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#A8E6CF] text-black hover:bg-[#8fd4b8] active:scale-95 transition" style={{ boxShadow: '0 0 20px #A8E6CF40' }}>
+          Next Round →
+        </button>
+        {isMixedMode && (
+          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+            🔀 Skip Mini Game
+          </button>
+        )}
+      </div>
     );
   } else if (status === 'voting') {
     controls = (
@@ -1398,6 +1439,7 @@ export default function HostPage() {
   const handleMltNext = () => socketRef.current?.emit('mlt:next_round', { code: gameInfo.code });
   const handleNextRound = () => socketRef.current?.emit('ready_next_round', { code: gameInfo.code });
   const handleSkipQuestion = () => socketRef.current?.emit('skip_question', { code: gameInfo.code });
+  const handleSkipMiniGame = () => socketRef.current?.emit('skip_mini_game', { code: gameInfo.code });
   const handleTotNext = () => socketRef.current?.emit('tot:next_round', { code: gameInfo.code });
   const handleSitNext = () => socketRef.current?.emit('sit:next', { code: gameInfo.code });
   const handleNextAnswer = () => socketRef.current?.emit('next_answer_request', { code: gameInfo.code });
@@ -1531,6 +1573,8 @@ export default function HostPage() {
         onMltNext={handleMltNext}
         onNextRound={handleNextRound}
         onSkipQuestion={handleSkipQuestion}
+        onSkipMiniGame={handleSkipMiniGame}
+        isMixedMode={gameInfo.gameType === 'mixed'}
         onTotNext={handleTotNext}
         onSitNext={handleSitNext}
         onNextAnswer={handleNextAnswer}

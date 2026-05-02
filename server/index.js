@@ -530,21 +530,73 @@ io.on('connection', (socket) => {
 
   socket.on('skip_question', ({ code }) => {
     const room = getRoom(code);
-    if (!room || room.phase !== 'question') return;
+    if (!room) return;
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isHost) return;
 
-    // Only applies to WST/Situational rounds
     const qType = room.questions[room.currentQuestionIndex]?.type || 'wst';
-    if (qType === 'wst' || qType === 'situational') {
-      const [replacement] = qType === 'situational'
-        ? selectSituationalQuestions(1)
-        : selectQuestions(room.mode, 1, room.customQuestions);
+
+    if (qType === 'this-or-that' && room.phase === 'tot') {
+      const [replacement] = selectThisOrThatQuestions(1);
+      room.questions[room.currentQuestionIndex] = replacement;
+      room.tot.votesA = {};
+      room.tot.votesB = {};
+      room.tot.roundState = 'voting';
+      room.phase = 'tot';
+      emitTotQuestion(io, room, code);
+    } else if (qType === 'situational' && (room.phase === 'question' || room.phase === 'sit-voting' || room.phase === 'sit-results')) {
+      const [replacement] = selectSituationalQuestions(1);
+      room.questions[room.currentQuestionIndex] = replacement;
+      room.answers = [];
+      room.sit.votes = {};
+      room.skipVotes = [];
+      room.phase = 'question';
+      emitWstQuestion(io, room, code);
+    } else if (qType === 'wst' && (room.phase === 'question' || room.phase === 'voting')) {
+      const [replacement] = selectQuestions(room.mode, 1, room.customQuestions);
       room.questions[room.currentQuestionIndex] = replacement;
       room.answers = [];
       room.skipVotes = [];
+      room.phase = 'question';
       emitWstQuestion(io, room, code);
     }
+  });
+
+  socket.on('skip_mini_game', ({ code }) => {
+    const room = getRoom(code);
+    if (!room) return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+
+    // Only meaningful in mixed mode
+    if (room.gameType !== 'mixed') return;
+
+    const currentType = room.questions[room.currentQuestionIndex]?.type;
+
+    // Find the next question index that has a different type
+    let nextIndex = room.currentQuestionIndex + 1;
+    while (nextIndex < room.questions.length && room.questions[nextIndex]?.type === currentType) {
+      nextIndex++;
+    }
+
+    // Reset any in-progress state
+    room.answers = [];
+    room.skipVotes = [];
+    room.sit.votes = {};
+    room.tot.votesA = {};
+    room.tot.votesB = {};
+
+    if (nextIndex >= room.questions.length) {
+      // No more different mini-games — end the game
+      room.phase = 'gameEnd';
+      const finalStats = require('./game/gameLogic').computeStats(room.players, [], room.scores);
+      io.to(code).emit('game_ended', { finalScores: room.scores, players: room.players, stats: finalStats });
+      return;
+    }
+
+    room.currentRound = nextIndex + 1;
+    room.currentQuestionIndex = nextIndex;
+    emitNextQuestion(io, room, code);
   });
 
   socket.on('vote_skip_question', ({ code }) => {
