@@ -96,6 +96,50 @@ const ProgressBar = ({ value, total, color = '#4ECDC4', label, sublabel }) => {
   );
 };
 
+// ─── Drawing canvas helpers (for Sketch It! TV panel) ────────────────────────
+const HOST_CANVAS_W = 400;
+const HOST_CANVAS_H = 300;
+
+const drawHostStroke = (ctx, stroke) => {
+  if (!stroke.points || stroke.points.length === 0) return;
+  ctx.beginPath();
+  ctx.strokeStyle = stroke.type === 'eraser' ? '#FFFFFF' : stroke.color;
+  ctx.fillStyle  = stroke.type === 'eraser' ? '#FFFFFF' : stroke.color;
+  ctx.lineWidth  = stroke.width;
+  ctx.lineCap    = 'round';
+  ctx.lineJoin   = 'round';
+  if (stroke.points.length === 1) {
+    ctx.arc(stroke.points[0].x, stroke.points[0].y, stroke.width / 2, 0, Math.PI * 2);
+    ctx.fill();
+    return;
+  }
+  ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
+  for (let i = 1; i < stroke.points.length; i++) ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
+  ctx.stroke();
+};
+
+const HostReplayCanvas = ({ strokes = [], cssWidth = 200, cssHeight = 150, className = '' }) => {
+  const ref = useRef(null);
+  useEffect(() => {
+    const canvas = ref.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, HOST_CANVAS_W, HOST_CANVAS_H);
+    (strokes || []).forEach(s => drawHostStroke(ctx, s));
+  }, [strokes]);
+  return (
+    <canvas
+      ref={ref}
+      width={HOST_CANVAS_W}
+      height={HOST_CANVAS_H}
+      style={{ width: cssWidth, height: cssHeight }}
+      className={`block ${className}`}
+    />
+  );
+};
+
+
 const VoteCoin = ({ coinIndex, cardIndex, isJoker = false }) => (
   <motion.div
     className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold select-none flex-shrink-0"
@@ -874,52 +918,245 @@ function TotEndPanel({ totData }) {
 
 // ─── Setup screens ────────────────────────────────────────────────────────────
 
-function DrawingHostPanel({ drawData, players }) {
+function DrawingHostPanel({ drawData, players, status }) {
   const activePlayers = players.filter(p => p.isConnected && p.isPlaying);
-  const phaseLabel = drawData.phase === 'drawing' ? '🎨 Drawing in progress...'
-    : drawData.phase === 'voting' ? '🗳️ Voting in progress...'
-    : drawData.phase === 'results' ? '🏆 Results'
-    : '🎨 Drawing Round';
-  return (
-    <div className="flex flex-col items-center gap-6 w-full max-w-xl">
-      <motion.div
-        className="text-center"
-        initial={{ opacity: 0, y: -12 }}
-        animate={{ opacity: 1, y: 0 }}
-      >
-        <p className="text-5xl mb-2">🎨</p>
-        <h1 className="text-4xl font-['Fredoka_One'] text-[#C39BD3]">Sketch It!</h1>
-        <p className="text-gray-400 font-['Nunito'] mt-1">{phaseLabel}</p>
-      </motion.div>
-      <div className="w-full bg-[#1A1A2E] border-2 border-[#C39BD3]/40 rounded-2xl p-5 text-center">
-        <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-1">Word to draw</p>
-        <p className="text-3xl font-['Fredoka_One'] text-[#FFE66D]">{drawData.word || '...'}</p>
-      </div>
-      {drawData.phase === 'drawing' && (
+  const isSecretMode = drawData.mode === 'secret';
+  const isEndPhase = status === 'draw-end';
+  const isResultsPhase = drawData.phase === 'results' && !isEndPhase;
+  const isVotingPhase = drawData.phase === 'voting';
+  const isDrawingPhase = drawData.phase === 'drawing';
+
+  // ── DRAWING PHASE ────────────────────────────────────────────────────────
+  if (isDrawingPhase) {
+    const total = drawData.totalDrawers || activePlayers.length;
+    return (
+      <div className="flex flex-col items-center gap-6 w-full max-w-xl">
+        <motion.div className="text-center" initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }}>
+          <p className="text-5xl mb-2">🎨</p>
+          <h1 className="text-4xl font-['Fredoka_One'] text-[#C39BD3]">Sketch It!</h1>
+          <div className="flex items-center justify-center gap-2 mt-1">
+            {isSecretMode
+              ? <span className="px-3 py-1 rounded-full bg-[#C39BD3]/20 text-[#C39BD3] text-xs font-['Nunito'] font-bold uppercase tracking-widest">✦ Secret Words</span>
+              : <span className="px-3 py-1 rounded-full bg-[#FFE66D]/20 text-[#FFE66D] text-xs font-['Nunito'] font-bold uppercase tracking-widest">Classic Mode</span>
+            }
+          </div>
+        </motion.div>
+
+        {!isSecretMode && (
+          <div className="w-full bg-[#1A1A2E] border-2 border-[#C39BD3]/40 rounded-2xl p-5 text-center">
+            <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-1">Word to draw</p>
+            <p className="text-3xl font-['Fredoka_One'] text-[#FFE66D]">{drawData.word || '...'}</p>
+          </div>
+        )}
+        {isSecretMode && (
+          <div className="w-full bg-[#1A1A2E] border-2 border-[#C39BD3]/40 rounded-2xl p-5 text-center">
+            <p className="text-sm font-['Nunito'] text-gray-400">Each player is drawing their own secret word 🤫</p>
+          </div>
+        )}
+
         <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
           <div className="flex items-center justify-between mb-3">
             <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">Drawings submitted</p>
             <p className="text-2xl font-['Fredoka_One'] text-white">
-              {drawData.submittedCount}<span className="text-gray-500">/{drawData.totalDrawers || activePlayers.length}</span>
+              {drawData.submittedCount}<span className="text-gray-500">/{total}</span>
             </p>
           </div>
-          <ProgressBar value={drawData.submittedCount} total={drawData.totalDrawers || activePlayers.length} color="#C39BD3" />
+          <ProgressBar value={drawData.submittedCount} total={total} color="#C39BD3" />
         </div>
-      )}
-      {drawData.phase === 'voting' && (
-        <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">Votes in</p>
-            <p className="text-2xl font-['Fredoka_One'] text-white">
-              {drawData.voteCount}<span className="text-gray-500">/{drawData.totalVoters || activePlayers.length}</span>
-            </p>
+
+        <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-4">
+          <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-3 text-center">
+            Round {drawData.round}/{drawData.totalRounds}
+          </p>
+          <div className="flex flex-wrap gap-3 justify-center">
+            {activePlayers.map(p => <PlayerAvatar key={p.id} player={p} size="sm" />)}
           </div>
-          <ProgressBar value={drawData.voteCount} total={drawData.totalVoters || activePlayers.length} color="#C39BD3" />
         </div>
-      )}
-      <div className="flex flex-wrap gap-4 justify-center">
-        {activePlayers.map(p => <PlayerAvatar key={p.id} player={p} size="sm" />)}
       </div>
+    );
+  }
+
+  // ── VOTING PHASE ─────────────────────────────────────────────────────────
+  if (isVotingPhase) {
+    const submissions = drawData.submissions || [];
+    const total = drawData.totalVoters || activePlayers.length;
+    return (
+      <div className="flex flex-col items-center gap-6 w-full max-w-5xl">
+        <motion.div className="text-center" initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }}>
+          <h1 className="text-4xl font-['Fredoka_One'] text-[#C39BD3]">🗳️ Vote for the Best!</h1>
+          {isSecretMode
+            ? <p className="text-gray-400 font-['Nunito'] mt-1">✦ Secret Words — each player drew a different word</p>
+            : <p className="text-gray-400 font-['Nunito'] mt-1">Word: <span className="text-[#FFE66D] font-bold">{drawData.word}</span></p>
+          }
+        </motion.div>
+
+        {submissions.length > 0 ? (
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 w-full">
+            {submissions.map(sub => (
+              <motion.div
+                key={sub.playerId}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="bg-[#1A1A2E] border-2 border-[#C39BD3]/30 rounded-2xl overflow-hidden"
+              >
+                <div className="bg-white">
+                  <HostReplayCanvas strokes={sub.strokes} cssWidth="100%" cssHeight={150} className="w-full" />
+                </div>
+                <div className="p-3 text-center">
+                  {isSecretMode && (
+                    <p className="text-[#FFE66D] font-['Fredoka_One'] text-lg">{sub.word}</p>
+                  )}
+                  <p className="text-white font-['Fredoka_One'] text-base">{sub.name}</p>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        ) : (
+          <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-8 text-center">
+            <p className="text-gray-400 font-['Nunito']">Getting submissions ready...</p>
+          </div>
+        )}
+
+        <div className="w-full max-w-md">
+          <ProgressBar
+            value={drawData.voteCount}
+            total={total}
+            color="#C39BD3"
+            label="Votes in"
+            sublabel={true}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // ── RESULTS PHASE ────────────────────────────────────────────────────────
+  if (isResultsPhase) {
+    const results = drawData.results || [];
+    const medals = ['🥇', '🥈', '🥉'];
+    const podiumOrder = results.length >= 3
+      ? [results[1], results[0], results[2]]
+      : results.length === 2
+        ? [null, results[0], results[1]]
+        : [null, results[0], null];
+    const podiumHeights = ['h-28', 'h-36', 'h-20'];
+
+    return (
+      <div className="flex flex-col items-center gap-8 w-full max-w-5xl">
+        <motion.div className="text-center" initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }}>
+          <h1 className="text-4xl font-['Fredoka_One'] text-[#FFE66D]">🏆 Round Results</h1>
+          {isSecretMode
+            ? <span className="mt-1 inline-block px-3 py-1 rounded-full bg-[#C39BD3]/20 text-[#C39BD3] text-sm font-['Nunito']">✦ Secret Words Mode</span>
+            : <p className="text-gray-400 font-['Nunito'] mt-1">Word: <span className="text-[#FFE66D] font-bold">{drawData.word}</span></p>
+          }
+        </motion.div>
+
+        {/* Podium */}
+        {results.length > 0 && (
+          <div className="w-full flex items-end justify-center gap-4">
+            {podiumOrder.map((r, idx) => r ? (
+              <motion.div
+                key={r.playerId}
+                initial={{ opacity: 0, y: 40 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: idx * 0.15 }}
+                className="flex flex-col items-center gap-2 flex-1 max-w-xs"
+              >
+                <p className="text-3xl mb-1">{medals[idx === 1 ? 0 : idx === 0 ? 1 : 2]}</p>
+                {r.strokes && (
+                  <div className="rounded-xl overflow-hidden border-2 border-[#C39BD3]/40 bg-white w-full">
+                    <HostReplayCanvas strokes={r.strokes} cssWidth="100%" cssHeight={120} className="w-full" />
+                  </div>
+                )}
+                {isSecretMode && r.word && (
+                  <p className="text-[#FFE66D] font-['Fredoka_One'] text-base">"{r.word}"</p>
+                )}
+                <p className="text-white font-['Fredoka_One'] text-lg">{r.name}</p>
+                <p className="text-[#4ECDC4] font-['Fredoka_One'] text-xl">
+                  {r.votes} vote{r.votes !== 1 ? 's' : ''}
+                </p>
+                <div className={`w-full rounded-t-xl ${podiumHeights[idx]} flex items-end justify-center pb-2`}
+                  style={{ backgroundColor: idx === 1 ? '#FFE66D33' : idx === 0 ? '#C0C0C033' : '#CD7F3233' }}>
+                  <span className="font-['Fredoka_One'] text-2xl text-white">
+                    {idx === 1 ? '1st' : idx === 0 ? '2nd' : '3rd'}
+                  </span>
+                </div>
+              </motion.div>
+            ) : (
+              <div key={`empty-${idx}`} className="flex-1 max-w-xs" />
+            ))}
+          </div>
+        )}
+
+        {/* Full ranked list if more than 3 */}
+        {results.length > 3 && (
+          <div className="w-full max-w-lg flex flex-col gap-2">
+            {results.slice(3).map((r, i) => (
+              <div key={r.playerId} className="flex items-center gap-3 bg-[#1A1A2E] border border-[#2D2D44] rounded-xl px-4 py-3">
+                <span className="text-gray-400 font-['Fredoka_One'] w-8 text-right">{i + 4}.</span>
+                <span className="flex-1 text-white font-['Fredoka_One']">{r.name}</span>
+                {isSecretMode && r.word && <span className="text-[#FFE66D] font-['Nunito'] text-sm italic">"{r.word}"</span>}
+                <span className="text-gray-300 font-['Nunito']">{r.votes} votes</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Leaderboard */}
+        {(drawData.leaderboard || []).length > 0 && (
+          <div className="w-full max-w-lg">
+            <h3 className="text-lg font-['Fredoka_One'] text-[#4ECDC4] mb-3 text-center">📊 Overall Scores</h3>
+            <div className="flex flex-col gap-2">
+              {drawData.leaderboard.map((entry, i) => (
+                <div key={entry.id} className="flex items-center gap-3 bg-[#1A1A2E] border border-[#2D2D44] rounded-xl px-4 py-3">
+                  <span className="text-gray-400 font-['Fredoka_One'] w-6">{i + 1}</span>
+                  <span className="flex-1 text-white font-['Fredoka_One']">{entry.name}</span>
+                  <span className="text-[#FFE66D] font-['Fredoka_One'] text-xl">{entry.score}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── END PHASE (final leaderboard) ────────────────────────────────────────
+  if (isEndPhase) {
+    const leaderboard = drawData.leaderboard || [];
+    const medalEmojis = ['🥇', '🥈', '🥉'];
+    return (
+      <div className="flex flex-col items-center gap-8 w-full max-w-lg">
+        <motion.div className="text-center" initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }}>
+          <p className="text-6xl mb-3">🎨</p>
+          <h1 className="text-5xl font-['Fredoka_One'] text-[#C39BD3] mb-2">Sketch It!</h1>
+          <p className="text-2xl font-['Fredoka_One'] text-[#FFE66D]">Game Over!</p>
+        </motion.div>
+
+        <div className="w-full flex flex-col gap-3">
+          {leaderboard.map((entry, i) => (
+            <motion.div
+              key={entry.id}
+              initial={{ opacity: 0, x: -30 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: i * 0.08 }}
+              className={`flex items-center gap-4 rounded-2xl px-5 py-4 border-2 ${i === 0 ? 'bg-[#FFE66D]/10 border-[#FFE66D]/60' : i === 1 ? 'bg-[#C0C0C0]/10 border-[#C0C0C0]/40' : i === 2 ? 'bg-[#CD7F32]/10 border-[#CD7F32]/40' : 'bg-[#1A1A2E] border-[#2D2D44]'}`}
+            >
+              <span className="text-2xl w-10 text-center">{medalEmojis[i] || `${i + 1}.`}</span>
+              <span className="flex-1 text-white font-['Fredoka_One'] text-2xl">{entry.name}</span>
+              <span className={`font-['Fredoka_One'] text-2xl ${i === 0 ? 'text-[#FFE66D]' : 'text-[#4ECDC4]'}`}>{entry.score}</span>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Fallback
+  return (
+    <div className="flex flex-col items-center gap-4">
+      <p className="text-5xl">🎨</p>
+      <h1 className="text-4xl font-['Fredoka_One'] text-[#C39BD3]">Sketch It!</h1>
     </div>
   );
 }
@@ -989,10 +1226,37 @@ function SetupScreen({ onCreateRoom, onSpectate }) {
   );
 }
 
+const MIXED_SUB_GAMES = [
+  { id: 'who-said-that', label: '🤔 Who Said That?', accent: '#FFE66D' },
+  { id: 'situational',   label: '🎭 Situational',   accent: '#A8E6CF' },
+  { id: 'this-or-that',  label: '⚡ This or That',  accent: '#6C5CE7' },
+  { id: 'drawing',       label: '🎨 Sketch It!',    accent: '#C39BD3' },
+];
+
+const DEFAULT_SUB_GAMES = ['who-said-that', 'situational', 'this-or-that'];
+
 function CreateRoomForm({ onSubmit, onBack }) {
   const [gameType, setGameType] = React.useState('most-likely-to');
   const [gameName, setGameName] = React.useState('');
   const [rounds, setRounds] = React.useState(5);
+  const [selectedSubGames, setSelectedSubGames] = React.useState(DEFAULT_SUB_GAMES);
+  const [drawMode, setDrawMode] = React.useState('classic');
+
+  const toggleSubGame = (id) => {
+    setSelectedSubGames(prev =>
+      prev.includes(id) ? (prev.length > 1 ? prev.filter(g => g !== id) : prev) : [...prev, id]
+    );
+  };
+
+  const handleSubmit = () => {
+    if (gameType === 'mixed') {
+      onSubmit({ gameType, gameName: gameName.trim(), rounds, selectedSubGames });
+    } else if (gameType === 'drawing') {
+      onSubmit({ gameType, gameName: gameName.trim(), rounds, drawMode });
+    } else {
+      onSubmit({ gameType, gameName: gameName.trim(), rounds });
+    }
+  };
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 overflow-auto">
@@ -1025,6 +1289,53 @@ function CreateRoomForm({ onSubmit, onBack }) {
           })}
         </div>
 
+        {gameType === 'mixed' && (
+          <div className="mb-6">
+            <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-3">Mini Games to Include</p>
+            <div className="grid grid-cols-2 gap-2">
+              {MIXED_SUB_GAMES.map(sg => {
+                const active = selectedSubGames.includes(sg.id);
+                return (
+                  <button
+                    key={sg.id}
+                    onClick={() => toggleSubGame(sg.id)}
+                    className="rounded-xl px-4 py-2.5 text-left border-2 transition active:scale-95 font-['Fredoka_One'] text-sm"
+                    style={active
+                      ? { backgroundColor: sg.accent + '22', borderColor: sg.accent, color: sg.accent }
+                      : { borderColor: '#2D2D44', color: '#666', backgroundColor: 'transparent' }}
+                  >
+                    {active ? '✓ ' : ''}{sg.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {gameType === 'drawing' && (
+          <div className="mb-6">
+            <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-3">Drawing Mode</p>
+            <div className="flex gap-3">
+              {[
+                { id: 'classic', label: '🎨 Classic', desc: 'Everyone draws the same word' },
+                { id: 'secret', label: '✦ Secret Words', desc: 'Each player gets a unique word' },
+              ].map(m => (
+                <button
+                  key={m.id}
+                  onClick={() => setDrawMode(m.id)}
+                  className="flex-1 rounded-2xl p-4 text-left border-2 transition active:scale-95"
+                  style={drawMode === m.id
+                    ? { backgroundColor: '#C39BD320', borderColor: '#C39BD3', boxShadow: '0 0 12px #C39BD344' }
+                    : { borderColor: '#2D2D44', backgroundColor: '#0D0D1A60' }}
+                >
+                  <p className="font-['Fredoka_One'] text-sm" style={{ color: drawMode === m.id ? '#C39BD3' : '#ccc' }}>{m.label}</p>
+                  <p className="font-['Nunito'] text-xs text-gray-400 mt-1">{m.desc}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-2">Game Name (optional)</p>
         <input
           type="text"
@@ -1050,7 +1361,7 @@ function CreateRoomForm({ onSubmit, onBack }) {
         </div>
 
         <button
-          onClick={() => onSubmit({ gameType, gameName: gameName.trim(), rounds })}
+          onClick={handleSubmit}
           className="w-full py-4 rounded-2xl font-['Fredoka_One'] text-xl bg-[#4ECDC4] text-black hover:bg-[#3dbdb5] active:scale-95 transition"
           style={{ boxShadow: '0 0 20px #4ECDC440' }}
         >
@@ -1283,9 +1594,9 @@ export default function HostPage() {
   });
 
   const [drawData, setDrawData] = useState({
-    word: '', round: 0, totalRounds: 0, phase: 'drawing',
+    word: '', round: 0, totalRounds: 0, phase: 'drawing', mode: 'classic',
     submittedCount: 0, totalDrawers: 0, voteCount: 0, totalVoters: 0,
-    results: [], scores: {}, leaderboard: [],
+    submissions: [], results: [], scores: {}, leaderboard: [],
   });
 
   const socketRef = useRef(null);
@@ -1424,9 +1735,15 @@ export default function HostPage() {
         round: data.round || 1,
         totalRounds: data.totalRounds || 1,
         phase: 'drawing',
+        mode: data.mode || 'classic',
         submittedCount: 0,
         totalDrawers: data.players?.length || 0,
         voteCount: 0,
+        totalVoters: 0,
+        submissions: [],
+        results: [],
+        scores: {},
+        leaderboard: [],
       });
       setStatus('drawing');
     });
@@ -1436,7 +1753,7 @@ export default function HostPage() {
     });
 
     sock.on('draw:voting_started', (data) => {
-      setDrawData(prev => ({ ...prev, phase: 'voting', voteCount: 0, totalVoters: data.totalVoters || 0 }));
+      setDrawData(prev => ({ ...prev, phase: 'voting', voteCount: 0, totalVoters: data.totalVoters || 0, submissions: data.submissions || [], mode: data.mode || prev.mode }));
       setStatus('draw-voting');
     });
 
@@ -1445,7 +1762,7 @@ export default function HostPage() {
     });
 
     sock.on('draw:results', (data) => {
-      setDrawData(prev => ({ ...prev, phase: 'results', results: data.results || [], scores: data.scores || {} }));
+      setDrawData(prev => ({ ...prev, phase: 'results', results: data.results || [], scores: data.scores || {}, leaderboard: data.leaderboard || [], mode: data.mode || prev.mode }));
       setStatus('draw-results');
     });
 
@@ -1534,15 +1851,17 @@ export default function HostPage() {
   }, [roomCodeParam, attachGameHandlers]);
 
   // ─── Creator flow ─────────────────────────────────────────────────────────
-  const handleCreateRoom = useCallback(({ gameType, gameName, rounds }) => {
-    setCreatorSettings({ gameType, rounds });
+  const handleCreateRoom = useCallback(({ gameType, gameName, rounds, selectedSubGames, drawMode }) => {
+    setCreatorSettings({ gameType, rounds, drawMode: drawMode || 'classic' });
     setStatus('connecting');
 
     const sock = io(SERVER_URL, { autoConnect: false });
     socketRef.current = sock;
 
     sock.on('connect', () => {
-      sock.emit('create_room', { playerName: 'Screen Cast', gameType, gameName, hostIsPlaying: false });
+      const payload = { playerName: 'Screen Cast', gameType, gameName, hostIsPlaying: false };
+      if (gameType === 'mixed' && selectedSubGames) payload.selectedSubGames = selectedSubGames;
+      sock.emit('create_room', payload);
     });
 
     sock.on('room_created', ({ code, players: initialPlayers, gameType: gt, gameName: gn }) => {
@@ -1564,7 +1883,7 @@ export default function HostPage() {
     if (creatorSettings.gameType === 'most-likely-to') {
       sock.emit('mlt:start', { code: gameInfo.code, rounds: creatorSettings.rounds, allowSelfVote: true });
     } else if (creatorSettings.gameType === 'drawing') {
-      sock.emit('draw:start', { code: gameInfo.code, rounds: creatorSettings.rounds });
+      sock.emit('draw:start', { code: gameInfo.code, rounds: creatorSettings.rounds, mode: creatorSettings.drawMode || 'classic' });
     } else {
       sock.emit('start_game', { code: gameInfo.code });
     }
@@ -1660,7 +1979,7 @@ export default function HostPage() {
       case 'draw-voting':
       case 'draw-results':
       case 'draw-end':
-        return <DrawingHostPanel drawData={drawData} players={players} />;
+        return <DrawingHostPanel drawData={drawData} players={players} status={status} />;
       default:
         return null;
     }

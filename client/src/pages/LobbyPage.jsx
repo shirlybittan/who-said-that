@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { translations } from '../locales/translations';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useSounds } from '../hooks/useSounds';
 
 const GAME_TYPES = [
   { id: 'who-said-that',  emoji: '🤔', key: 'gameWst',   color: '#FFE66D',  dark: '#0D0D1A' },
@@ -17,6 +18,17 @@ export default function LobbyPage() {
   const { state } = useGame();
   const [customQuestion, setCustomQuestion] = useState('');
   const [saveToBank, setSaveToBank] = useState(false);
+  const sounds = useSounds();
+  const prevPlayerCount = useRef(state.players.length);
+
+  useEffect(() => {
+    const current = state.players.length;
+    if (current > prevPlayerCount.current) {
+      sounds.join();
+    }
+    prevPlayerCount.current = current;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.players.length]);
 
   const t = translations[state.lang].lobby;
   const tMlt = translations[state.lang].mlt;
@@ -34,6 +46,7 @@ export default function LobbyPage() {
 
   const handleStartGame = () => {
     if (state.players.filter(p => p.isPlaying).length < 3) return alert('Need at least 3 players to start!');
+    sounds.click();
     if (isMlt) {
       socket.emit('mlt:start', {
         code: state.roomCode,

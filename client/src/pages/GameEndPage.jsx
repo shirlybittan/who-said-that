@@ -4,13 +4,17 @@ import { useGame } from '../store/gameStore.jsx';
 import { translations } from '../locales/translations';
 import Confetti from 'react-confetti';
 import { motion } from 'framer-motion';
+import { useSounds } from '../hooks/useSounds';
 
 export default function GameEndPage() {
   const { state } = useGame();
   const navigate = useNavigate();
   const [windowDimension, setWindowDimension] = useState({ width: window.innerWidth, height: window.innerHeight });
+  const sounds = useSounds();
 
   const t = translations[state.lang].gameEnd;
+
+  useEffect(() => { sounds.gameEnd(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const handleResize = () => setWindowDimension({ width: window.innerWidth, height: window.innerHeight });
@@ -19,6 +23,7 @@ export default function GameEndPage() {
   }, []);
 
   const handlePlayAgain = () => {
+    sounds.click();
     navigate('/');
   };
 

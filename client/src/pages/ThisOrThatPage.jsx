@@ -3,21 +3,26 @@ import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { translations } from '../locales/translations';
 import { motion } from 'framer-motion';
+import { useSounds } from '../hooks/useSounds';
 
 export default function ThisOrThatPage() {
   const { state, dispatch } = useGame();
   const t = translations[state.lang].tot;
   const { tot, isHost, roomCode, playerId, players } = state;
+  const sounds = useSounds();
 
   const [localChoice, setLocalChoice] = useState(null); // 'a' | 'b'
 
   // Reset local choice on new question
   useEffect(() => {
     setLocalChoice(null);
+    sounds.reveal();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tot.question]);
 
   const handleVote = (choice) => {
     if (tot.hasVoted || tot.resultsVisible) return;
+    sounds.vote();
     setLocalChoice(choice);
     socket.emit('tot:vote', { code: roomCode, choice });
     dispatch({ type: 'TOT_MARK_VOTED', payload: { choice } });

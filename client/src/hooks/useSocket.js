@@ -322,6 +322,14 @@ export const useSocket = () => {
       dispatch({ type: 'DRAW_RESTARTED', payload: data });
       navigate('/lobby');
     };
+
+    const onDrawSecretWord = (data) => {
+      dispatch({ type: 'DRAW_SECRET_WORD', payload: data });
+    };
+
+    const onDrawWordChanged = (data) => {
+      dispatch({ type: 'DRAW_WORD_CHANGED', payload: data });
+    };
     // ────────────────────────────────────────────────────────────────────────
 
     socket.on('connect', onConnect);
@@ -368,6 +376,8 @@ export const useSocket = () => {
     socket.on('draw:results', onDrawResults);
     socket.on('draw:end', onDrawEnd);
     socket.on('draw:restarted', onDrawRestarted);
+    socket.on('draw:secret_word', onDrawSecretWord);
+    socket.on('draw:word_changed', onDrawWordChanged);
 
     return () => {
       socket.off('connect', onConnect);
@@ -414,6 +424,8 @@ export const useSocket = () => {
       socket.off('draw:results', onDrawResults);
       socket.off('draw:end', onDrawEnd);
       socket.off('draw:restarted', onDrawRestarted);
+      socket.off('draw:secret_word', onDrawSecretWord);
+      socket.off('draw:word_changed', onDrawWordChanged);
     };
   }, [dispatch, navigate, state.playerId]);
 };

@@ -90,16 +90,20 @@ const initialState = {
   },
   draw: {
     phase: 'waiting',      // 'waiting' | 'drawing' | 'voting' | 'results' | 'end'
+    mode: 'classic',       // 'classic' | 'secret'
     round: 0,
     totalRounds: 3,
     word: null,
+    yourWord: null,        // player's personal word (classic = same as word; secret = unique)
+    skipsUsed: 0,
+    maxSkips: 2,
     timeLimit: 90,
     secondsLeft: 90,
     players: [],
     submittedCount: 0,
     submittedPlayerIds: [],
-    submissions: [],       // [{playerId, name, color, strokes}]
-    results: [],           // [{playerId, name, color, strokes, votes}]
+    submissions: [],       // [{playerId, name, color, strokes, word}]
+    results: [],           // [{playerId, name, color, strokes, votes, word}]
     scores: {},
     roundScores: {},
     leaderboard: [],
@@ -380,9 +384,13 @@ export const gameReducer = (state, action) => {
         draw: {
           ...state.draw,
           phase: 'drawing',
+          mode: action.payload.mode || 'classic',
           round: action.payload.round,
           totalRounds: action.payload.totalRounds,
-          word: action.payload.word,
+          word: action.payload.word || null,
+          yourWord: action.payload.word || null,
+          skipsUsed: 0,
+          maxSkips: 2,
           timeLimit: action.payload.timeLimit,
           secondsLeft: action.payload.timeLimit,
           players: action.payload.players || state.draw.players,
@@ -396,6 +404,30 @@ export const gameReducer = (state, action) => {
           voteCount: 0,
           totalVoters: (action.payload.players || state.draw.players).length,
           wordResult: null,
+        },
+      };
+    case 'DRAW_SECRET_WORD':
+      return {
+        ...state,
+        draw: {
+          ...state.draw,
+          word: action.payload.word,
+          yourWord: action.payload.word,
+          // If skipped in secret mode, reset submission flag
+          hasSubmitted: action.payload.skipped ? false : state.draw.hasSubmitted,
+          skipsUsed: action.payload.skipped ? state.draw.skipsUsed + 1 : state.draw.skipsUsed,
+        },
+      };
+    case 'DRAW_WORD_CHANGED':
+      return {
+        ...state,
+        draw: {
+          ...state.draw,
+          word: action.payload.word,
+          yourWord: action.payload.word,
+          hasSubmitted: false,
+          skipsUsed: action.payload.skipsUsed || state.draw.skipsUsed + 1,
+          maxSkips: action.payload.maxSkips || state.draw.maxSkips,
         },
       };
     case 'DRAW_TIMER':
@@ -412,6 +444,8 @@ export const gameReducer = (state, action) => {
           phase: 'voting',
           submissions: action.payload.submissions,
           wordResult: action.payload.word,
+          mode: action.payload.mode || state.draw.mode,
+          totalVoters: action.payload.totalVoters || state.draw.players.length,
           votes: {},
           voteCount: 0,
         },

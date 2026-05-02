@@ -5,12 +5,16 @@ import { socket } from '../socket';
 import { translations } from '../locales/translations';
 import Confetti from 'react-confetti';
 import { motion } from 'framer-motion';
+import { useSounds } from '../hooks/useSounds';
 
 export default function DrawingEndPage() {
   const { state, dispatch } = useGame();
   const navigate = useNavigate();
   const { draw, isHost, roomCode, lang } = state;
   const t = translations[lang].draw;
+  const sounds = useSounds();
+
+  useEffect(() => { sounds.gameEnd(); }, []);
 
   const leaderboard = draw.leaderboard || [];
   const medals = ['🥇', '🥈', '🥉'];

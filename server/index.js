@@ -58,15 +58,17 @@ const startDrawTimer = (io, room, code, seconds) => {
 const startDrawVoting = (io, room, code) => {
   if (!room.draw || room.draw.phase !== 'drawing') return;
   room.draw.phase = 'voting';
+  const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
   const submissions = Object.entries(room.draw.submissions).map(([playerId, sub]) => {
     const player = room.players.find(p => p.id === playerId);
-    return { playerId, name: player?.name || 'Unknown', color: player?.color || '#fff', strokes: sub.strokes };
+    const word = room.draw.mode === 'secret' ? (room.draw.playerWords?.[playerId] || '?') : room.draw.word;
+    return { playerId, name: player?.name || 'Unknown', color: player?.color || '#fff', strokes: sub.strokes, word };
   });
   // Shuffle so submission order doesn't reveal authorship
   for (let i = submissions.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1)); [submissions[i], submissions[j]] = [submissions[j], submissions[i]];
   }
-  io.to(code).emit('draw:voting_started', { submissions, round: room.draw.round, word: room.draw.word });
+  io.to(code).emit('draw:voting_started', { submissions, round: room.draw.round, word: room.draw.word, mode: room.draw.mode || 'classic', totalVoters: playingPlayers.length });
 };
 
 const resolveDrawVoting = (io, room, code) => {
@@ -83,12 +85,13 @@ const resolveDrawVoting = (io, room, code) => {
   // Build sorted results
   const results = Object.entries(room.draw.submissions).map(([playerId, sub]) => {
     const player = room.players.find(p => p.id === playerId);
-    return { playerId, name: player?.name || 'Unknown', color: player?.color || '#fff', strokes: sub.strokes, votes: voteCounts[playerId] || 0 };
+    const word = room.draw.mode === 'secret' ? (room.draw.playerWords?.[playerId] || '?') : room.draw.word;
+    return { playerId, name: player?.name || 'Unknown', color: player?.color || '#fff', strokes: sub.strokes, votes: voteCounts[playerId] || 0, word };
   }).sort((a, b) => b.votes - a.votes);
   const leaderboard = playingPlayers
     .map(p => ({ id: p.id, name: p.name, color: p.color, score: room.draw.scores[p.id] || 0 }))
     .sort((a, b) => b.score - a.score);
-  io.to(code).emit('draw:results', { results, scores: room.draw.scores, roundScores, round: room.draw.round, totalRounds: room.draw.totalRounds, leaderboard, word: room.draw.word });
+  io.to(code).emit('draw:results', { results, scores: room.draw.scores, roundScores, round: room.draw.round, totalRounds: room.draw.totalRounds, leaderboard, word: room.draw.word, mode: room.draw.mode || 'classic' });
 };
 
 // ─── MLT helpers ─────────────────────────────────────────────────────────────
@@ -467,6 +470,11 @@ io.on('connection', (socket) => {
     const gameName = (data.gameName || '').trim().slice(0, 40);
     const hostIsPlaying = !!data.hostIsPlaying;
     const { room, player } = createRoom(socket.id, playerName, gameType, gameName, hostIsPlaying);
+    // Allow client to override which sub-games are active in a mixed game
+    if (room.gameType === 'mixed' && Array.isArray(data.selectedSubGames) && data.selectedSubGames.length > 0) {
+      const validSubs = ['who-said-that', 'situational', 'this-or-that', 'drawing'];
+      room.selectedSubGames = data.selectedSubGames.filter(s => validSubs.includes(s));
+    }
     socket.join(room.code);
     socket.emit('room_created', { code: room.code, playerId: player.id, players: room.players, gameType: room.gameType, gameName: room.gameName, selectedSubGames: room.selectedSubGames, isPlaying: player.isPlaying });
   });
@@ -548,7 +556,9 @@ io.on('connection', (socket) => {
       room.phase = 'tot';
     } else if (room.gameType === 'mixed') {
       room.questions = selectMixedQuestions(count, room.mode, room.customQuestions, room.selectedSubGames);
-      room.miniGameSelectedTypes = room.selectedSubGames || ['who-said-that', 'situational', 'this-or-that'];
+      room.miniGameSelectedTypes = room.selectedSubGames && room.selectedSubGames.length > 0
+        ? room.selectedSubGames
+        : ['who-said-that', 'situational', 'this-or-that'];
       room.miniGamePlayedTypes = [];
     } else {
       // who-said-that
@@ -605,8 +615,12 @@ io.on('connection', (socket) => {
     if (!player || !player.isHost) return;
 
     // Determine current mini-game type
-    const currentType = room.questions[room.currentQuestionIndex]?.type || (room.phase === 'drawing' ? 'drawing' : null);
-    if (!currentType) return;
+    // room.questions[*].type uses 'wst' for who-said-that; allTypes uses 'who-said-that'.
+    // denormalizeType maps back to the allTypes namespace for correct comparisons.
+    const denormalizeType = (t) => t === 'wst' ? 'who-said-that' : t;
+    const rawCurrentType = room.questions[room.currentQuestionIndex]?.type || (room.phase === 'drawing' ? 'drawing' : null);
+    if (!rawCurrentType) return;
+    const currentType = denormalizeType(rawCurrentType); // 'who-said-that', 'situational', 'this-or-that', 'drawing'
 
     // Mark current type as played in this cycle
     if (!room.miniGamePlayedTypes) room.miniGamePlayedTypes = [];
@@ -614,7 +628,7 @@ io.on('connection', (socket) => {
       room.miniGamePlayedTypes.push(currentType);
     }
 
-    // The full list of selected types for this mixed game
+    // The full list of selected types for this mixed game (all in 'who-said-that' namespace)
     const allTypes = room.miniGameSelectedTypes || room.selectedSubGames || [];
 
     // Find the next type: prefer unplayed types, then cycle through all types
@@ -1301,7 +1315,7 @@ io.on('connection', (socket) => {
 
   // ─── Drawing (Sketch It!) handlers ────────────────────────────────────────
 
-  socket.on('draw:start', ({ code, rounds }) => {
+  socket.on('draw:start', ({ code, rounds, mode }) => {
     const room = getRoom(code);
     if (!room) return;
     const player = room.players.find(p => p.socketId === socket.id);
@@ -1312,6 +1326,7 @@ io.on('connection', (socket) => {
     if (playingPlayers.length < 2) return;
 
     const totalRounds = Math.min(Math.max(parseInt(rounds) || room.totalRounds || 3, 1), 10);
+    const drawMode = mode === 'secret' ? 'secret' : 'classic';
     const scores = {};
     playingPlayers.forEach(p => { scores[p.id] = 0; });
 
@@ -1320,24 +1335,82 @@ io.on('connection', (socket) => {
       phase: 'drawing',
       round: 1,
       totalRounds,
-      word: pickDrawWord(playingPlayers),
+      word: drawMode === 'classic' ? pickDrawWord(playingPlayers) : null,
       timeLimit: 90,
       secondsLeft: 90,
       submissions: {},
       votes: {},
       scores,
       timerRef: null,
+      mode: drawMode,
+      skipCount: 0,
+      playerWords: {},
     };
 
     const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
-    io.to(code).emit('draw:round_start', {
-      word: room.draw.word,
-      round: room.draw.round,
-      totalRounds: room.draw.totalRounds,
-      timeLimit: room.draw.timeLimit,
-      players,
-    });
+
+    if (drawMode === 'secret') {
+      // Assign each player a unique word
+      const shuffled = [...drawWordBank].sort(() => Math.random() - 0.5);
+      playingPlayers.forEach((p, i) => {
+        room.draw.playerWords[p.id] = shuffled[i % shuffled.length];
+      });
+      // Broadcast round start without word (host/spectators)
+      io.to(code).emit('draw:round_start', { word: null, round: 1, totalRounds: room.draw.totalRounds, timeLimit: room.draw.timeLimit, players, mode: 'secret' });
+      // Send personalized word to each player
+      playingPlayers.forEach(p => {
+        if (p.socketId) io.to(p.socketId).emit('draw:secret_word', { word: room.draw.playerWords[p.id] });
+      });
+    } else {
+      io.to(code).emit('draw:round_start', {
+        word: room.draw.word,
+        round: room.draw.round,
+        totalRounds: room.draw.totalRounds,
+        timeLimit: room.draw.timeLimit,
+        players,
+        mode: 'classic',
+      });
+    }
     startDrawTimer(io, room, code, room.draw.timeLimit);
+  });
+
+  socket.on('draw:skip_word', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'drawing' || !room.draw || room.draw.phase !== 'drawing') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isPlaying) return;
+
+    const MAX_SKIPS = 2;
+    if (!room.draw.skipCount) room.draw.skipCount = 0;
+    if (room.draw.skipCount >= MAX_SKIPS) return;
+    room.draw.skipCount++;
+
+    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+
+    if (room.draw.mode === 'secret') {
+      // Secret mode: only that player gets a new word, their submission is cleared
+      const newWord = pickDrawWord(playingPlayers);
+      room.draw.playerWords[player.id] = newWord;
+      delete room.draw.submissions[player.id];
+      socket.emit('draw:secret_word', { word: newWord, skipped: true });
+      const submittedCount = Object.keys(room.draw.submissions).length;
+      io.to(code).emit('draw:submission_received', { submittedCount, totalDrawers: playingPlayers.length, submittedPlayerIds: Object.keys(room.draw.submissions) });
+    } else {
+      // Classic mode: everyone gets a new word, reset all submissions and timer
+      const newWord = pickDrawWord(playingPlayers);
+      room.draw.word = newWord;
+      room.draw.submissions = {};
+      if (room.draw.timerRef) { clearInterval(room.draw.timerRef); room.draw.timerRef = null; }
+      io.to(code).emit('draw:word_changed', {
+        word: newWord,
+        skippedBy: player.id,
+        skippedByName: player.name,
+        skipsUsed: room.draw.skipCount,
+        maxSkips: MAX_SKIPS,
+      });
+      io.to(code).emit('draw:submission_received', { submittedCount: 0, totalDrawers: playingPlayers.length, submittedPlayerIds: [] });
+      startDrawTimer(io, room, code, room.draw.timeLimit);
+    }
   });
 
   socket.on('draw:submit', ({ code, strokes }) => {
@@ -1439,19 +1512,27 @@ io.on('connection', (socket) => {
 
     room.draw.round++;
     room.draw.phase = 'drawing';
-    room.draw.word = pickDrawWord(room.players.filter(p => p.isConnected && p.isPlaying));
     room.draw.submissions = {};
     room.draw.votes = {};
     room.draw.secondsLeft = room.draw.timeLimit;
+    room.draw.skipCount = 0;
 
-    const players = room.players.filter(p => p.isConnected && p.isPlaying).map(p => ({ id: p.id, name: p.name, color: p.color }));
-    io.to(code).emit('draw:round_start', {
-      word: room.draw.word,
-      round: room.draw.round,
-      totalRounds: room.draw.totalRounds,
-      timeLimit: room.draw.timeLimit,
-      players,
-    });
+    const nextPlayingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const players = nextPlayingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
+
+    if (room.draw.mode === 'secret') {
+      room.draw.word = null;
+      if (!room.draw.playerWords) room.draw.playerWords = {};
+      const shuffledNext = [...drawWordBank].sort(() => Math.random() - 0.5);
+      nextPlayingPlayers.forEach((p, i) => { room.draw.playerWords[p.id] = shuffledNext[i % shuffledNext.length]; });
+      io.to(code).emit('draw:round_start', { word: null, round: room.draw.round, totalRounds: room.draw.totalRounds, timeLimit: room.draw.timeLimit, players, mode: 'secret' });
+      nextPlayingPlayers.forEach(p => {
+        if (p.socketId) io.to(p.socketId).emit('draw:secret_word', { word: room.draw.playerWords[p.id] });
+      });
+    } else {
+      room.draw.word = pickDrawWord(nextPlayingPlayers);
+      io.to(code).emit('draw:round_start', { word: room.draw.word, round: room.draw.round, totalRounds: room.draw.totalRounds, timeLimit: room.draw.timeLimit, players, mode: 'classic' });
+    }
     startDrawTimer(io, room, code, room.draw.timeLimit);
   });
 

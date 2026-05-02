@@ -3,6 +3,7 @@ import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { translations } from '../locales/translations';
 import { motion } from 'framer-motion';
+import { useSounds } from '../hooks/useSounds';
 
 const VoteCoin = ({ coinIndex, cardIndex }) => (
   <motion.div
@@ -31,16 +32,18 @@ export default function SituationalVotingPage() {
   const { state, dispatch } = useGame();
   const t = translations[state.lang].situational;
   const sit = state.sit;
+  const sounds = useSounds();
 
   const handleVote = (answerId) => {
     if (sit.hasVoted) return;
     if (answerId === state.playerId) return; // can't vote own answer
-
+    sounds.vote();
     socket.emit('sit:vote', { code: state.roomCode, answerId });
     dispatch({ type: 'SIT_MARK_VOTED', payload: { answerId } });
   };
 
   const handleContinue = () => {
+    sounds.click();
     socket.emit('sit:next', { code: state.roomCode });
   };
 

@@ -218,6 +218,13 @@ export const translations = {
       playAgain: "Play Again! 🎮",
       finalTitle: "Final Results 🏆",
       pts: "pts",
+      skipWord: "Skip word",
+      skipsLeft: "left",
+      noSkipsLeft: "No skips left this round",
+      secretMode: "Secret Words",
+      classicMode: "Classic",
+      yourSecretWord: "Your word:",
+      secretVotingHint: "each player drew a different word!",
     }
   },
   fr: {
@@ -439,6 +446,13 @@ export const translations = {
       playAgain: "Rejouer ! 🎮",
       finalTitle: "Résultats finaux 🏆",
       pts: "pts",
+      skipWord: "Changer le mot",
+      skipsLeft: "restant(s)",
+      noSkipsLeft: "Plus de passes disponibles",
+      secretMode: "Mots Secrets",
+      classicMode: "Classique",
+      yourSecretWord: "Ton mot :",
+      secretVotingHint: "chaque joueur avait un mot différent !",
     }
   },
 };

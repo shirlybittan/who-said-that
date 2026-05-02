@@ -1,7 +1,8 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import { GameProvider, useGame } from './store/gameStore.jsx';
+import { soundManager } from './sounds/SoundManager';
 import HomePage from './pages/HomePage';
 import LobbyPage from './pages/LobbyPage';
 import QuestionPage from './pages/QuestionPage.jsx';
@@ -59,6 +60,25 @@ const RoomCodeBadge = () => {
   );
 };
 
+const SoundToggle = () => {
+  const [muted, setMuted] = useState(() => soundManager.muted);
+  const handleToggle = () => {
+    const nowMuted = soundManager.toggleMute();
+    setMuted(nowMuted);
+    if (!nowMuted) soundManager.playClick();
+  };
+  return (
+    <button
+      onClick={handleToggle}
+      title={muted ? 'Unmute sounds' : 'Mute sounds'}
+      className="absolute top-4 right-20 bg-[#2D2D44] text-white px-3 py-1 rounded-full text-sm font-bold z-50 border border-gray-600 hover:bg-[#4ECDC4] hover:text-black transition"
+      aria-label={muted ? 'Unmute sounds' : 'Mute sounds'}
+    >
+      {muted ? '🔇' : '🔊'}
+    </button>
+  );
+};
+
 const LangSwitcher = () => {
   const { state, dispatch } = useGame();
   const toggleLanguage = () => {
@@ -92,6 +112,7 @@ function App() {
           <GameProvider>
             <SocketHandler>
               <div className="font-['Nunito'] min-h-screen bg-[#0D0D1A] text-[#F7F7F7] relative">
+                <SoundToggle />
                 <LangSwitcher />
                 <RoomCodeBadge />
                 <AnimatedRoutes />

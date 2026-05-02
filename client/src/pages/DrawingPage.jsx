@@ -4,6 +4,7 @@ import { socket } from '../socket';
 import { translations } from '../locales/translations';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { useSounds } from '../hooks/useSounds';
 
 // ─── Canvas constants ────────────────────────────────────────────────────────
 const CANVAS_W = 400;
@@ -99,6 +100,8 @@ export default function DrawingPage() {
   const { draw, isHost, roomCode, playerId, isPlaying, lang } = state;
   const t = translations[lang].draw;
 
+  const sounds = useSounds();
+
   // Canvas refs — avoid re-rendering on every stroke
   const canvasRef   = useRef(null);
   const strokesRef  = useRef([]);
@@ -132,6 +135,7 @@ export default function DrawingPage() {
   // ── Drawing event handlers (all phases of pointer/touch) ─────────────────
   const startDraw = useCallback((x, y) => {
     if (draw.hasSubmitted) return;
+    sounds.draw();
     isDrawing.current = true;
     curStroke.current = { color, width, type: tool, points: [{ x, y }] };
     // Draw a dot immediately
@@ -352,6 +356,19 @@ export default function DrawingPage() {
             </button>
           </div>
 
+          {/* Skip word */}
+          {canSkip && (
+            <button
+              onClick={() => socket.emit('draw:skip_word', { code: roomCode })}
+              className="w-full py-2 rounded-lg text-xs font-['Nunito'] text-[#C39BD3] border border-[#C39BD3]/40 hover:border-[#C39BD3] hover:bg-[#C39BD3]/10 transition"
+            >
+              🔀 {t.skipWord || 'Skip word'} · {skipsRemaining} {t.skipsLeft || 'left'}
+            </button>
+          )}
+          {!canSkip && draw.skipsUsed >= draw.maxSkips && !draw.hasSubmitted && (
+            <p className="text-center text-xs text-gray-600 font-['Nunito']">{t.noSkipsLeft || 'No skips left'}</p>
+          )}
+
           {/* Host controls */}
           {isHost && (
             <button
@@ -366,15 +383,20 @@ export default function DrawingPage() {
     );
   }
 
-  // ── Render: Voting phase ──────────────────────────────────────────────────
+  // ── Render: Voting phase ───────────────────────────────────────────────
   if (draw.phase === 'voting') {
     const subs = draw.submissions || [];
+    const isSecretMode = draw.mode === 'secret';
     return (
       <motion.div className="flex flex-col items-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-4" initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}>
         <h2 className="text-2xl font-['Fredoka_One'] text-[#FFE66D] mb-1">{t.voting}</h2>
-        <p className="text-sm text-gray-400 font-['Nunito'] mb-1">
-          {t.wordWas} <span className="text-[#C39BD3] font-bold uppercase">{draw.wordResult}</span>
-        </p>
+        {!isSecretMode ? (
+          <p className="text-sm text-gray-400 font-['Nunito'] mb-1">
+            {t.wordWas} <span className="text-[#C39BD3] font-bold uppercase">{draw.wordResult}</span>
+          </p>
+        ) : (
+          <p className="text-sm text-[#C39BD3] font-['Nunito'] mb-1">✦ {t.secretMode || 'Secret Words'} — {t.secretVotingHint || 'each drawing had a different word!'}</p>
+        )}
         <p className="text-xs text-gray-500 font-['Nunito'] mb-4">
           {draw.voteCount || 0}/{draw.totalVoters || subs.length} voted
         </p>
@@ -397,15 +419,20 @@ export default function DrawingPage() {
                 }`}
               >
                 <ReplayCanvas strokes={sub.strokes} cssWidth="100%" cssHeight={130} className="w-full" />
-                <div className="bg-[#1A1A2E] py-2 px-2 flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <div className="w-4 h-4 rounded-full border border-white/20" style={{ backgroundColor: sub.color }} />
-                    <span className="text-xs font-['Nunito'] text-gray-300 truncate max-w-[60px]">
-                      {isOwn ? `${t.yourCaption}` : '???'}
-                    </span>
+                <div className="bg-[#1A1A2E] py-2 px-2">
+                  {isSecretMode && sub.word && (
+                    <p className="text-[10px] font-['Fredoka_One'] text-[#FFE66D] uppercase text-center mb-1 truncate">{sub.word}</p>
+                  )}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-4 h-4 rounded-full border border-white/20" style={{ backgroundColor: sub.color }} />
+                      <span className="text-xs font-['Nunito'] text-gray-300 truncate max-w-[60px]">
+                        {isOwn ? `${t.yourCaption}` : '???'}
+                      </span>
+                    </div>
+                    {canVote && <span className="text-xs font-['Fredoka_One'] text-[#C39BD3]">{t.voteBtn}</span>}
+                    {voted && <span className="text-xs text-[#FFE66D]">✓</span>}
                   </div>
-                  {canVote && <span className="text-xs font-['Fredoka_One'] text-[#C39BD3]">{t.voteBtn}</span>}
-                  {voted && <span className="text-xs text-[#FFE66D]">✓</span>}
                 </div>
               </button>
             );
@@ -428,12 +455,17 @@ export default function DrawingPage() {
   if (draw.phase === 'results') {
     const results = draw.results || [];
     const isLastRound = draw.round >= draw.totalRounds;
+    const isSecretResults = draw.mode === 'secret';
     return (
       <motion.div className="flex flex-col items-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-4 pb-28" initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}>
         <h2 className="text-2xl font-['Fredoka_One'] text-[#FFE66D] mb-1">{t.results}</h2>
-        <p className="text-sm text-gray-400 font-['Nunito'] mb-1">
-          {t.wordWas} <span className="text-[#C39BD3] font-bold uppercase">{draw.wordResult}</span>
-        </p>
+        {!isSecretResults ? (
+          <p className="text-sm text-gray-400 font-['Nunito'] mb-1">
+            {t.wordWas} <span className="text-[#C39BD3] font-bold uppercase">{draw.wordResult}</span>
+          </p>
+        ) : (
+          <p className="text-sm text-[#C39BD3] font-['Nunito'] mb-1">✦ {t.secretMode || 'Secret Words'}</p>
+        )}
         <p className="text-xs text-gray-500 font-['Nunito'] mb-4">
           {t.round} {draw.round} {t.of} {draw.totalRounds}
         </p>
@@ -453,6 +485,9 @@ export default function DrawingPage() {
                     <div className="w-4 h-4 rounded-full border border-white/20 flex-shrink-0" style={{ backgroundColor: r.color }} />
                     <span className="font-['Fredoka_One'] text-white">{r.name}</span>
                   </div>
+                  {isSecretResults && r.word && (
+                    <p className="text-xs text-[#FFE66D] font-['Nunito'] mb-1">"{r.word}"</p>
+                  )}
                   <div className="flex items-center gap-3">
                     <span className="text-xs text-gray-400 font-['Nunito']">{r.votes} {t.votesLabel}</span>
                     {delta > 0 && <span className="text-xs font-bold text-[#4ECDC4]">+{delta} {t.pts}</span>}
