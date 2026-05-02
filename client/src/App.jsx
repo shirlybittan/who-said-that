@@ -17,6 +17,12 @@ import ThisOrThatEndPage from './pages/ThisOrThatEndPage.jsx';
 import SituationalVotingPage from './pages/SituationalVotingPage.jsx';
 import DrawingPage from './pages/DrawingPage.jsx';
 import DrawingEndPage from './pages/DrawingEndPage.jsx';
+import FillBlankPage from './pages/FillBlankPage.jsx';
+import FillBlankEndPage from './pages/FillBlankEndPage.jsx';
+import SelfiePhotoPage from './pages/SelfiePhotoPage.jsx';
+import SelfieDrawPage from './pages/SelfieDrawPage.jsx';
+import SelfieVotePage from './pages/SelfieVotePage.jsx';
+import SelfieResultsPage from './pages/SelfieResultsPage.jsx';
 import HostPage from './pages/HostPage.jsx';
 import { useSocket } from './hooks/useSocket';
 
@@ -44,6 +50,12 @@ const AnimatedRoutes = () => {
         <Route path="/sit-vote" element={<SituationalVotingPage />} />
         <Route path="/draw" element={<DrawingPage />} />
         <Route path="/draw-end" element={<DrawingEndPage />} />
+        <Route path="/fitb" element={<FillBlankPage />} />
+        <Route path="/fitb-end" element={<FillBlankEndPage />} />
+        <Route path="/selfie-photo" element={<SelfiePhotoPage />} />
+        <Route path="/selfie-draw" element={<SelfieDrawPage />} />
+        <Route path="/selfie-vote" element={<SelfieVotePage />} />
+        <Route path="/selfie-results" element={<SelfieResultsPage />} />
       </Routes>
     </AnimatePresence>
   );

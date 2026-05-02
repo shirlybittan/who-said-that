@@ -91,6 +91,20 @@ export default function HomePage() {
       icon: '🎨',
     },
     {
+      id: 'fill-in-the-blank',
+      label: t?.gameFitb || 'Fill in the Blank',
+      desc: t?.gameFitbDesc || 'Finish the sentence funnily!',
+      accent: '#F9CA24',
+      icon: '✏️',
+    },
+    {
+      id: 'selfie-roast',
+      label: t?.gameSelfie || 'Selfie Roast',
+      desc: t?.gameSelfieDesc || 'Take a selfie, get roasted!',
+      accent: '#FD79A8',
+      icon: '📸',
+    },
+    {
       id: 'mixed',
       label: t?.gameMixed || 'Mixed',
       desc: t?.gameMixedDesc || 'All modes shuffled!',

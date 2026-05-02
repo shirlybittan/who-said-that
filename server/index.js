@@ -614,45 +614,22 @@ io.on('connection', (socket) => {
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isHost) return;
 
-    // Determine current mini-game type
-    // room.questions[*].type uses 'wst' for who-said-that; allTypes uses 'who-said-that'.
-    // denormalizeType maps back to the allTypes namespace for correct comparisons.
     const denormalizeType = (t) => t === 'wst' ? 'who-said-that' : t;
+    const normalizeType = (t) => t === 'who-said-that' ? 'wst' : t;
     const rawCurrentType = room.questions[room.currentQuestionIndex]?.type || (room.phase === 'drawing' ? 'drawing' : null);
     if (!rawCurrentType) return;
-    const currentType = denormalizeType(rawCurrentType); // 'who-said-that', 'situational', 'this-or-that', 'drawing'
+    const currentType = denormalizeType(rawCurrentType);
 
-    // Mark current type as played in this cycle
-    if (!room.miniGamePlayedTypes) room.miniGamePlayedTypes = [];
-    if (!room.miniGamePlayedTypes.includes(currentType)) {
-      room.miniGamePlayedTypes.push(currentType);
-    }
-
-    // The full list of selected types for this mixed game (all in 'who-said-that' namespace)
     const allTypes = room.miniGameSelectedTypes || room.selectedSubGames || [];
 
-    // Find the next type: prefer unplayed types, then cycle through all types
-    const unplayed = allTypes.filter(t => !room.miniGamePlayedTypes.includes(t) && t !== currentType);
-    let nextType;
-    if (unplayed.length > 0) {
-      nextType = unplayed[Math.floor(Math.random() * unplayed.length)];
-    } else {
-      // All types played — reset cycle and pick any type different from current
-      room.miniGamePlayedTypes = [currentType];
-      const others = allTypes.filter(t => t !== currentType);
-      if (others.length === 0) {
-        // Only one game type, just skip to next question of same type
-        nextType = currentType;
-      } else {
-        nextType = others[Math.floor(Math.random() * others.length)];
-      }
-    }
-
-    // Normalize: 'who-said-that' → 'wst' for comparison
-    const normalizeType = (t) => t === 'who-said-that' ? 'wst' : t;
+    // Pick a different mini-game type at random
+    const options = allTypes.filter(t => t !== currentType);
+    const nextType = options.length > 0
+      ? options[Math.floor(Math.random() * options.length)]
+      : currentType;
     const targetType = normalizeType(nextType);
 
-    // Reset any in-progress state for the current mini-game
+    // Reset in-progress state for the current mini-game
     room.answers = [];
     room.skipVotes = [];
     room.sit = room.sit || {};
@@ -665,30 +642,20 @@ io.on('connection', (socket) => {
       room.draw.timerRef = null;
     }
 
-    // Find next question of targetType in the pre-built list
-    let nextIndex = room.currentQuestionIndex + 1;
-    while (nextIndex < room.questions.length && normalizeType(room.questions[nextIndex]?.type) !== targetType) {
-      nextIndex++;
+    // Generate a new question of the target type and replace the current slot in-place.
+    // This keeps currentRound and totalRounds stable — no round inflation.
+    let newQ;
+    if (targetType === 'situational') {
+      [newQ] = selectSituationalQuestions(1);
+    } else if (targetType === 'this-or-that') {
+      [newQ] = selectThisOrThatQuestions(1);
+    } else if (targetType === 'drawing') {
+      newQ = selectDrawingQuestion();
+    } else {
+      [newQ] = selectQuestions(room.mode, 1, room.customQuestions);
     }
+    room.questions[room.currentQuestionIndex] = newQ;
 
-    if (nextIndex >= room.questions.length) {
-      // No remaining question of target type — generate one and append
-      let newQ;
-      if (targetType === 'situational') {
-        [newQ] = selectSituationalQuestions(1);
-      } else if (targetType === 'this-or-that') {
-        [newQ] = selectThisOrThatQuestions(1);
-      } else if (targetType === 'drawing') {
-        newQ = selectDrawingQuestion();
-      } else {
-        [newQ] = selectQuestions(room.mode, 1, room.customQuestions);
-      }
-      room.questions.push(newQ);
-      room.totalRounds = room.questions.length;
-    }
-
-    room.currentRound = nextIndex + 1;
-    room.currentQuestionIndex = nextIndex;
     emitNextQuestion(io, room, code);
   });
 
@@ -1546,6 +1513,459 @@ io.on('connection', (socket) => {
     room.draw = { phase: 'waiting', round: 0, totalRounds: room.draw?.totalRounds || 3, word: null, submissions: {}, votes: {}, scores: {}, timerRef: null, secondsLeft: 90 };
     room.players.forEach(p => { p.isReady = false; });
     io.to(code).emit('draw:restarted', { code, players: room.players });
+  });
+
+  // ─── Fill-in-the-Blank handlers ───────────────────────────────────────────
+
+  const fitbQuestions = require('./questions/fillInTheBlank');
+
+  const pickFitbQuestion = (room, players) => {
+    const unused = fitbQuestions.filter(q => !(room.fitb.usedQuestions || []).includes(q));
+    const pool = unused.length > 0 ? unused : fitbQuestions;
+    const q = pool[Math.floor(Math.random() * pool.length)];
+    if (!room.fitb.usedQuestions) room.fitb.usedQuestions = [];
+    room.fitb.usedQuestions.push(q);
+    // Replace {name} with a random playing player's name
+    const playingPlayers = players.filter(p => p.isConnected && p.isPlaying);
+    if (q.includes('{name}') && playingPlayers.length > 0) {
+      const target = playingPlayers[Math.floor(Math.random() * playingPlayers.length)];
+      return q.replace(/\{name\}/g, target.name);
+    }
+    return q;
+  };
+
+  socket.on('fitb:start', ({ code, rounds }) => {
+    const room = getRoom(code);
+    if (!room) return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+
+    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    if (playingPlayers.length < 2) return;
+
+    room.players.forEach(p => { p.joinedMidRound = false; });
+    const totalRounds = Math.min(Math.max(parseInt(rounds) || room.totalRounds || 3, 1), 10);
+    const scores = {};
+    playingPlayers.forEach(p => { scores[p.id] = 0; });
+
+    room.phase = 'fitb';
+    room.fitb = {
+      phase: 'answering',
+      round: 1,
+      totalRounds,
+      question: pickFitbQuestion(room, room.players),
+      answers: [],
+      usedQuestions: [],
+      scores,
+    };
+
+    const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
+    io.to(code).emit('fitb:round_start', {
+      question: room.fitb.question,
+      round: 1,
+      totalRounds,
+      players,
+    });
+  });
+
+  socket.on('fitb:answer', ({ code, text }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'fitb' || room.fitb.phase !== 'answering') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isPlaying || !player.isConnected) return;
+    if (room.fitb.answers.find(a => a.playerId === player.id)) return; // already answered
+
+    // Sanitize
+    const sanitizedText = String(text || '').slice(0, 120).trim();
+    if (!sanitizedText) return;
+
+    room.fitb.answers.push({
+      playerId: player.id,
+      playerName: player.name,
+      playerColor: player.color,
+      text: sanitizedText,
+      votes: 0,
+    });
+
+    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const answeredCount = room.fitb.answers.length;
+    io.to(code).emit('fitb:answer_received', { answeredCount, totalPlayers: playingPlayers.length });
+
+    if (answeredCount >= playingPlayers.length) {
+      startFitbVoting(io, room, code);
+    }
+  });
+
+  const startFitbVoting = (io, room, code) => {
+    if (room.fitb.phase !== 'answering') return;
+    room.fitb.phase = 'voting';
+    // Shuffle answers so order doesn't reveal authorship
+    const shuffled = [...room.fitb.answers].sort(() => Math.random() - 0.5);
+    room.fitb.answers = shuffled;
+    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    // Send anonymous answers (no author info)
+    const anonAnswers = shuffled.map((a, i) => ({ id: i, text: a.text }));
+    io.to(code).emit('fitb:voting_started', {
+      answers: anonAnswers,
+      question: room.fitb.question,
+      totalVoters: playingPlayers.length,
+    });
+  };
+
+  socket.on('fitb:skip_to_vote', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'fitb' || room.fitb.phase !== 'answering') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+    startFitbVoting(io, room, code);
+  });
+
+  socket.on('fitb:vote', ({ code, answerId }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'fitb' || room.fitb.phase !== 'voting') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isPlaying || !player.isConnected) return;
+    // Prevent double-vote
+    if (!room.fitb._votes) room.fitb._votes = {};
+    if (room.fitb._votes[player.id] !== undefined) return;
+    const idx = parseInt(answerId);
+    if (isNaN(idx) || idx < 0 || idx >= room.fitb.answers.length) return;
+    // Prevent voting for own answer
+    if (room.fitb.answers[idx].playerId === player.id) return;
+
+    room.fitb._votes[player.id] = idx;
+    room.fitb.answers[idx].votes++;
+
+    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const voteCount = Object.keys(room.fitb._votes).length;
+    io.to(code).emit('fitb:vote_received', { voteCount, totalVoters: playingPlayers.length });
+
+    if (voteCount >= playingPlayers.length) {
+      resolveFitbVoting(io, room, code);
+    }
+  });
+
+  const resolveFitbVoting = (io, room, code) => {
+    if (room.fitb.phase !== 'voting') return;
+    room.fitb.phase = 'results';
+    // Award points: +1 per vote received
+    room.fitb.answers.forEach(a => {
+      room.fitb.scores[a.playerId] = (room.fitb.scores[a.playerId] || 0) + a.votes;
+    });
+    const sorted = [...room.fitb.answers].sort((a, b) => b.votes - a.votes);
+    const leaderboard = room.players.filter(p => p.isPlaying)
+      .map(p => ({ id: p.id, name: p.name, color: p.color, score: room.fitb.scores[p.id] || 0 }))
+      .sort((a, b) => b.score - a.score);
+    io.to(code).emit('fitb:results', {
+      answers: sorted,
+      scores: room.fitb.scores,
+      leaderboard,
+      round: room.fitb.round,
+      totalRounds: room.fitb.totalRounds,
+      question: room.fitb.question,
+    });
+  };
+
+  socket.on('fitb:show_results', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'fitb' || room.fitb.phase !== 'voting') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+    resolveFitbVoting(io, room, code);
+  });
+
+  socket.on('fitb:next_round', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'fitb' || room.fitb.phase !== 'results') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+
+    if (room.fitb.round >= room.fitb.totalRounds) {
+      // Game over
+      const leaderboard = room.players.filter(p => p.isPlaying)
+        .map(p => ({ id: p.id, name: p.name, color: p.color, score: room.fitb.scores[p.id] || 0 }))
+        .sort((a, b) => b.score - a.score);
+      room.phase = 'fitbEnd';
+      io.to(code).emit('fitb:end', { leaderboard });
+      return;
+    }
+
+    room.fitb.round++;
+    room.fitb.phase = 'answering';
+    room.fitb.answers = [];
+    room.fitb._votes = {};
+    room.fitb.question = pickFitbQuestion(room, room.players);
+
+    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
+    io.to(code).emit('fitb:round_start', {
+      question: room.fitb.question,
+      round: room.fitb.round,
+      totalRounds: room.fitb.totalRounds,
+      players,
+    });
+  });
+
+  socket.on('fitb:restart', ({ code }) => {
+    const room = getRoom(code);
+    if (!room) return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+    room.phase = 'lobby';
+    room.fitb = { phase: 'waiting', round: 0, totalRounds: 3, question: null, answers: [], usedQuestions: [], scores: {} };
+    room.players.forEach(p => { p.isReady = false; });
+    io.to(code).emit('fitb:restarted', { code, players: room.players });
+  });
+
+  // ─── Selfie Roast handlers ─────────────────────────────────────────────────
+
+  socket.on('selfie:start', ({ code }) => {
+    const room = getRoom(code);
+    if (!room) return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+
+    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    if (playingPlayers.length < 2) return;
+
+    room.players.forEach(p => { p.joinedMidRound = false; });
+    const scores = {};
+    playingPlayers.forEach(p => { scores[p.id] = 0; });
+
+    room.phase = 'selfie';
+    room.selfie = {
+      phase: 'photo',
+      photos: {},
+      assignments: {},
+      strokes: {},
+      votes: {},
+      scores,
+    };
+
+    const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
+    io.to(code).emit('selfie:photo_phase', { players });
+  });
+
+  socket.on('selfie:submit_photo', ({ code, photoData }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'selfie' || room.selfie.phase !== 'photo') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isPlaying || !player.isConnected) return;
+    if (room.selfie.photos[player.id]) return; // already submitted
+
+    // Basic data URI validation — must be JPEG or PNG base64
+    if (!photoData || typeof photoData !== 'string') return;
+    if (!photoData.startsWith('data:image/jpeg;base64,') && !photoData.startsWith('data:image/png;base64,') && !photoData.startsWith('data:image/webp;base64,')) return;
+    // Limit to ~2MB base64 (~1.5MB actual)
+    if (photoData.length > 2 * 1024 * 1024) return;
+
+    room.selfie.photos[player.id] = photoData;
+
+    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const photoCount = Object.keys(room.selfie.photos).length;
+    io.to(code).emit('selfie:photo_received', { photoCount, totalPlayers: playingPlayers.length });
+
+    if (photoCount >= playingPlayers.length) {
+      assignSelfieDrawers(io, room, code);
+    }
+  });
+
+  const assignSelfieDrawers = (io, room, code) => {
+    if (room.selfie.phase !== 'photo') return;
+    room.selfie.phase = 'drawing';
+
+    const photoOwnerIds = Object.keys(room.selfie.photos);
+    // Shuffle photo owners so each drawer gets someone else's photo
+    const shuffled = [...photoOwnerIds].sort(() => Math.random() - 0.5);
+    // Create a derangement (no one draws their own photo)
+    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying && room.selfie.photos[p.id]);
+    const drawerIds = playingPlayers.map(p => p.id);
+
+    // Simple derangement: shift by 1
+    const assignedOwners = [...shuffled];
+    for (let attempt = 0; attempt < 50; attempt++) {
+      let valid = true;
+      for (let i = 0; i < drawerIds.length; i++) {
+        if (drawerIds[i] === assignedOwners[i % assignedOwners.length]) { valid = false; break; }
+      }
+      if (valid) break;
+      assignedOwners.sort(() => Math.random() - 0.5);
+    }
+
+    drawerIds.forEach((drawerId, i) => {
+      room.selfie.assignments[drawerId] = assignedOwners[i % assignedOwners.length];
+    });
+
+    // Send each drawer their assigned photo
+    playingPlayers.forEach(p => {
+      const ownerPlayerId = room.selfie.assignments[p.id];
+      const owner = room.players.find(pl => pl.id === ownerPlayerId);
+      if (p.socketId && ownerPlayerId) {
+        io.to(p.socketId).emit('selfie:draw_assigned', {
+          photoData: room.selfie.photos[ownerPlayerId],
+          ownerName: owner?.name || '?',
+          ownerColor: owner?.color || '#fff',
+          ownerPlayerId,
+        });
+      }
+    });
+
+    // Broadcast drawing phase start
+    const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
+    io.to(code).emit('selfie:drawing_phase', { players, totalDrawers: drawerIds.length });
+  };
+
+  socket.on('selfie:skip_to_drawing', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'selfie' || room.selfie.phase !== 'photo') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+    // Only assign if there's at least one photo
+    if (Object.keys(room.selfie.photos).length < 1) return;
+    assignSelfieDrawers(io, room, code);
+  });
+
+  socket.on('selfie:submit_drawing', ({ code, strokes }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'selfie' || room.selfie.phase !== 'drawing') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isPlaying || !player.isConnected) return;
+    if (room.selfie.strokes[player.id]) return; // already submitted
+
+    // Sanitize strokes
+    if (!Array.isArray(strokes)) return;
+    const sanitized = strokes.slice(0, 500).map(s => ({
+      color: /^#[0-9A-Fa-f]{3,6}$/.test(s.color) ? s.color : '#000000',
+      width: Math.min(Math.max(Number(s.width) || 4, 1), 40),
+      type: s.type === 'eraser' ? 'eraser' : 'pen',
+      points: Array.isArray(s.points) ? s.points.slice(0, 300).map(pt => ({
+        x: Math.round(Number(pt.x) || 0),
+        y: Math.round(Number(pt.y) || 0),
+      })) : [],
+    }));
+
+    room.selfie.strokes[player.id] = sanitized;
+
+    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying && room.selfie.assignments[p.id]);
+    const drawingCount = Object.keys(room.selfie.strokes).length;
+    io.to(code).emit('selfie:drawing_received', { drawingCount, totalDrawers: playingPlayers.length });
+
+    if (drawingCount >= playingPlayers.length) {
+      startSelfieVoting(io, room, code);
+    }
+  });
+
+  const startSelfieVoting = (io, room, code) => {
+    if (room.selfie.phase !== 'drawing') return;
+    room.selfie.phase = 'voting';
+    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+
+    // Build submissions: each drawer's photo + strokes + who the photo belongs to
+    const submissions = Object.keys(room.selfie.strokes).map(drawerId => {
+      const drawer = room.players.find(p => p.id === drawerId);
+      const ownerPlayerId = room.selfie.assignments[drawerId];
+      const owner = room.players.find(p => p.id === ownerPlayerId);
+      return {
+        drawerId,
+        drawerName: drawer?.name || '?',
+        drawerColor: drawer?.color || '#fff',
+        ownerPlayerId,
+        ownerName: owner?.name || '?',
+        photoData: room.selfie.photos[ownerPlayerId] || null,
+        strokes: room.selfie.strokes[drawerId],
+      };
+    });
+    // Shuffle so drawer order is not obvious
+    submissions.sort(() => Math.random() - 0.5);
+
+    io.to(code).emit('selfie:voting_started', {
+      submissions,
+      totalVoters: playingPlayers.length,
+    });
+  };
+
+  socket.on('selfie:skip_to_vote', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'selfie' || room.selfie.phase !== 'drawing') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+    startSelfieVoting(io, room, code);
+  });
+
+  socket.on('selfie:vote', ({ code, drawerId }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'selfie' || room.selfie.phase !== 'voting') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isPlaying || !player.isConnected) return;
+    if (room.selfie.votes[player.id] !== undefined) return; // already voted
+    if (drawerId === player.id) return; // no self-vote
+    if (!room.selfie.strokes[drawerId]) return; // invalid target
+
+    room.selfie.votes[player.id] = drawerId;
+    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const voteCount = Object.keys(room.selfie.votes).length;
+    io.to(code).emit('selfie:vote_received', { voteCount, totalVoters: playingPlayers.length });
+
+    if (voteCount >= playingPlayers.length) {
+      resolveSelfieVoting(io, room, code);
+    }
+  });
+
+  const resolveSelfieVoting = (io, room, code) => {
+    if (room.selfie.phase !== 'voting') return;
+    room.selfie.phase = 'results';
+
+    // Tally vote counts per drawer
+    const voteCounts = {};
+    Object.values(room.selfie.votes).forEach(drawerId => {
+      voteCounts[drawerId] = (voteCounts[drawerId] || 0) + 1;
+    });
+    // Award scores
+    Object.entries(voteCounts).forEach(([drawerId, v]) => {
+      room.selfie.scores[drawerId] = (room.selfie.scores[drawerId] || 0) + v;
+    });
+
+    const submissions = Object.keys(room.selfie.strokes).map(drawerId => {
+      const drawer = room.players.find(p => p.id === drawerId);
+      const ownerPlayerId = room.selfie.assignments[drawerId];
+      const owner = room.players.find(p => p.id === ownerPlayerId);
+      return {
+        drawerId,
+        drawerName: drawer?.name || '?',
+        drawerColor: drawer?.color || '#fff',
+        ownerPlayerId,
+        ownerName: owner?.name || '?',
+        photoData: room.selfie.photos[ownerPlayerId] || null,
+        strokes: room.selfie.strokes[drawerId],
+        votes: voteCounts[drawerId] || 0,
+      };
+    }).sort((a, b) => b.votes - a.votes);
+
+    const leaderboard = room.players.filter(p => p.isPlaying)
+      .map(p => ({ id: p.id, name: p.name, color: p.color, score: room.selfie.scores[p.id] || 0 }))
+      .sort((a, b) => b.score - a.score);
+
+    room.phase = 'selfieEnd';
+    io.to(code).emit('selfie:results', { submissions, scores: room.selfie.scores, leaderboard });
+  };
+
+  socket.on('selfie:show_results', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'selfie' || room.selfie.phase !== 'voting') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+    resolveSelfieVoting(io, room, code);
+  });
+
+  socket.on('selfie:restart', ({ code }) => {
+    const room = getRoom(code);
+    if (!room) return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+    room.phase = 'lobby';
+    room.selfie = { phase: 'waiting', photos: {}, assignments: {}, strokes: {}, votes: {}, scores: {} };
+    room.players.forEach(p => { p.isReady = false; });
+    io.to(code).emit('selfie:restarted', { code, players: room.players });
   });
 
   // ──────────────────────────────────────────────────────────────────────────

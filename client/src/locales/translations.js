@@ -35,6 +35,10 @@ export const translations = {
       gameMixedDesc: "All modes shuffled!",
       gameDraw: "Sketch It!",
       gameDrawDesc: "Draw it, vote for the best!",
+      gameFitb: "Fill in the Blank",
+      gameFitbDesc: "Finish the sentence funnily!",
+      gameSelfie: "Selfie Roast",
+      gameSelfieDesc: "Take a selfie, get roasted!",
       gameNamePlaceholder: "Game Name (shown on TV)"
     },
     lobby: {
@@ -263,6 +267,10 @@ export const translations = {
       gameMixedDesc: "Tous les modes mélangés !",
       gameDraw: "Dessine!",
       gameDrawDesc: "Dessin collectif, vote pour le meilleur !",
+      gameFitb: "Compléter la phrase",
+      gameFitbDesc: "Termine la phrase de façon drôle !",
+      gameSelfie: "Selfie Roast",
+      gameSelfieDesc: "Prends un selfie, fais-toi rôtir !",
       gameNamePlaceholder: "Nom de la partie (affiché à l'écran)"
     },
     lobby: {

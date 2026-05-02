@@ -19,6 +19,8 @@ const GAME_TYPE_LABELS = {
   'most-likely-to': '👑 Most Likely To',
   'mixed': '🎲 Mixed',
   'drawing': '🎨 Sketch It!',
+  'fill-in-the-blank': '✏️ Fill in the Blank',
+  'selfie-roast': '📸 Selfie Roast',
 };
 
 // ─── Shared sub-components ───────────────────────────────────────────────────
@@ -1161,12 +1163,165 @@ function DrawingHostPanel({ drawData, players, status }) {
   );
 }
 
+function FitbHostPanel({ fitbData, players, onSkipToVote, onShowResults, onNextRound }) {
+  const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
+  if (fitbData.phase === 'end') {
+    return (
+      <div className="flex flex-col items-center gap-8 w-full max-w-lg">
+        <div className="text-center">
+          <p className="text-6xl mb-3">✏️</p>
+          <h1 className="text-5xl font-['Fredoka_One'] text-[#F9CA24]">Fill in the Blank</h1>
+          <p className="text-2xl font-['Fredoka_One'] text-[#FFE66D] mt-2">Game Over!</p>
+        </div>
+        <div className="w-full flex flex-col gap-3">
+          {(fitbData.leaderboard || []).map((entry, i) => (
+            <motion.div key={entry.playerId} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }}
+              className="flex items-center gap-4 rounded-2xl px-5 py-4"
+              style={i === 0 ? { background: 'linear-gradient(135deg, #F9CA2420, #FFE66D20)', border: '2px solid #F9CA24' } : { background: '#1A1A2E', border: '1px solid #2D2D44' }}>
+              <span className="text-2xl w-10 text-center">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}</span>
+              <span className="flex-1 text-white font-['Fredoka_One'] text-xl">{entry.name}</span>
+              <span className="font-['Fredoka_One'] text-2xl text-[#FFE66D]">{entry.score}</span>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+  if (fitbData.phase === 'results') {
+    return (
+      <div className="flex flex-col items-center gap-6 w-full max-w-3xl">
+        <div className="text-center">
+          <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest mb-2">Results · Round {fitbData.round}/{fitbData.totalRounds}</p>
+          <h2 className="text-2xl font-['Fredoka_One'] text-[#F9CA24] leading-snug">{fitbData.question}</h2>
+        </div>
+        <div className="w-full flex flex-col gap-3">
+          {(fitbData.answers || []).sort((a, b) => (b.votes || 0) - (a.votes || 0)).map((ans, i) => (
+            <div key={ans.playerId} className="flex items-start gap-3 rounded-2xl px-5 py-4 bg-[#1A1A2E] border border-[#2D2D44]">
+              <span className="font-['Fredoka_One'] text-[#FFE66D] w-6">{ans.votes || 0}★</span>
+              <div className="flex-1">
+                <p className="text-white font-['Nunito'] italic">"{ans.text}"</p>
+                <p className="text-xs text-gray-400 mt-1">— {ans.playerName}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+        {onNextRound && (
+          <button onClick={onNextRound} className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#F9CA24] text-black hover:opacity-90 active:scale-95 transition">
+            Next Round →
+          </button>
+        )}
+      </div>
+    );
+  }
+  if (fitbData.phase === 'voting') {
+    return (
+      <div className="flex flex-col items-center gap-6 w-full max-w-3xl">
+        <h1 className="text-3xl font-['Fredoka_One'] text-[#F9CA24]">✏️ Fill in the Blank — Vote!</h1>
+        <h2 className="text-xl font-['Nunito'] text-[#FFE66D] text-center">{fitbData.question}</h2>
+        <div className="w-full max-w-md bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">Votes in</p>
+            <p className="text-2xl font-['Fredoka_One'] text-white">{fitbData.voteCount}/{fitbData.totalVoters}</p>
+          </div>
+          <ProgressBar value={fitbData.voteCount} total={fitbData.totalVoters} color="#F9CA24" />
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col items-center gap-6 w-full max-w-3xl">
+      <div className="text-center">
+        <p className="text-5xl mb-2">✏️</p>
+        <h1 className="text-3xl font-['Fredoka_One'] text-[#F9CA24]">Fill in the Blank</h1>
+        <p className="text-sm font-['Nunito'] text-gray-400 mt-1">Round {fitbData.round} of {fitbData.totalRounds}</p>
+      </div>
+      <div className="w-full bg-[#1A1A2E] border-2 border-[#F9CA24]/50 rounded-3xl p-8 text-center">
+        <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-3">Complete the sentence</p>
+        <h2 className="text-3xl font-['Fredoka_One'] text-[#FFE66D] leading-snug">{fitbData.question}</h2>
+      </div>
+      <div className="w-full max-w-md bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">Answers submitted</p>
+          <p className="text-2xl font-['Fredoka_One'] text-white">{fitbData.answeredCount}/{fitbData.totalAnswerers || activePlayers.length}</p>
+        </div>
+        <ProgressBar value={fitbData.answeredCount} total={fitbData.totalAnswerers || activePlayers.length} color="#F9CA24" />
+      </div>
+    </div>
+  );
+}
+
+function SelfieHostPanel({ selfieData, players, onSkipToVote, onShowResults }) {
+  const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
+  if (selfieData.phase === 'results') {
+    return (
+      <div className="flex flex-col items-center gap-8 w-full max-w-4xl">
+        <h1 className="text-4xl font-['Fredoka_One'] text-[#FD79A8]">📸 Selfie Roast — Results!</h1>
+        <div className="w-full flex flex-col gap-3">
+          {(selfieData.leaderboard || []).map((entry, i) => (
+            <motion.div key={entry.playerId} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }}
+              className="flex items-center gap-4 rounded-2xl px-5 py-4"
+              style={i === 0 ? { background: 'linear-gradient(135deg, #FD79A820, #FFE66D20)', border: '2px solid #FD79A8' } : { background: '#1A1A2E', border: '1px solid #2D2D44' }}>
+              <span className="text-2xl w-10 text-center">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}</span>
+              <span className="flex-1 text-white font-['Fredoka_One'] text-xl">{entry.name}</span>
+              <span className="font-['Fredoka_One'] text-2xl text-[#FFE66D]">{entry.score}</span>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+  if (selfieData.phase === 'voting') {
+    return (
+      <div className="flex flex-col items-center gap-6 w-full max-w-xl">
+        <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">📸 Vote for the Funniest!</h1>
+        <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">Votes in</p>
+            <p className="text-2xl font-['Fredoka_One'] text-white">{selfieData.voteCount}/{selfieData.totalVoters}</p>
+          </div>
+          <ProgressBar value={selfieData.voteCount} total={selfieData.totalVoters} color="#FD79A8" />
+        </div>
+      </div>
+    );
+  }
+  if (selfieData.phase === 'drawing') {
+    return (
+      <div className="flex flex-col items-center gap-6 w-full max-w-xl">
+        <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">📸 Roasting in Progress...</h1>
+        <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">Drawings submitted</p>
+            <p className="text-2xl font-['Fredoka_One'] text-white">{selfieData.drawingCount}/{selfieData.totalDrawers || activePlayers.length}</p>
+          </div>
+          <ProgressBar value={selfieData.drawingCount} total={selfieData.totalDrawers || activePlayers.length} color="#FD79A8" />
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col items-center gap-6 w-full max-w-xl">
+      <p className="text-5xl">📸</p>
+      <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">Selfie Roast</h1>
+      <p className="text-gray-400 font-['Nunito']">Players are taking their selfies...</p>
+      <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">Selfies submitted</p>
+          <p className="text-2xl font-['Fredoka_One'] text-white">{selfieData.photoCount}/{selfieData.totalPhotographers || activePlayers.length}</p>
+        </div>
+        <ProgressBar value={selfieData.photoCount} total={selfieData.totalPhotographers || activePlayers.length} color="#FD79A8" />
+      </div>
+    </div>
+  );
+}
+
 const GAME_TYPES_FOR_CREATE = [
   { id: 'most-likely-to', label: '👑 Most Likely To', desc: 'Who fits the prompt?', accent: '#4ECDC4' },
   { id: 'who-said-that',  label: '🤔 Who Said That?', desc: 'Guess who wrote it!',  accent: '#FFE66D' },
   { id: 'situational',   label: '🎭 Situational',   desc: 'Answer for someone!',   accent: '#A8E6CF' },
   { id: 'this-or-that',  label: '⚡ This or That',  desc: 'Pick a side!',           accent: '#6C5CE7' },
   { id: 'drawing',       label: '🎨 Sketch It!',    desc: 'Draw and guess!',        accent: '#C39BD3' },
+  { id: 'fill-in-the-blank', label: '✏️ Fill in the Blank', desc: 'Finish the sentence!', accent: '#F9CA24' },
+  { id: 'selfie-roast',  label: '📸 Selfie Roast',  desc: 'Take a selfie, get roasted!', accent: '#FD79A8' },
   { id: 'mixed',         label: '🎲 Mixed',         desc: 'All modes shuffled!',    accent: '#FF8B94' },
 ];
 
@@ -1233,7 +1388,7 @@ const MIXED_SUB_GAMES = [
   { id: 'drawing',       label: '🎨 Sketch It!',    accent: '#C39BD3' },
 ];
 
-const DEFAULT_SUB_GAMES = ['who-said-that', 'situational', 'this-or-that'];
+const DEFAULT_SUB_GAMES = ['who-said-that', 'situational', 'this-or-that', 'drawing'];
 
 function CreateRoomForm({ onSubmit, onBack }) {
   const [gameType, setGameType] = React.useState('most-likely-to');
@@ -1599,6 +1754,18 @@ export default function HostPage() {
     submissions: [], results: [], scores: {}, leaderboard: [],
   });
 
+  const [fitbData, setFitbData] = useState({
+    phase: 'waiting', round: 0, totalRounds: 0, question: null,
+    answeredCount: 0, totalAnswerers: 0, voteCount: 0, totalVoters: 0,
+    answers: [], scores: {}, leaderboard: [],
+  });
+
+  const [selfieData, setSelfieData] = useState({
+    phase: 'waiting', photoCount: 0, totalPhotographers: 0,
+    drawingCount: 0, totalDrawers: 0, voteCount: 0, totalVoters: 0,
+    submissions: [], scores: {}, leaderboard: [],
+  });
+
   const socketRef = useRef(null);
 
   // ─── Attach game event handlers to a socket ──────────────────────────────
@@ -1771,6 +1938,58 @@ export default function HostPage() {
       setStatus('draw-end');
     });
 
+    // FITB handlers
+    sock.on('fitb:round_start', (data) => {
+      setFitbData(prev => ({
+        ...prev, phase: 'answering', round: data.round, totalRounds: data.totalRounds,
+        question: data.question, answeredCount: 0, totalAnswerers: data.totalAnswerers || 0,
+        voteCount: 0, totalVoters: 0, answers: [],
+      }));
+      setStatus('fitb');
+    });
+    sock.on('fitb:answer_received', ({ answeredCount, totalAnswerers }) => {
+      setFitbData(prev => ({ ...prev, answeredCount, totalAnswerers }));
+    });
+    sock.on('fitb:voting_started', (data) => {
+      setFitbData(prev => ({ ...prev, phase: 'voting', answers: data.answers || [], voteCount: 0, totalVoters: data.totalVoters || 0 }));
+    });
+    sock.on('fitb:vote_received', ({ voteCount, totalVoters }) => {
+      setFitbData(prev => ({ ...prev, voteCount, totalVoters }));
+    });
+    sock.on('fitb:results', (data) => {
+      setFitbData(prev => ({ ...prev, phase: 'results', answers: data.answers || [], scores: data.scores || {} }));
+    });
+    sock.on('fitb:end', (data) => {
+      setFitbData(prev => ({ ...prev, phase: 'end', leaderboard: data.leaderboard || [] }));
+      setStatus('fitb-end');
+    });
+
+    // Selfie handlers
+    sock.on('selfie:photo_phase', (data) => {
+      setSelfieData(prev => ({ ...prev, phase: 'photo', photoCount: 0, totalPhotographers: data.totalPhotographers || 0 }));
+      setStatus('selfie');
+    });
+    sock.on('selfie:photo_received', ({ photoCount, totalPhotographers }) => {
+      setSelfieData(prev => ({ ...prev, photoCount, totalPhotographers }));
+    });
+    sock.on('selfie:drawing_phase', (data) => {
+      setSelfieData(prev => ({ ...prev, phase: 'drawing', drawingCount: 0, totalDrawers: data.totalDrawers || 0 }));
+    });
+    sock.on('selfie:drawing_received', ({ drawingCount, totalDrawers }) => {
+      setSelfieData(prev => ({ ...prev, drawingCount, totalDrawers }));
+    });
+    sock.on('selfie:voting_started', (data) => {
+      setSelfieData(prev => ({ ...prev, phase: 'voting', submissions: data.submissions || [], voteCount: 0, totalVoters: data.totalVoters || 0 }));
+      setStatus('selfie-vote');
+    });
+    sock.on('selfie:vote_received', ({ voteCount, totalVoters }) => {
+      setSelfieData(prev => ({ ...prev, voteCount, totalVoters }));
+    });
+    sock.on('selfie:results', (data) => {
+      setSelfieData(prev => ({ ...prev, phase: 'results', submissions: data.submissions || [], scores: data.scores || {}, leaderboard: data.leaderboard || [] }));
+      setStatus('selfie-results');
+    });
+
     sock.on('error', ({ message }) => {
       setErrorMsg(message);
       setStatus('error');
@@ -1884,6 +2103,10 @@ export default function HostPage() {
       sock.emit('mlt:start', { code: gameInfo.code, rounds: creatorSettings.rounds, allowSelfVote: true });
     } else if (creatorSettings.gameType === 'drawing') {
       sock.emit('draw:start', { code: gameInfo.code, rounds: creatorSettings.rounds, mode: creatorSettings.drawMode || 'classic' });
+    } else if (creatorSettings.gameType === 'fill-in-the-blank') {
+      sock.emit('fitb:start', { code: gameInfo.code, rounds: creatorSettings.rounds });
+    } else if (creatorSettings.gameType === 'selfie-roast') {
+      sock.emit('selfie:start', { code: gameInfo.code });
     } else {
       sock.emit('start_game', { code: gameInfo.code });
     }
@@ -1980,6 +2203,13 @@ export default function HostPage() {
       case 'draw-results':
       case 'draw-end':
         return <DrawingHostPanel drawData={drawData} players={players} status={status} />;
+      case 'fitb':
+      case 'fitb-end':
+        return <FitbHostPanel fitbData={fitbData} players={players} onSkipToVote={() => socketRef.current?.emit('fitb:skip_to_vote', { code: gameInfo.code })} onShowResults={() => socketRef.current?.emit('fitb:show_results', { code: gameInfo.code })} onNextRound={() => socketRef.current?.emit('fitb:next_round', { code: gameInfo.code })} />;
+      case 'selfie':
+      case 'selfie-vote':
+      case 'selfie-results':
+        return <SelfieHostPanel selfieData={selfieData} players={players} onSkipToVote={() => socketRef.current?.emit('selfie:skip_to_vote', { code: gameInfo.code })} onShowResults={() => socketRef.current?.emit('selfie:show_results', { code: gameInfo.code })} />;
       default:
         return null;
     }

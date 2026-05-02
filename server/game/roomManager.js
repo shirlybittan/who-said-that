@@ -29,7 +29,8 @@ const createRoom = (socketId, playerName = 'Host', gameType = 'most-likely-to', 
     isConnected: true
   };
 
-  const validGameTypes = ['who-said-that', 'most-likely-to', 'situational', 'this-or-that', 'mixed', 'drawing'];
+  const validGameTypes = ['who-said-that', 'most-likely-to', 'situational', 'this-or-that', 'mixed', 'drawing', 'fill-in-the-blank', 'selfie-roast'];
+  const standaloneTypes = new Set(['drawing', 'fill-in-the-blank', 'selfie-roast']);
   let resolvedGameType = gameType;
   let selectedSubGames = [];
 
@@ -37,14 +38,14 @@ const createRoom = (socketId, playerName = 'Host', gameType = 'most-likely-to', 
     // If they picked multiple specific ones, or if they just picked 'mixed' in an array
     if (gameType.includes('mixed')) {
       resolvedGameType = 'mixed';
-      selectedSubGames = validGameTypes.filter(g => g !== 'mixed' && g !== 'drawing');
+      selectedSubGames = validGameTypes.filter(g => g !== 'mixed' && !standaloneTypes.has(g));
     } else {
       resolvedGameType = gameType.length > 1 ? 'mixed' : (validGameTypes.includes(gameType[0]) ? gameType[0] : 'most-likely-to');
       selectedSubGames = gameType.filter(g => validGameTypes.includes(g));
     }
   } else {
     resolvedGameType = validGameTypes.includes(gameType) ? gameType : 'most-likely-to';
-    selectedSubGames = (resolvedGameType === 'mixed') ? validGameTypes.filter(g => g !== 'mixed' && g !== 'drawing') : [resolvedGameType];
+    selectedSubGames = (resolvedGameType === 'mixed') ? validGameTypes.filter(g => g !== 'mixed' && !standaloneTypes.has(g)) : [resolvedGameType];
   }
   
   const room = {
@@ -109,7 +110,24 @@ const createRoom = (socketId, playerName = 'Host', gameType = 'most-likely-to', 
       scores: {},
       timerRef: null,
       secondsLeft: 90,
-    }
+    },
+    fitb: {
+      phase: 'waiting',   // 'waiting'|'answering'|'voting'|'results'
+      round: 0,
+      totalRounds: 3,
+      question: null,     // formatted string (name substituted)
+      answers: [],        // [{playerId, playerName, playerColor, text, votes}]
+      usedQuestions: [],
+      scores: {},
+    },
+    selfie: {
+      phase: 'waiting',    // 'waiting'|'photo'|'drawing'|'voting'|'results'
+      photos: {},          // {playerId: base64DataUrl}
+      assignments: {},     // {drawerPlayerId: ownerPlayerId}  — who draws whose photo
+      strokes: {},         // {drawerPlayerId: [{color,width,type,points},...]}
+      votes: {},           // {voterPlayerId: drawerPlayerId}
+      scores: {},
+    },
   };
   
   rooms.set(code, room);
@@ -206,20 +224,21 @@ const setGameOptions = (code, socketId, mode, totalRounds, gameType, mltRounds, 
   if (mode !== undefined) room.mode = mode;
   if (totalRounds !== undefined) room.totalRounds = totalRounds;
   
-  const validGameTypes = ['who-said-that', 'most-likely-to', 'situational', 'this-or-that', 'mixed', 'drawing'];
-  
+  const validGameTypes = ['who-said-that', 'most-likely-to', 'situational', 'this-or-that', 'mixed', 'drawing', 'fill-in-the-blank', 'selfie-roast'];
+  const standaloneTypes = new Set(['drawing', 'fill-in-the-blank', 'selfie-roast']);
+
   if (gameType !== undefined) {
     if (Array.isArray(gameType)) {
       if (gameType.includes('mixed')) {
         room.gameType = 'mixed';
-        room.selectedSubGames = validGameTypes.filter(g => g !== 'mixed' && g !== 'drawing');
+        room.selectedSubGames = validGameTypes.filter(g => g !== 'mixed' && !standaloneTypes.has(g));
       } else {
         room.gameType = gameType.length > 1 ? 'mixed' : (validGameTypes.includes(gameType[0]) ? gameType[0] : 'most-likely-to');
         room.selectedSubGames = gameType.filter(g => validGameTypes.includes(g));
       }
     } else if (validGameTypes.includes(gameType)) {
       room.gameType = gameType;
-      room.selectedSubGames = (gameType === 'mixed') ? validGameTypes.filter(g => g !== 'mixed' && g !== 'drawing') : [gameType];
+      room.selectedSubGames = (gameType === 'mixed') ? validGameTypes.filter(g => g !== 'mixed' && !standaloneTypes.has(g)) : [gameType];
     }
   }
   
