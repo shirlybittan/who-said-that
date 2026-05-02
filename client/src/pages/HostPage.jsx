@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import Confetti from 'react-confetti';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
+const CLIENT_URL = (import.meta.env.VITE_CLIENT_URL || '').replace(/\/$/, '') || null;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -1605,7 +1606,8 @@ export default function HostPage() {
     );
   }
 
-  const joinUrl = `${window.location.origin}/?join=${gameInfo.code || roomCodeParam || ''}`;
+  const joinBase = CLIENT_URL || window.location.origin;
+  const joinUrl = `${joinBase}/?join=${gameInfo.code || roomCodeParam || ''}`;
   const headerRoomCode = gameInfo.code || roomCodeParam;
 
   const renderPanel = () => {
