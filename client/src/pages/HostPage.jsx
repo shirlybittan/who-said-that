@@ -1396,6 +1396,7 @@ function CreateRoomForm({ onSubmit, onBack }) {
   const [rounds, setRounds] = React.useState(5);
   const [selectedSubGames, setSelectedSubGames] = React.useState(DEFAULT_SUB_GAMES);
   const [drawMode, setDrawMode] = React.useState('classic');
+  const [roundDurationSecs, setRoundDurationSecs] = React.useState(60);
 
   const toggleSubGame = (id) => {
     setSelectedSubGames(prev =>
@@ -1404,12 +1405,13 @@ function CreateRoomForm({ onSubmit, onBack }) {
   };
 
   const handleSubmit = () => {
+    const roomConfig = { roundDurationSecs };
     if (gameType === 'mixed') {
-      onSubmit({ gameType, gameName: gameName.trim(), rounds, selectedSubGames });
+      onSubmit({ gameType, gameName: gameName.trim(), rounds, selectedSubGames, roomConfig });
     } else if (gameType === 'drawing') {
-      onSubmit({ gameType, gameName: gameName.trim(), rounds, drawMode });
+      onSubmit({ gameType, gameName: gameName.trim(), rounds, drawMode, roomConfig });
     } else {
-      onSubmit({ gameType, gameName: gameName.trim(), rounds });
+      onSubmit({ gameType, gameName: gameName.trim(), rounds, roomConfig });
     }
   };
 
@@ -1511,6 +1513,21 @@ function CreateRoomForm({ onSubmit, onBack }) {
                 : 'border-[#2D2D44] text-gray-400 hover:border-[#4ECDC4]/50'}`}
             >
               {r}
+            </button>
+          ))}
+        </div>
+
+        <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-3 mt-6">Answer Time Limit</p>
+        <div className="flex gap-2 mb-6">
+          {[30, 45, 60, 90, 120].map(s => (
+            <button
+              key={s}
+              onClick={() => setRoundDurationSecs(s)}
+              className={`flex-1 py-2 rounded-xl font-['Fredoka_One'] text-sm border-2 transition active:scale-95 ${roundDurationSecs === s
+                ? 'bg-[#6C5CE7]/20 border-[#6C5CE7] text-[#6C5CE7]'
+                : 'border-[#2D2D44] text-gray-400 hover:border-[#6C5CE7]/50'}`}
+            >
+              {s}s
             </button>
           ))}
         </div>
@@ -2070,7 +2087,7 @@ export default function HostPage() {
   }, [roomCodeParam, attachGameHandlers]);
 
   // ─── Creator flow ─────────────────────────────────────────────────────────
-  const handleCreateRoom = useCallback(({ gameType, gameName, rounds, selectedSubGames, drawMode }) => {
+  const handleCreateRoom = useCallback(({ gameType, gameName, rounds, selectedSubGames, drawMode, roomConfig }) => {
     setCreatorSettings({ gameType, rounds, drawMode: drawMode || 'classic' });
     setStatus('connecting');
 
@@ -2080,6 +2097,7 @@ export default function HostPage() {
     sock.on('connect', () => {
       const payload = { playerName: 'Screen Cast', gameType, gameName, hostIsPlaying: false };
       if (gameType === 'mixed' && selectedSubGames) payload.selectedSubGames = selectedSubGames;
+      if (roomConfig) payload.roomConfig = roomConfig;
       sock.emit('create_room', payload);
     });
 

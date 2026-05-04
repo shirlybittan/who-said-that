@@ -17,9 +17,9 @@ export const useSocket = () => {
       }
     };
 
-    const onRoomCreated = ({ code, playerId, players, gameType, gameName, selectedSubGames, isPlaying }) => {
+    const onRoomCreated = ({ code, playerId, players, gameType, gameName, selectedSubGames, isPlaying, roomConfig, globalScores }) => {
       localStorage.setItem('wst_roomCode', code);
-      dispatch({ type: 'SET_ROOM', payload: { roomCode: code, phase: 'lobby', isHost: true, isPlaying: !!isPlaying, players, gameType, gameName: gameName || '', selectedSubGames } });
+      dispatch({ type: 'SET_ROOM', payload: { roomCode: code, phase: 'lobby', isHost: true, isPlaying: !!isPlaying, players, gameType, gameName: gameName || '', selectedSubGames, roomConfig: roomConfig || {}, globalScores: globalScores || {} } });
       dispatch({ type: 'SET_PLAYER_ID', payload: playerId });
       navigate('/lobby');
     };
@@ -471,6 +471,15 @@ export const useSocket = () => {
     socket.on('selfie:results', onSelfieResults);
     socket.on('selfie:restarted', onSelfieRestarted);
 
+    const onGlobalScoresUpdated = (data) => {
+      dispatch({ type: 'GLOBAL_SCORES_UPDATED', payload: data });
+    };
+    const onPhaseTimer = (data) => {
+      dispatch({ type: 'PHASE_TIMER_TICK', payload: data });
+    };
+    socket.on('global_scores_updated', onGlobalScoresUpdated);
+    socket.on('phase_timer', onPhaseTimer);
+
     return () => {
       socket.off('connect', onConnect);
       socket.off('room_created', onRoomCreated);
@@ -534,6 +543,8 @@ export const useSocket = () => {
       socket.off('selfie:vote_received', onSelfieVoteReceived);
       socket.off('selfie:results', onSelfieResults);
       socket.off('selfie:restarted', onSelfieRestarted);
+      socket.off('global_scores_updated', onGlobalScoresUpdated);
+      socket.off('phase_timer', onPhaseTimer);
     };
   }, [dispatch, navigate, state.playerId]);
 };

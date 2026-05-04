@@ -28,7 +28,45 @@ const io = new Server(server, {
   },
 });
 
-// ─── Draw helpers ────────────────────────────────────────────────────────────
+// ─── Global scoring ───────────────────────────────────────────────────────────
+
+// Merge a {playerId: score} map into room.globalScores and broadcast update
+const mergeToGlobalScores = (io, room, scores) => {
+  if (!scores || typeof scores !== 'object') return;
+  Object.entries(scores).forEach(([pid, pts]) => {
+    if (typeof pts === 'number' && pts > 0) {
+      room.globalScores[pid] = (room.globalScores[pid] || 0) + pts;
+    }
+  });
+  const players = room.players.filter(p => p.isPlaying);
+  const leaderboard = players
+    .map(p => ({ id: p.id, name: p.name, color: p.color, score: room.globalScores[p.id] || 0 }))
+    .sort((a, b) => b.score - a.score);
+  io.to(room.code).emit('global_scores_updated', { globalScores: room.globalScores, leaderboard });
+};
+
+// ─── Answer-phase timer (WST / Situational answering) ─────────────────────────
+
+const stopAnswerTimer = (room) => {
+  if (room.answerTimerRef) { clearInterval(room.answerTimerRef); room.answerTimerRef = null; }
+};
+
+const startAnswerTimer = (io, room, code, seconds, onExpire) => {
+  stopAnswerTimer(room);
+  room.answerSecondsLeft = seconds;
+  io.to(code).emit('phase_timer', { secondsLeft: seconds, phase: 'answering' });
+  room.answerTimerRef = setInterval(() => {
+    if (room.phase !== 'question') { stopAnswerTimer(room); return; }
+    room.answerSecondsLeft = Math.max(0, (room.answerSecondsLeft || 0) - 1);
+    io.to(code).emit('phase_timer', { secondsLeft: room.answerSecondsLeft, phase: 'answering' });
+    if (room.answerSecondsLeft <= 0) {
+      stopAnswerTimer(room);
+      onExpire();
+    }
+  }, 1000);
+};
+
+// ─── Draw helpers ─────────────────────────────────────────────────────────────
 
 const pickDrawWord = (players) => {
   if (players && players.length > 0 && drawPrompts.length > 0 && Math.random() < 0.4) {
@@ -236,6 +274,7 @@ const sendMltEnd = (io, room, code) => {
 
   leaderboard = assignMltTitles(leaderboard);
   io.to(code).emit('mlt:end', { leaderboard });
+  mergeToGlobalScores(io, room, room.mlt.scores);
 };
 
 // ─── Situational helpers ──────────────────────────────────────────────────────
@@ -267,12 +306,52 @@ const emitWstQuestion = (io, room, code) => {
   room.answers = [];
   room.skipVotes = [];
 
+  const roundDuration = room.roomConfig?.roundDurationSecs || 60;
+
   io.to(code).emit('new_question', {
     question: questionText,
     round: room.currentRound,
     totalRounds: room.totalRounds,
     roundType,
     target: target ? { id: target.id, name: target.name, color: target.color } : null,
+    roundDuration,
+  });
+
+  // Server-side answer timer — auto-starts voting when time expires (handles disconnected players)
+  startAnswerTimer(io, room, code, roundDuration, () => {
+    if (room.phase !== 'question') return;
+    const connectedPlayersCount = activePlayers(room).length;
+    if (room.answers.length === 0) {
+      // No one answered — skip to next question or end
+      if (room.currentRound < room.totalRounds) {
+        room.currentRound++;
+        room.currentQuestionIndex++;
+        emitNextQuestion(io, room, code);
+      } else {
+        room.phase = 'gameEnd';
+        const finalStats = require('./game/gameLogic').computeStats(room.players, room.answers, room.scores);
+        io.to(code).emit('game_ended', { finalScores: room.scores, players: room.players, stats: finalStats });
+        mergeToGlobalScores(io, room, room.scores);
+      }
+      return;
+    }
+    const q = room.questions[room.currentQuestionIndex];
+    room.answers = shuffleAnswers(room.answers);
+    if (q?.type === 'situational') {
+      room.phase = 'sit-voting';
+      room.sit.votes = {};
+      const mappedAnswers = room.answers.map(a => ({ id: a.playerId, text: a.text }));
+      io.to(code).emit('sit:voting_started', {
+        answers: mappedAnswers,
+        question: room.currentQuestion,
+        totalVoters: connectedPlayersCount,
+      });
+    } else {
+      room.phase = 'voting';
+      room.currentAnswerIndex = 0;
+      const mappedAnswers = room.answers.map(a => ({ text: a.text }));
+      io.to(code).emit('voting_started', { answers: mappedAnswers, currentIndex: 0 });
+    }
   });
 };
 
@@ -469,14 +548,15 @@ io.on('connection', (socket) => {
     const gameType = data.gameType || 'most-likely-to';
     const gameName = (data.gameName || '').trim().slice(0, 40);
     const hostIsPlaying = !!data.hostIsPlaying;
-    const { room, player } = createRoom(socket.id, playerName, gameType, gameName, hostIsPlaying);
+    const roomConfig = data.roomConfig && typeof data.roomConfig === 'object' ? data.roomConfig : {};
+    const { room, player } = createRoom(socket.id, playerName, gameType, gameName, hostIsPlaying, roomConfig);
     // Allow client to override which sub-games are active in a mixed game
     if (room.gameType === 'mixed' && Array.isArray(data.selectedSubGames) && data.selectedSubGames.length > 0) {
       const validSubs = ['who-said-that', 'situational', 'this-or-that', 'drawing'];
       room.selectedSubGames = data.selectedSubGames.filter(s => validSubs.includes(s));
     }
     socket.join(room.code);
-    socket.emit('room_created', { code: room.code, playerId: player.id, players: room.players, gameType: room.gameType, gameName: room.gameName, selectedSubGames: room.selectedSubGames, isPlaying: player.isPlaying });
+    socket.emit('room_created', { code: room.code, playerId: player.id, players: room.players, gameType: room.gameType, gameName: room.gameName, selectedSubGames: room.selectedSubGames, isPlaying: player.isPlaying, roomConfig: room.roomConfig, globalScores: room.globalScores });
   });
 
   socket.on('join_room', ({ code, playerName, playerId }) => {
@@ -591,6 +671,7 @@ io.on('connection', (socket) => {
       room.phase = 'tot';
       emitTotQuestion(io, room, code);
     } else if (qType === 'situational' && (room.phase === 'question' || room.phase === 'sit-voting' || room.phase === 'sit-results')) {
+      stopAnswerTimer(room);
       const [replacement] = selectSituationalQuestions(1);
       room.questions[room.currentQuestionIndex] = replacement;
       room.answers = [];
@@ -599,6 +680,7 @@ io.on('connection', (socket) => {
       room.phase = 'question';
       emitWstQuestion(io, room, code);
     } else if (qType === 'wst' && (room.phase === 'question' || room.phase === 'voting')) {
+      stopAnswerTimer(room);
       const [replacement] = selectQuestions(room.mode, 1, room.customQuestions);
       room.questions[room.currentQuestionIndex] = replacement;
       room.answers = [];
@@ -729,6 +811,7 @@ io.on('connection', (socket) => {
     io.to(code).emit('answer_received', { answeredCount: room.answers.length, totalPlayers: connectedPlayersCount });
 
     if (room.answers.length >= connectedPlayersCount) {
+      stopAnswerTimer(room);
       room.answers = shuffleAnswers(room.answers);
       const q = room.questions[room.currentQuestionIndex];
 
@@ -850,6 +933,7 @@ io.on('connection', (socket) => {
       room.phase = 'gameEnd';
       const finalStats = require('./game/gameLogic').computeStats(room.players, room.answers, room.scores);
       io.to(code).emit('game_ended', { finalScores: room.scores, players: room.players, stats: finalStats });
+      mergeToGlobalScores(io, room, room.scores);
     }
   });
 
@@ -904,11 +988,13 @@ io.on('connection', (socket) => {
         leaderboard = assignTotTitles(leaderboard);
         room.phase = 'totEnd';
         io.to(code).emit('tot:end', { leaderboard });
+        mergeToGlobalScores(io, room, room.tot.scores);
       } else {
         // Mixed game end
         room.phase = 'gameEnd';
         const finalStats = require('./game/gameLogic').computeStats(room.players, [], room.tot.scores);
         io.to(code).emit('game_ended', { finalScores: room.tot.scores, players: room.players, stats: finalStats });
+        mergeToGlobalScores(io, room, room.tot.scores);
       }
       return;
     }
@@ -937,9 +1023,11 @@ io.on('connection', (socket) => {
         leaderboard = assignTotTitles(leaderboard);
         room.phase = 'totEnd';
         io.to(code).emit('tot:end', { leaderboard });
+        mergeToGlobalScores(io, room, room.tot.scores);
       } else {
         room.phase = 'gameEnd';
         io.to(code).emit('game_ended', { finalScores: room.tot.scores, players: room.players, stats: {} });
+        mergeToGlobalScores(io, room, room.tot.scores);
       }
       return;
     }
@@ -1463,6 +1551,7 @@ io.on('connection', (socket) => {
           const { computeStats } = require('./game/gameLogic');
           const finalStats = computeStats(room.players, [], room.scores);
           io.to(code).emit('game_ended', { finalScores: room.scores, players: room.players, stats: finalStats });
+          mergeToGlobalScores(io, room, room.scores);
         } else {
           emitNextQuestion(io, room, code);
         }
@@ -1474,6 +1563,7 @@ io.on('connection', (socket) => {
         .map(p => ({ id: p.id, name: p.name, color: p.color, score: room.draw.scores[p.id] || 0 }))
         .sort((a, b) => b.score - a.score);
       io.to(code).emit('draw:end', { leaderboard });
+      mergeToGlobalScores(io, room, room.draw.scores);
       return;
     }
 
@@ -1687,6 +1777,7 @@ io.on('connection', (socket) => {
         .sort((a, b) => b.score - a.score);
       room.phase = 'fitbEnd';
       io.to(code).emit('fitb:end', { leaderboard });
+      mergeToGlobalScores(io, room, room.fitb.scores);
       return;
     }
 
@@ -1947,6 +2038,7 @@ io.on('connection', (socket) => {
 
     room.phase = 'selfieEnd';
     io.to(code).emit('selfie:results', { submissions, scores: room.selfie.scores, leaderboard });
+    mergeToGlobalScores(io, room, room.selfie.scores);
   };
 
   socket.on('selfie:show_results', ({ code }) => {
@@ -1966,6 +2058,17 @@ io.on('connection', (socket) => {
     room.selfie = { phase: 'waiting', photos: {}, assignments: {}, strokes: {}, votes: {}, scores: {} };
     room.players.forEach(p => { p.isReady = false; });
     io.to(code).emit('selfie:restarted', { code, players: room.players });
+  });
+
+  // ─── Global scores management ──────────────────────────────────────────────
+
+  socket.on('reset_global_scores', ({ code }) => {
+    const room = getRoom(code);
+    if (!room) return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+    room.globalScores = {};
+    io.to(code).emit('global_scores_updated', { globalScores: {}, leaderboard: [] });
   });
 
   // ──────────────────────────────────────────────────────────────────────────

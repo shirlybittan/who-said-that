@@ -116,6 +116,33 @@ export default function LobbyPage() {
         </span>
       </div>
 
+      {/* Global Leaderboard (shown when scores exist) */}
+      {(state.globalLeaderboard?.length > 0) && (
+        <div className="bg-[#1A1A2E] rounded-2xl w-full max-w-md border border-[#FFE66D]/30 p-4 mb-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-lg font-['Fredoka_One'] text-[#FFE66D]">🏆 All-Time Leaderboard</h3>
+            {state.isHost && (
+              <button
+                onClick={() => socket.emit('reset_global_scores', { code: state.roomCode })}
+                className="text-xs text-gray-500 hover:text-red-400 transition-colors"
+              >
+                Reset
+              </button>
+            )}
+          </div>
+          {state.globalLeaderboard.map((p, i) => (
+            <div key={p.id} className="flex items-center justify-between py-1">
+              <div className="flex items-center gap-2">
+                <span className="text-gray-500 text-sm w-5">{i + 1}.</span>
+                <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: p.color }} />
+                <span className="font-['Nunito'] text-sm">{p.name}</span>
+              </div>
+              <span className="font-['Fredoka_One'] text-[#FFE66D]">{p.score}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="bg-[#1A1A2E] rounded-2xl w-full max-w-md border border-[#2D2D44] p-4 mb-8 text-left h-full flex flex-col justify-between">
          <h3 className="text-xl font-bold mb-4 font-['Fredoka_One'] text-[#FF6B6B]">{t.players} ({state.players?.filter(p => p.isPlaying).length || 0})</h3>
          <div className="flex flex-wrap gap-3">
