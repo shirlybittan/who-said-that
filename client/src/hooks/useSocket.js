@@ -17,9 +17,9 @@ export const useSocket = () => {
       }
     };
 
-    const onRoomCreated = ({ code, playerId, players, gameType, gameName, selectedSubGames, isPlaying }) => {
+    const onRoomCreated = ({ code, playerId, players, gameType, gameName, selectedSubGames, isPlaying, roomConfig, globalScores }) => {
       localStorage.setItem('wst_roomCode', code);
-      dispatch({ type: 'SET_ROOM', payload: { roomCode: code, phase: 'lobby', isHost: true, isPlaying: !!isPlaying, players, gameType, gameName: gameName || '', selectedSubGames } });
+      dispatch({ type: 'SET_ROOM', payload: { roomCode: code, phase: 'lobby', isHost: true, isPlaying: !!isPlaying, players, gameType, gameName: gameName || '', selectedSubGames, roomConfig: roomConfig || {}, globalScores: globalScores || {} } });
       dispatch({ type: 'SET_PLAYER_ID', payload: playerId });
       navigate('/lobby');
     };
@@ -168,6 +168,10 @@ export const useSocket = () => {
     const onVotingStarted = (data) => {
       dispatch({ type: 'SET_ANSWERS', payload: data });
       navigate('/vote');
+    };
+
+    const onMyAnswerIndex = ({ index }) => {
+      dispatch({ type: 'SET_MY_ANSWER_INDEX', payload: { index } });
     };
 
     const onVoteReceived = (data) => {
@@ -406,6 +410,11 @@ export const useSocket = () => {
       dispatch({ type: 'SELFIE_RESTARTED', payload: data });
       navigate('/lobby');
     };
+
+    const onGameChanged = ({ code, gameType, players, gameName }) => {
+      dispatch({ type: 'SET_ROOM', payload: { gameType, players, gameName, phase: 'lobby' } });
+      navigate('/lobby');
+    };
     // ────────────────────────────────────────────────────────────────────────
 
     socket.on('connect', onConnect);
@@ -420,6 +429,7 @@ export const useSocket = () => {
     socket.on('new_question', onNewQuestion);
     socket.on('answer_received', onAnswerReceived);
     socket.on('voting_started', onVotingStarted);
+    socket.on('my_answer_index', onMyAnswerIndex);
     socket.on('vote_received', onVoteReceived);
     socket.on('all_votes_in', onAllVotesIn);
     socket.on('answer_revealed', onAnswerRevealed);
@@ -471,6 +481,16 @@ export const useSocket = () => {
     socket.on('selfie:results', onSelfieResults);
     socket.on('selfie:restarted', onSelfieRestarted);
 
+    const onGlobalScoresUpdated = (data) => {
+      dispatch({ type: 'GLOBAL_SCORES_UPDATED', payload: data });
+    };
+    const onPhaseTimer = (data) => {
+      dispatch({ type: 'PHASE_TIMER_TICK', payload: data });
+    };
+    socket.on('global_scores_updated', onGlobalScoresUpdated);
+    socket.on('phase_timer', onPhaseTimer);
+    socket.on('game_changed', onGameChanged);
+
     return () => {
       socket.off('connect', onConnect);
       socket.off('room_created', onRoomCreated);
@@ -484,6 +504,7 @@ export const useSocket = () => {
       socket.off('new_question', onNewQuestion);
       socket.off('answer_received', onAnswerReceived);
       socket.off('voting_started', onVotingStarted);
+      socket.off('my_answer_index', onMyAnswerIndex);
       socket.off('vote_received', onVoteReceived);
       socket.off('all_votes_in', onAllVotesIn);
       socket.off('answer_revealed', onAnswerRevealed);
@@ -534,6 +555,9 @@ export const useSocket = () => {
       socket.off('selfie:vote_received', onSelfieVoteReceived);
       socket.off('selfie:results', onSelfieResults);
       socket.off('selfie:restarted', onSelfieRestarted);
+      socket.off('global_scores_updated', onGlobalScoresUpdated);
+      socket.off('phase_timer', onPhaseTimer);
+      socket.off('game_changed', onGameChanged);
     };
   }, [dispatch, navigate, state.playerId]);
 };

@@ -87,7 +87,15 @@ export default function SelfieVotePage() {
       initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}
     >
       <h1 className="text-2xl font-['Fredoka_One'] text-[#FF6B6B] mt-6 mb-2">Vote for Funniest! 😂</h1>
-      <p className="text-gray-400 font-['Nunito'] text-sm mb-6">Which roast made you laugh?</p>
+      {selfie.promptTemplate ? (
+        <div className="bg-[#FFE66D]/10 border border-[#FFE66D]/30 rounded-xl px-4 py-2 mb-4 text-center">
+          <p className="text-[#FFE66D] font-['Fredoka_One'] text-sm">
+            {selfie.promptTemplate.replace('[Name]', '…')}
+          </p>
+        </div>
+      ) : (
+        <p className="text-gray-400 font-['Nunito'] text-sm mb-6">Which roast made you laugh?</p>
+      )}
 
       <motion.div
         className="w-full max-w-md space-y-5 mb-6"
@@ -108,7 +116,10 @@ export default function SelfieVotePage() {
               onClick={() => !selfie.hasVoted && !isOwn && handleVote(sub.drawerId)}
             >
               <SubmissionCanvas photoData={sub.photoData} strokes={sub.strokes} />
-              <div className="flex items-center gap-2 mt-2">
+              {sub.prompt && (
+                <p className="mt-2 text-xs font-['Nunito'] text-[#FFE66D] italic">{sub.prompt}</p>
+              )}
+              <div className="flex items-center gap-2 mt-1">
                 <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: sub.drawerColor }} />
                 <span className="font-['Nunito'] text-sm text-gray-300">
                   Drew: <span className="font-bold">{sub.drawerName}</span>

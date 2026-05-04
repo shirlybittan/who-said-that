@@ -37,8 +37,8 @@ export const translations = {
       gameDrawDesc: "Draw it, vote for the best!",
       gameFitb: "Fill in the Blank",
       gameFitbDesc: "Finish the sentence funnily!",
-      gameSelfie: "Selfie Roast",
-      gameSelfieDesc: "Take a selfie, get roasted!",
+      gameSelfie: "Selfie Artist",
+      gameSelfieDesc: "Draw on someone's selfie!",
       gameNamePlaceholder: "Game Name (shown on TV)"
     },
     lobby: {
@@ -269,8 +269,8 @@ export const translations = {
       gameDrawDesc: "Dessin collectif, vote pour le meilleur !",
       gameFitb: "Compléter la phrase",
       gameFitbDesc: "Termine la phrase de façon drôle !",
-      gameSelfie: "Selfie Roast",
-      gameSelfieDesc: "Prends un selfie, fais-toi rôtir !",
+      gameSelfie: "Selfie Artist",
+      gameSelfieDesc: "Dessine sur le selfie de quelqu'un !",
       gameNamePlaceholder: "Nom de la partie (affiché à l'écran)"
     },
     lobby: {

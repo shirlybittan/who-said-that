@@ -17,7 +17,7 @@ const generatePlayerColor = (existingColors) => {
   return availableColors.length > 0 ? availableColors[0] : colors[Math.floor(Math.random() * colors.length)];
 };
 
-const createRoom = (socketId, playerName = 'Host', gameType = 'most-likely-to', gameName = '', hostIsPlaying = false) => {
+const createRoom = (socketId, playerName = 'Host', gameType = 'most-likely-to', gameName = '', hostIsPlaying = false, roomConfig = {}) => {
   const code = generateRoomCode();
   const player = {
     id: uuidv4(),
@@ -68,6 +68,13 @@ const createRoom = (socketId, playerName = 'Host', gameType = 'most-likely-to', 
     players: [player],
     usedQuestionIds: [],
     timer: null,
+    answerTimerRef: null,
+    globalScores: {},
+    roomConfig: {
+      roundDurationSecs: typeof roomConfig.roundDurationSecs === 'number'
+        ? Math.min(Math.max(roomConfig.roundDurationSecs, 20), 300) : 60,
+      anonymousMode: !!roomConfig.anonymousMode,
+    },
     sit: {
       targetPlayerIndex: 0,   // cycles through non-host players
       votes: {},              // { voterPlayerId: authorPlayerId }

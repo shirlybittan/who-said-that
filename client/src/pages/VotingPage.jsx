@@ -13,7 +13,7 @@ export default function VotingPage() {
   
   const currentAnswer = state.answers[state.currentAnswerIndex];
   const isRevealed = currentAnswer && !!currentAnswer.playerName;
-  const isMyAnswer = currentAnswer && currentAnswer.text === state.myAnswer;
+  const isMyAnswer = state.myAnswerIndex !== null && state.currentAnswerIndex === state.myAnswerIndex;
 
   useEffect(() => {
     setTimeLeft(15);

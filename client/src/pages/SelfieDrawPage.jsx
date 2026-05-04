@@ -149,8 +149,14 @@ export default function SelfieDrawPage() {
       className="flex flex-col items-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-4"
       initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}
     >
-      <h1 className="text-2xl font-['Fredoka_One'] text-[#FF6B6B] mt-4 mb-1">Roast {selfie.assignedOwnerName}! 🎨</h1>
-      <p className="text-gray-400 font-['Nunito'] text-xs mb-3">Draw on their selfie</p>
+      <h1 className="text-2xl font-['Fredoka_One'] text-[#FF6B6B] mt-4 mb-1">🎨 Draw on {selfie.assignedOwnerName}'s selfie!</h1>
+      {selfie.assignedPrompt ? (
+        <div className="w-full max-w-sm bg-[#FFE66D]/10 border border-[#FFE66D]/40 rounded-xl px-4 py-2 mb-3 text-center">
+          <p className="text-[#FFE66D] font-['Fredoka_One'] text-base">{selfie.assignedPrompt}</p>
+        </div>
+      ) : (
+        <p className="text-gray-400 font-['Nunito'] text-xs mb-3">Draw on their selfie</p>
+      )}
 
       {/* Photo + canvas overlay */}
       <div

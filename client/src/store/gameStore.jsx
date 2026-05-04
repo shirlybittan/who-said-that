@@ -18,6 +18,7 @@ const initialState = {
   answers: [],
   currentAnswerIndex: 0,
   myAnswer: null,
+  myAnswerIndex: null,
   scores: {},
   stats: null,
   customQuestions: [],
@@ -121,7 +122,9 @@ const initialState = {
     assignedOwnerName: null,
     assignedOwnerColor: null,
     assignedOwnerPlayerId: null,
-    submissions: [],       // [{drawerId, drawerName, drawerColor, ownerName, photoData, strokes, votes?}]
+    assignedPrompt: null,       // e.g. "Turn Maya into a pirate"
+    promptTemplate: null,       // e.g. "Turn [Name] into a pirate"
+    submissions: [],       // [{drawerId, drawerName, drawerColor, ownerName, photoData, strokes, votes?, prompt}]
     voteCount: 0,
     totalVoters: 0,
     scores: {},
@@ -153,6 +156,10 @@ const initialState = {
     totalVoters: 0,
     wordResult: null,
   },
+  globalScores: {},             // { playerId: cumulativeScore } — persists across games until host resets
+  globalLeaderboard: [],        // sorted [{id, name, color, score}]
+  phaseTimer: { secondsLeft: 60, active: false },
+  roomConfig: { roundDurationSecs: 60, anonymousMode: false },
 };
 
 export const gameReducer = (state, action) => {
@@ -171,6 +178,9 @@ export const gameReducer = (state, action) => {
         ...action.payload,
         gameName: action.payload.gameName !== undefined ? action.payload.gameName : state.gameName,
         mlt: action.payload.mlt ? { ...state.mlt, ...action.payload.mlt } : state.mlt,
+        roomConfig: action.payload.roomConfig ? { ...state.roomConfig, ...action.payload.roomConfig } : state.roomConfig,
+        globalScores: action.payload.globalScores || state.globalScores,
+        globalLeaderboard: action.payload.globalLeaderboard || state.globalLeaderboard,
       };
     case 'UPDATE_PLAYERS':
       return { ...state, players: action.payload };
@@ -205,6 +215,7 @@ export const gameReducer = (state, action) => {
         situationalTarget: action.payload.target || null,
         hasAnswered: false,
         myAnswer: null,
+        myAnswerIndex: null,
         answeredCount: 0,
         votedCount: 0,
         answers: [],
@@ -214,9 +225,11 @@ export const gameReducer = (state, action) => {
     case 'SET_VOTE_COUNT':
       return { ...state, votedCount: action.payload.votedCount, totalPlayers: action.payload.totalPlayers };
     case 'SET_ANSWERS':
-      return { ...state, phase: 'voting', answers: action.payload.answers, currentAnswerIndex: action.payload.currentIndex, hasVoted: false, votedCount: 0, allVotesIn: false };
+      return { ...state, phase: 'voting', answers: action.payload.answers, currentAnswerIndex: action.payload.currentIndex, hasVoted: false, votedCount: 0, allVotesIn: false, myAnswerIndex: null };
     case 'MARK_ANSWERED':
       return { ...state, hasAnswered: true, myAnswer: action.payload?.myAnswer || null };
+    case 'SET_MY_ANSWER_INDEX':
+      return { ...state, myAnswerIndex: action.payload.index };
     case 'MARK_VOTED':
       return { ...state, hasVoted: true };
     case 'ALL_VOTES_IN':
@@ -516,6 +529,8 @@ export const gameReducer = (state, action) => {
           assignedOwnerName: null,
           assignedOwnerColor: null,
           assignedOwnerPlayerId: null,
+          assignedPrompt: null,
+          promptTemplate: null,
           submissions: [],
         },
       };
@@ -539,6 +554,8 @@ export const gameReducer = (state, action) => {
           assignedOwnerName: action.payload.ownerName,
           assignedOwnerColor: action.payload.ownerColor,
           assignedOwnerPlayerId: action.payload.ownerPlayerId,
+          assignedPrompt: action.payload.prompt || null,
+          promptTemplate: action.payload.promptTemplate || null,
         },
       };
     case 'SELFIE_DRAWING_PHASE':
@@ -549,6 +566,7 @@ export const gameReducer = (state, action) => {
           phase: 'drawing',
           drawingCount: 0,
           totalDrawers: action.payload.totalDrawers || state.selfie.totalPhotographers,
+          promptTemplate: action.payload.promptTemplate || state.selfie.promptTemplate,
         },
       };
     case 'SELFIE_DRAWING_RECEIVED':
@@ -594,6 +612,7 @@ export const gameReducer = (state, action) => {
           submissions: action.payload.submissions,
           scores: action.payload.scores || {},
           leaderboard: action.payload.leaderboard || [],
+          promptTemplate: action.payload.promptTemplate || state.selfie.promptTemplate,
         },
       };
     case 'SELFIE_RESTARTED':
@@ -708,6 +727,24 @@ export const gameReducer = (state, action) => {
         players: action.payload.players || state.players,
         draw: { ...initialState.draw },
       };
+    case 'GLOBAL_SCORES_UPDATED':
+      return {
+        ...state,
+        globalScores: action.payload.globalScores || {},
+        globalLeaderboard: action.payload.leaderboard || [],
+      };
+    case 'PHASE_TIMER_TICK':
+      return {
+        ...state,
+        phaseTimer: {
+          secondsLeft: action.payload.secondsLeft,
+          active: action.payload.secondsLeft > 0,
+        },
+      };
+    case 'PHASE_TIMER_STOP':
+      return { ...state, phaseTimer: { secondsLeft: 0, active: false } };
+    case 'SET_ROOM_CONFIG':
+      return { ...state, roomConfig: { ...state.roomConfig, ...action.payload } };
     // ────────────────────────────────────────────────────────────────────────
     default:
       return state;

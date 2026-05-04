@@ -6,6 +6,7 @@ import { socket } from '../socket';
 import Confetti from 'react-confetti';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
+import GameSwitcher from '../components/GameSwitcher.jsx';
 
 export default function MostLikelyToEndPage() {
   const { state } = useGame();
@@ -135,6 +136,7 @@ export default function MostLikelyToEndPage() {
         </div>
       </div>
 
+      <GameSwitcher currentGameType={state.gameType} />
       {state.isHost ? (
         <button
           onClick={handlePlayAgain}
