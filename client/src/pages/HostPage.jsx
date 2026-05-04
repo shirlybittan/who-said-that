@@ -229,7 +229,7 @@ const ScoreList = ({ players, scores, prevScores }) => {
 
 // ─── Phase panels ─────────────────────────────────────────────────────────────
 
-function LobbyPanel({ gameInfo, players, joinUrl }) {
+function LobbyPanel({ gameInfo, players, joinUrl, onKickPlayer }) {
   const activePlayers = players.filter(p => p.isPlaying);
   const spectators = players.filter(p => !p.isPlaying);
   return (
@@ -272,7 +272,18 @@ function LobbyPanel({ gameInfo, players, joinUrl }) {
           </div>
           <div className="flex flex-wrap gap-4">
             {activePlayers.map(p => (
-              <PlayerAvatar key={p.id} player={p} size="md" />
+              <div key={p.id} className="flex flex-col items-center gap-1 group relative">
+                <PlayerAvatar player={p} size="md" />
+                {onKickPlayer && (
+                  <button
+                    onClick={() => onKickPlayer(p.id)}
+                    title={`Kick ${p.name}`}
+                    className="text-xs font-['Nunito'] text-gray-600 hover:text-red-400 transition opacity-0 group-hover:opacity-100 absolute -top-1 -right-1 bg-[#0D0D1A] border border-[#2D2D44] rounded-full w-5 h-5 flex items-center justify-center leading-none"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
             ))}
             {activePlayers.length === 0 && (
               <p className="text-gray-500 font-['Nunito'] italic text-sm">Waiting for players to join...</p>
@@ -1323,6 +1334,7 @@ const GAME_TYPES_FOR_CREATE = [
   { id: 'fill-in-the-blank', label: '✏️ Fill in the Blank', desc: 'Finish the sentence!', accent: '#F9CA24' },
   { id: 'selfie-roast',  label: '🎨 Selfie Artist',  desc: "Draw on someone's selfie!", accent: '#FD79A8' },
   { id: 'mixed',         label: '🎲 Mixed',         desc: 'All modes shuffled!',    accent: '#FF8B94' },
+  { id: 'playlist',      label: '📋 Playlist',      desc: 'Play multiple games in order!', accent: '#FDCB6E', colSpan: 2 },
 ];
 
 function SetupScreen({ onCreateRoom, onSpectate }) {
@@ -1397,6 +1409,9 @@ function CreateRoomForm({ onSubmit, onBack }) {
   const [selectedSubGames, setSelectedSubGames] = React.useState(DEFAULT_SUB_GAMES);
   const [drawMode, setDrawMode] = React.useState('classic');
   const [roundDurationSecs, setRoundDurationSecs] = React.useState(60);
+  const [queueItems, setQueueItems] = React.useState([
+    { type: 'most-likely-to', rounds: 5 },
+  ]);
 
   const toggleSubGame = (id) => {
     setSelectedSubGames(prev =>
@@ -1404,9 +1419,34 @@ function CreateRoomForm({ onSubmit, onBack }) {
     );
   };
 
+  const addQueueItem = (type) => {
+    setQueueItems(prev => [...prev, { type, rounds: 5 }]);
+  };
+
+  const removeQueueItem = (idx) => {
+    setQueueItems(prev => prev.length > 1 ? prev.filter((_, i) => i !== idx) : prev);
+  };
+
+  const moveQueueItem = (idx, dir) => {
+    setQueueItems(prev => {
+      const next = [...prev];
+      const swapIdx = idx + dir;
+      if (swapIdx < 0 || swapIdx >= next.length) return prev;
+      [next[idx], next[swapIdx]] = [next[swapIdx], next[idx]];
+      return next;
+    });
+  };
+
+  const updateQueueRounds = (idx, val) => {
+    setQueueItems(prev => prev.map((item, i) => i === idx ? { ...item, rounds: val } : item));
+  };
+
   const handleSubmit = () => {
     const roomConfig = { roundDurationSecs };
-    if (gameType === 'mixed') {
+    if (gameType === 'playlist') {
+      const firstGame = queueItems[0];
+      onSubmit({ gameType: firstGame.type, gameName: gameName.trim(), rounds: firstGame.rounds, drawMode, roomConfig, gameQueue: queueItems });
+    } else if (gameType === 'mixed') {
       onSubmit({ gameType, gameName: gameName.trim(), rounds, selectedSubGames, roomConfig });
     } else if (gameType === 'drawing') {
       onSubmit({ gameType, gameName: gameName.trim(), rounds, drawMode, roomConfig });
@@ -1414,6 +1454,16 @@ function CreateRoomForm({ onSubmit, onBack }) {
       onSubmit({ gameType, gameName: gameName.trim(), rounds, roomConfig });
     }
   };
+
+  const PLAYLIST_GAME_OPTIONS = [
+    { id: 'most-likely-to', label: '👑 Most Likely To', accent: '#4ECDC4' },
+    { id: 'who-said-that',  label: '🤔 Who Said That?', accent: '#FFE66D' },
+    { id: 'situational',   label: '🎭 Situational',   accent: '#A8E6CF' },
+    { id: 'this-or-that',  label: '⚡ This or That',  accent: '#6C5CE7' },
+    { id: 'drawing',       label: '🎨 Sketch It!',    accent: '#C39BD3' },
+    { id: 'fill-in-the-blank', label: '✏️ Fill in the Blank', accent: '#F9CA24' },
+    { id: 'selfie-roast',  label: '🎨 Selfie Artist', accent: '#FD79A8' },
+  ];
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 overflow-auto">
@@ -1434,7 +1484,7 @@ function CreateRoomForm({ onSubmit, onBack }) {
               <button
                 key={g.id}
                 onClick={() => setGameType(g.id)}
-                className={`rounded-2xl p-4 text-left border-2 transition active:scale-95 ${g.id === 'mixed' ? 'col-span-2' : ''}`}
+                className={`rounded-2xl p-4 text-left border-2 transition active:scale-95 ${(g.id === 'mixed' || g.colSpan === 2) ? 'col-span-2' : ''}`}
                 style={selected
                   ? { backgroundColor: g.accent + '20', borderColor: g.accent, boxShadow: `0 0 12px ${g.accent}44` }
                   : { borderColor: '#2D2D44', backgroundColor: '#0D0D1A60' }}
@@ -1465,6 +1515,39 @@ function CreateRoomForm({ onSubmit, onBack }) {
                   </button>
                 );
               })}
+            </div>
+          </div>
+        )}
+
+        {gameType === 'playlist' && (
+          <div className="mb-6">
+            <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-3">Game Queue</p>
+            <div className="flex flex-col gap-2 mb-4">
+              {queueItems.map((item, idx) => {
+                const meta = PLAYLIST_GAME_OPTIONS.find(g => g.id === item.type) || { label: item.type, accent: '#aaa' };
+                return (
+                  <div key={idx} className="flex items-center gap-2 rounded-xl p-3 border-2" style={{ borderColor: meta.accent + '55', backgroundColor: meta.accent + '11' }}>
+                    <span className="font-['Fredoka_One'] text-sm flex-1" style={{ color: meta.accent }}>{idx + 1}. {meta.label}</span>
+                    <div className="flex items-center gap-1 mr-2">
+                      <span className="text-xs text-gray-500">Rounds</span>
+                      {[3, 5, 8].map(r => (
+                        <button key={r} onClick={() => updateQueueRounds(idx, r)} className={`px-2 py-0.5 rounded text-xs font-['Fredoka_One'] border transition ${item.rounds === r ? 'border-[#4ECDC4] text-[#4ECDC4] bg-[#4ECDC4]/10' : 'border-[#2D2D44] text-gray-500'}`}>{r}</button>
+                      ))}
+                    </div>
+                    <button onClick={() => moveQueueItem(idx, -1)} disabled={idx === 0} className="text-gray-500 hover:text-white disabled:opacity-30 px-1">↑</button>
+                    <button onClick={() => moveQueueItem(idx, 1)} disabled={idx === queueItems.length - 1} className="text-gray-500 hover:text-white disabled:opacity-30 px-1">↓</button>
+                    <button onClick={() => removeQueueItem(idx)} className="text-gray-500 hover:text-red-400 px-1">✕</button>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="text-xs font-['Nunito'] text-gray-500 mb-2">Add game →</p>
+            <div className="flex flex-wrap gap-2">
+              {PLAYLIST_GAME_OPTIONS.map(g => (
+                <button key={g.id} onClick={() => addQueueItem(g.id)} className="px-3 py-1.5 rounded-xl border-2 font-['Fredoka_One'] text-xs transition active:scale-95" style={{ borderColor: g.accent + '66', color: g.accent, backgroundColor: g.accent + '11' }}>
+                  + {g.label}
+                </button>
+              ))}
             </div>
           </div>
         )}
@@ -1546,7 +1629,16 @@ function CreateRoomForm({ onSubmit, onBack }) {
 
 // ─── Host control bar (creator only) ─────────────────────────────────────────
 
-function HostControlBar({ status, isRoomCreator, players, mlt, votingData, isMixedMode, onStart, onMltPauseResume, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound }) {
+const QUEUE_GAME_LABELS = {
+  'most-likely-to': 'Most Likely To',
+  'whos-most-likely': 'Most Likely To',
+  'this-or-that': 'This or That',
+  'situational': 'Situational',
+  'drawing': 'Sketch It',
+  'mixed': 'Mixed',
+};
+
+function HostControlBar({ status, isRoomCreator, players, mlt, votingData, isMixedMode, onStart, onMltPauseResume, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, gameQueue, queueIndex }) {
   if (!isRoomCreator) return null;
 
   const playingCount = players.filter(p => p.isPlaying && p.isConnected).length;
@@ -1574,15 +1666,23 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, isMix
           {mlt.paused ? '▶ Resume' : '⏸ Pause'}
         </button>
         <button onClick={onMltSkip} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF6B6B] hover:text-[#FF6B6B] active:scale-95 transition">
-          ⏭ Skip
+          ⏭ Skip Round
+        </button>
+        <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+          🔀 Skip Mini Game
         </button>
       </div>
     );
   } else if (status === 'mlt-results') {
     controls = (
-      <button onClick={onMltNext} className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#4ECDC4] text-black hover:bg-[#3dbdb5] active:scale-95 transition" style={{ boxShadow: '0 0 20px #4ECDC440' }}>
-        Next Round →
-      </button>
+      <div className="flex gap-3">
+        <button onClick={onMltNext} className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#4ECDC4] text-black hover:bg-[#3dbdb5] active:scale-95 transition" style={{ boxShadow: '0 0 20px #4ECDC440' }}>
+          Next Round →
+        </button>
+        <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+          🔀 Skip Mini Game
+        </button>
+      </div>
     );
   } else if (status === 'question') {
     controls = (
@@ -1590,11 +1690,9 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, isMix
         <button onClick={onSkipQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FFE66D] hover:text-[#FFE66D] active:scale-95 transition">
           ⏭ Skip Question
         </button>
-        {isMixedMode && (
-          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-            🔀 Skip Mini Game
-          </button>
-        )}
+        <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+          🔀 Skip Mini Game
+        </button>
       </div>
     );
   } else if (status === 'sit-voting') {
@@ -1603,11 +1701,9 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, isMix
         <button onClick={onSkipQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FFE66D] hover:text-[#FFE66D] active:scale-95 transition">
           ⏭ Skip Question
         </button>
-        {isMixedMode && (
-          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-            🔀 Skip Mini Game
-          </button>
-        )}
+        <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+          🔀 Skip Mini Game
+        </button>
       </div>
     );
   } else if (status === 'round-end') {
@@ -1616,11 +1712,9 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, isMix
         <button onClick={onNextRound} className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#4ECDC4] text-black hover:bg-[#3dbdb5] active:scale-95 transition" style={{ boxShadow: '0 0 20px #4ECDC440' }}>
           Next Round →
         </button>
-        {isMixedMode && (
-          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-            🔀 Skip Mini Game
-          </button>
-        )}
+        <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+          🔀 Skip Mini Game
+        </button>
       </div>
     );
   } else if (status === 'tot') {
@@ -1629,11 +1723,9 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, isMix
         <button onClick={onTotNext} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#6C5CE7] hover:text-[#6C5CE7] active:scale-95 transition">
           ⏭ Skip / Next →
         </button>
-        {isMixedMode && (
-          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-            🔀 Skip Mini Game
-          </button>
-        )}
+        <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+          🔀 Skip Mini Game
+        </button>
       </div>
     );
   } else if (status === 'sit-results') {
@@ -1642,35 +1734,39 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, isMix
         <button onClick={onSitNext} className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#A8E6CF] text-black hover:bg-[#8fd4b8] active:scale-95 transition" style={{ boxShadow: '0 0 20px #A8E6CF40' }}>
           Next Round →
         </button>
-        {isMixedMode && (
-          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-            🔀 Skip Mini Game
-          </button>
-        )}
+        <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+          🔀 Skip Mini Game
+        </button>
       </div>
     );
   } else if (status === 'voting') {
     controls = (
-      <button
-        onClick={onNextAnswer}
-        disabled={!votingData?.allVotesIn}
-        className={`px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl transition ${votingData?.allVotesIn ? 'bg-[#6C5CE7] text-white hover:bg-[#7d6fd4] active:scale-95' : 'bg-[#2D2D44] text-gray-500 cursor-not-allowed'}`}
-        style={votingData?.allVotesIn ? { boxShadow: '0 0 20px #6C5CE760' } : {}}
-      >
-        {votingData?.allVotesIn ? 'Next Answer →' : '⏳ Waiting for votes...'}
-      </button>
+      <div className="flex gap-3">
+        <button onClick={onSkipQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FFE66D] hover:text-[#FFE66D] active:scale-95 transition">
+          ⏭ Skip Question
+        </button>
+        <button
+          onClick={onNextAnswer}
+          disabled={!votingData?.allVotesIn}
+          className={`px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl transition ${votingData?.allVotesIn ? 'bg-[#6C5CE7] text-white hover:bg-[#7d6fd4] active:scale-95' : 'bg-[#2D2D44] text-gray-500 cursor-not-allowed'}`}
+          style={votingData?.allVotesIn ? { boxShadow: '0 0 20px #6C5CE760' } : {}}
+        >
+          {votingData?.allVotesIn ? 'Next Answer →' : '⏳ Waiting for votes...'}
+        </button>
+        <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+          🔀 Skip Mini Game
+        </button>
+      </div>
     );
   } else if (status === 'drawing') {
     controls = (
       <div className="flex gap-3">
-        <button onClick={onDrawSkipToVote} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#C39BD3] hover:text-[#C39BD3] active:scale-95 transition">
-          ⏭ Skip to Vote
+        <button onClick={onDrawNewWord} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FFE66D] hover:text-[#FFE66D] active:scale-95 transition">
+          🔄 New Word
         </button>
-        {isMixedMode && (
-          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-            🔀 Skip Mini Game
-          </button>
-        )}
+        <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+          🔀 Skip Mini Game
+        </button>
       </div>
     );
   } else if (status === 'draw-voting') {
@@ -1679,11 +1775,9 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, isMix
         <button onClick={onDrawShowResults} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#C39BD3] text-[#C39BD3] hover:bg-[#C39BD3]/10 active:scale-95 transition">
           🏆 Show Results
         </button>
-        {isMixedMode && (
-          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-            🔀 Skip Mini Game
-          </button>
-        )}
+        <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+          🔀 Skip Mini Game
+        </button>
       </div>
     );
   } else if (status === 'draw-results') {
@@ -1692,22 +1786,34 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, isMix
         <button onClick={onDrawNextRound} className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#C39BD3] text-black hover:bg-[#b085c4] active:scale-95 transition" style={{ boxShadow: '0 0 20px #C39BD340' }}>
           Next Round →
         </button>
-        {isMixedMode && (
-          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-            🔀 Skip Mini Game
-          </button>
-        )}
+        <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+          🔀 Skip Mini Game
+        </button>
       </div>
     );
   } else if (status === 'game-end' || status === 'mlt-end' || status === 'tot-end' || status === 'draw-end') {
+    const hasNextInQueue = gameQueue && gameQueue.length > 1 && queueIndex < gameQueue.length - 1;
+    const nextGame = hasNextInQueue ? gameQueue[queueIndex + 1] : null;
     controls = (
-      <button
-        onClick={() => { window.location.href = '/host'; }}
-        className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#FFE66D] text-black hover:bg-[#ffdd33] active:scale-95 transition"
-        style={{ boxShadow: '0 0 20px #FFE66D60' }}
-      >
-        🎮 New Game
-      </button>
+      <div className="flex gap-3">
+        {status === 'draw-end' && (
+          <button onClick={onDrawRestart} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#C39BD3] text-[#C39BD3] hover:bg-[#C39BD3]/10 active:scale-95 transition">
+            🔄 Play Again
+          </button>
+        )}
+        {hasNextInQueue && (
+          <button onClick={onNextQueueGame} className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#4ECDC4] text-black hover:bg-[#3dbdb5] active:scale-95 transition" style={{ boxShadow: '0 0 20px #4ECDC460' }}>
+            ▶ Next: {QUEUE_GAME_LABELS[nextGame.type] || nextGame.type}
+          </button>
+        )}
+        <button
+          onClick={() => { window.location.href = '/host'; }}
+          className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#FFE66D] text-black hover:bg-[#ffdd33] active:scale-95 transition"
+          style={{ boxShadow: '0 0 20px #FFE66D60' }}
+        >
+          🎮 New Game
+        </button>
+      </div>
     );
   }
 
@@ -1783,6 +1889,10 @@ export default function HostPage() {
     submissions: [], scores: {}, leaderboard: [],
   });
 
+  // Queue state for "Game Playlist" mode
+  const [gameQueue, setGameQueue] = useState([]); // [{type, rounds, mode?}]
+  const [queueIndex, setQueueIndex] = useState(0);
+
   const socketRef = useRef(null);
 
   // ─── Attach game event handlers to a socket ──────────────────────────────
@@ -1852,8 +1962,8 @@ export default function HostPage() {
       setQuestionData(prev => ({ ...prev, answeredCount, totalAnswerers: totalPlayers }));
     });
 
-    sock.on('voting_started', ({ answers, currentIndex }) => {
-      setVotingData({ answers, currentIndex, voteCount: 0, totalPlayers: 0 });
+    sock.on('voting_started', ({ answers, currentIndex, totalPlayers }) => {
+      setVotingData({ answers, currentIndex, voteCount: 0, totalPlayers: totalPlayers || 0 });
       setStatus('voting');
     });
 
@@ -2007,6 +2117,18 @@ export default function HostPage() {
       setStatus('selfie-results');
     });
 
+    sock.on('draw:restarted', ({ players: p }) => {
+      setPlayers(p || []);
+      setDrawData({ word: '', round: 0, totalRounds: 0, phase: 'drawing', mode: 'classic', submittedCount: 0, totalDrawers: 0, voteCount: 0, totalVoters: 0, submissions: [], results: [], scores: {}, leaderboard: [] });
+      setStatus('lobby');
+    });
+
+    sock.on('game_changed', ({ gameType, players: p, gameName }) => {
+      setGameInfo(prev => ({ ...prev, gameType: gameType || prev.gameType, gameName: gameName || prev.gameName }));
+      setPlayers(p || []);
+      setStatus('lobby');
+    });
+
     sock.on('error', ({ message }) => {
       setErrorMsg(message);
       setStatus('error');
@@ -2087,8 +2209,15 @@ export default function HostPage() {
   }, [roomCodeParam, attachGameHandlers]);
 
   // ─── Creator flow ─────────────────────────────────────────────────────────
-  const handleCreateRoom = useCallback(({ gameType, gameName, rounds, selectedSubGames, drawMode, roomConfig }) => {
+  const handleCreateRoom = useCallback(({ gameType, gameName, rounds, selectedSubGames, drawMode, roomConfig, gameQueue: queue }) => {
     setCreatorSettings({ gameType, rounds, drawMode: drawMode || 'classic' });
+    if (queue && queue.length > 1) {
+      setGameQueue(queue);
+      setQueueIndex(0);
+    } else {
+      setGameQueue([]);
+      setQueueIndex(0);
+    }
     setStatus('connecting');
 
     const sock = io(SERVER_URL, { autoConnect: false });
@@ -2142,9 +2271,20 @@ export default function HostPage() {
   const handleNextRound = () => socketRef.current?.emit('ready_next_round', { code: gameInfo.code });
   const handleSkipQuestion = () => socketRef.current?.emit('skip_question', { code: gameInfo.code });
   const handleSkipMiniGame = () => socketRef.current?.emit('skip_mini_game', { code: gameInfo.code });
+  const handleKickPlayer = (playerId) => socketRef.current?.emit('kick_player', { code: gameInfo.code, targetPlayerId: playerId });
   const handleTotNext = () => socketRef.current?.emit('tot:next_round', { code: gameInfo.code });
   const handleSitNext = () => socketRef.current?.emit('sit:next', { code: gameInfo.code });
   const handleNextAnswer = () => socketRef.current?.emit('next_answer_request', { code: gameInfo.code });
+  const handleDrawNewWord = () => socketRef.current?.emit('draw:skip_word', { code: gameInfo.code });
+  const handleDrawRestart = () => socketRef.current?.emit('draw:restart', { code: gameInfo.code });
+  const handleNextQueueGame = () => {
+    const nextIdx = queueIndex + 1;
+    if (nextIdx >= gameQueue.length) return;
+    const nextGame = gameQueue[nextIdx];
+    socketRef.current?.emit('change_game', { code: gameInfo.code, newGameType: nextGame.type });
+    setQueueIndex(nextIdx);
+    setCreatorSettings({ gameType: nextGame.type, rounds: nextGame.rounds || 5, drawMode: nextGame.mode || 'classic' });
+  };
 
   // ─── Render ───────────────────────────────────────────────────────────────
   if (status === 'setup') {
@@ -2194,7 +2334,7 @@ export default function HostPage() {
           </div>
         );
       case 'lobby':
-        return <LobbyPanel gameInfo={gameInfo} players={players} joinUrl={joinUrl} />;
+        return <LobbyPanel gameInfo={gameInfo} players={players} joinUrl={joinUrl} onKickPlayer={isRoomCreator ? handleKickPlayer : null} />;
       case 'mlt-voting':
         return <MltVotingPanel mlt={mlt} players={players} gameName={mlt.gameName || gameInfo.gameName} />;
       case 'mlt-results':
@@ -2250,10 +2390,20 @@ export default function HostPage() {
             <span className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest">Room</span>
             <span className="text-2xl font-['Fredoka_One'] text-[#FFE66D] tracking-widest">{headerRoomCode}</span>
           </div>
-          {status !== 'lobby' && (
-            <div className="bg-white p-1 rounded">
-              <QRCodeSVG value={joinUrl} size={36} />
-            </div>
+          <div className="bg-white p-1 rounded">
+            <QRCodeSVG value={joinUrl} size={36} />
+          </div>
+          {headerRoomCode && (
+            <button
+              onClick={() => {
+                const hostUrl = window.location.origin + '/host?room=' + headerRoomCode;
+                navigator.clipboard.writeText(hostUrl).catch(() => {});
+              }}
+              title="Copy host URL"
+              className="px-3 py-1 rounded-lg text-xs font-['Nunito'] border border-[#2D2D44] text-gray-400 hover:border-[#FFE66D] hover:text-[#FFE66D] active:scale-95 transition"
+            >
+              📋 Host URL
+            </button>
           )}
         </div>
       </div>
@@ -2296,6 +2446,11 @@ export default function HostPage() {
         onDrawSkipToVote={() => socketRef.current?.emit('draw:skip_to_vote', { code: gameInfo.code })}
         onDrawShowResults={() => socketRef.current?.emit('draw:show_results', { code: gameInfo.code })}
         onDrawNextRound={() => socketRef.current?.emit('draw:next_round', { code: gameInfo.code })}
+        onDrawNewWord={handleDrawNewWord}
+        onDrawRestart={handleDrawRestart}
+        onNextQueueGame={handleNextQueueGame}
+        gameQueue={gameQueue}
+        queueIndex={queueIndex}
       />
     </div>
   );

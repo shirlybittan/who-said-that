@@ -18,6 +18,7 @@ const initialState = {
   answers: [],
   currentAnswerIndex: 0,
   myAnswer: null,
+  myAnswerIndex: null,
   scores: {},
   stats: null,
   customQuestions: [],
@@ -214,6 +215,7 @@ export const gameReducer = (state, action) => {
         situationalTarget: action.payload.target || null,
         hasAnswered: false,
         myAnswer: null,
+        myAnswerIndex: null,
         answeredCount: 0,
         votedCount: 0,
         answers: [],
@@ -223,9 +225,11 @@ export const gameReducer = (state, action) => {
     case 'SET_VOTE_COUNT':
       return { ...state, votedCount: action.payload.votedCount, totalPlayers: action.payload.totalPlayers };
     case 'SET_ANSWERS':
-      return { ...state, phase: 'voting', answers: action.payload.answers, currentAnswerIndex: action.payload.currentIndex, hasVoted: false, votedCount: 0, allVotesIn: false };
+      return { ...state, phase: 'voting', answers: action.payload.answers, currentAnswerIndex: action.payload.currentIndex, hasVoted: false, votedCount: 0, allVotesIn: false, myAnswerIndex: null };
     case 'MARK_ANSWERED':
       return { ...state, hasAnswered: true, myAnswer: action.payload?.myAnswer || null };
+    case 'SET_MY_ANSWER_INDEX':
+      return { ...state, myAnswerIndex: action.payload.index };
     case 'MARK_VOTED':
       return { ...state, hasVoted: true };
     case 'ALL_VOTES_IN':

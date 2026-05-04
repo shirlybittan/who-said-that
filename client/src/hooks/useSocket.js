@@ -170,6 +170,10 @@ export const useSocket = () => {
       navigate('/vote');
     };
 
+    const onMyAnswerIndex = ({ index }) => {
+      dispatch({ type: 'SET_MY_ANSWER_INDEX', payload: { index } });
+    };
+
     const onVoteReceived = (data) => {
       dispatch({ type: 'SET_VOTE_COUNT', payload: data });
     };
@@ -425,6 +429,7 @@ export const useSocket = () => {
     socket.on('new_question', onNewQuestion);
     socket.on('answer_received', onAnswerReceived);
     socket.on('voting_started', onVotingStarted);
+    socket.on('my_answer_index', onMyAnswerIndex);
     socket.on('vote_received', onVoteReceived);
     socket.on('all_votes_in', onAllVotesIn);
     socket.on('answer_revealed', onAnswerRevealed);
@@ -499,6 +504,7 @@ export const useSocket = () => {
       socket.off('new_question', onNewQuestion);
       socket.off('answer_received', onAnswerReceived);
       socket.off('voting_started', onVotingStarted);
+      socket.off('my_answer_index', onMyAnswerIndex);
       socket.off('vote_received', onVoteReceived);
       socket.off('all_votes_in', onAllVotesIn);
       socket.off('answer_revealed', onAnswerRevealed);

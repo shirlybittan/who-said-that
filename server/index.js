@@ -351,7 +351,14 @@ const emitWstQuestion = (io, room, code) => {
       room.phase = 'voting';
       room.currentAnswerIndex = 0;
       const mappedAnswers = room.answers.map(a => ({ text: a.text }));
-      io.to(code).emit('voting_started', { answers: mappedAnswers, currentIndex: 0 });
+      const expectedVotes = connectedPlayersCount - 1;
+      io.to(code).emit('voting_started', { answers: mappedAnswers, currentIndex: 0, totalPlayers: expectedVotes });
+      room.answers.forEach((answer, idx) => {
+        const authorPlayer = room.players.find(p => p.id === answer.playerId);
+        if (authorPlayer?.socketId) {
+          io.to(authorPlayer.socketId).emit('my_answer_index', { index: idx });
+        }
+      });
     }
   });
 };
@@ -831,7 +838,14 @@ io.on('connection', (socket) => {
         room.phase = 'voting';
         room.currentAnswerIndex = 0;
         const mappedAnswers = room.answers.map(a => ({ text: a.text }));
-        io.to(code).emit('voting_started', { answers: mappedAnswers, currentIndex: 0 });
+        const expectedVotes = connectedPlayersCount - 1;
+        io.to(code).emit('voting_started', { answers: mappedAnswers, currentIndex: 0, totalPlayers: expectedVotes });
+        room.answers.forEach((answer, idx) => {
+          const authorPlayer = room.players.find(p => p.id === answer.playerId);
+          if (authorPlayer?.socketId) {
+            io.to(authorPlayer.socketId).emit('my_answer_index', { index: idx });
+          }
+        });
       }
     }
   });
@@ -1434,23 +1448,39 @@ io.on('connection', (socket) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'drawing' || !room.draw || room.draw.phase !== 'drawing') return;
     const player = room.players.find(p => p.socketId === socket.id);
-    if (!player || !player.isPlaying) return;
+    if (!player || (!player.isPlaying && !player.isHost)) return;
 
-    const MAX_SKIPS = 2;
-    if (!room.draw.skipCount) room.draw.skipCount = 0;
-    if (room.draw.skipCount >= MAX_SKIPS) return;
-    room.draw.skipCount++;
+    // Players have a skip count limit; the host TV can always change the word
+    const isHostAction = player.isHost && !player.isPlaying;
+    if (!isHostAction) {
+      const MAX_SKIPS = 2;
+      if (!room.draw.skipCount) room.draw.skipCount = 0;
+      if (room.draw.skipCount >= MAX_SKIPS) return;
+      room.draw.skipCount++;
+    }
 
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
 
     if (room.draw.mode === 'secret') {
-      // Secret mode: only that player gets a new word, their submission is cleared
-      const newWord = pickDrawWord(playingPlayers);
-      room.draw.playerWords[player.id] = newWord;
-      delete room.draw.submissions[player.id];
-      socket.emit('draw:secret_word', { word: newWord, skipped: true });
-      const submittedCount = Object.keys(room.draw.submissions).length;
-      io.to(code).emit('draw:submission_received', { submittedCount, totalDrawers: playingPlayers.length, submittedPlayerIds: Object.keys(room.draw.submissions) });
+      if (isHostAction) {
+        // Host: give ALL players a new secret word
+        const shuffled = [...drawWordBank].sort(() => Math.random() - 0.5);
+        playingPlayers.forEach((p, i) => {
+          room.draw.playerWords[p.id] = shuffled[i % shuffled.length];
+          delete room.draw.submissions[p.id];
+          if (p.socketId) io.to(p.socketId).emit('draw:secret_word', { word: room.draw.playerWords[p.id], skipped: true });
+        });
+        const submittedCount = Object.keys(room.draw.submissions).length;
+        io.to(code).emit('draw:submission_received', { submittedCount, totalDrawers: playingPlayers.length, submittedPlayerIds: [] });
+      } else {
+        // Player: only that player gets a new word, their submission is cleared
+        const newWord = pickDrawWord(playingPlayers);
+        room.draw.playerWords[player.id] = newWord;
+        delete room.draw.submissions[player.id];
+        socket.emit('draw:secret_word', { word: newWord, skipped: true });
+        const submittedCount = Object.keys(room.draw.submissions).length;
+        io.to(code).emit('draw:submission_received', { submittedCount, totalDrawers: playingPlayers.length, submittedPlayerIds: Object.keys(room.draw.submissions) });
+      }
     } else {
       // Classic mode: everyone gets a new word, reset all submissions and timer
       const newWord = pickDrawWord(playingPlayers);
@@ -1459,10 +1489,10 @@ io.on('connection', (socket) => {
       if (room.draw.timerRef) { clearInterval(room.draw.timerRef); room.draw.timerRef = null; }
       io.to(code).emit('draw:word_changed', {
         word: newWord,
-        skippedBy: player.id,
-        skippedByName: player.name,
+        skippedBy: isHostAction ? null : player.id,
+        skippedByName: isHostAction ? 'Host' : player.name,
         skipsUsed: room.draw.skipCount,
-        maxSkips: MAX_SKIPS,
+        maxSkips: 2,
       });
       io.to(code).emit('draw:submission_received', { submittedCount: 0, totalDrawers: playingPlayers.length, submittedPlayerIds: [] });
       startDrawTimer(io, room, code, room.draw.timeLimit);
@@ -2108,6 +2138,19 @@ io.on('connection', (socket) => {
     if (!player || !player.isHost) return;
     room.globalScores = {};
     io.to(code).emit('global_scores_updated', { globalScores: {}, leaderboard: [] });
+  });
+
+  socket.on('remove_from_global_scores', ({ code, playerId }) => {
+    const room = getRoom(code);
+    if (!room) return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+    delete room.globalScores[playerId];
+    const leaderboard = room.players
+      .filter(p => room.globalScores[p.id] !== undefined)
+      .sort((a, b) => (room.globalScores[b.id] || 0) - (room.globalScores[a.id] || 0))
+      .map(p => ({ id: p.id, name: p.name, color: p.color, score: room.globalScores[p.id] || 0 }));
+    io.to(code).emit('global_scores_updated', { globalScores: room.globalScores, leaderboard });
   });
 
   // ──────────────────────────────────────────────────────────────────────────

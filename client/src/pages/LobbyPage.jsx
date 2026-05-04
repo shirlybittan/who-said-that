@@ -131,13 +131,21 @@ export default function LobbyPage() {
             )}
           </div>
           {state.globalLeaderboard.map((p, i) => (
-            <div key={p.id} className="flex items-center justify-between py-1">
+            <div key={p.id} className="flex items-center justify-between py-1 group">
               <div className="flex items-center gap-2">
                 <span className="text-gray-500 text-sm w-5">{i + 1}.</span>
                 <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: p.color }} />
                 <span className="font-['Nunito'] text-sm">{p.name}</span>
               </div>
-              <span className="font-['Fredoka_One'] text-[#FFE66D]">{p.score}</span>
+              <div className="flex items-center gap-2">
+                <span className="font-['Fredoka_One'] text-[#FFE66D]">{p.score}</span>
+                {state.isHost && (
+                  <button
+                    onClick={() => socket.emit('remove_from_global_scores', { code: state.roomCode, playerId: p.id })}
+                    className="text-xs text-gray-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition"
+                  >✕</button>
+                )}
+              </div>
             </div>
           ))}
         </div>
