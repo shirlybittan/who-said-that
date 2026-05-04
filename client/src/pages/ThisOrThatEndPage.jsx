@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useGame } from '../store/gameStore.jsx';
-import { socket } from '../socket';
 import { translations } from '../locales/translations';
 import Confetti from 'react-confetti';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
+import GameSwitcher from '../components/GameSwitcher.jsx';
 
 export default function ThisOrThatEndPage() {
   const { state } = useGame();
@@ -98,6 +98,9 @@ export default function ThisOrThatEndPage() {
       >
         {t.playAgain}
       </button>
+      <div className="w-full max-w-sm mt-3">
+        <GameSwitcher currentGameType={state.gameType} />
+      </div>
       <button
         onClick={() => { window.location.href = '/'; }}
         className="w-full max-w-sm mt-3 border border-[#2D2D44] text-gray-400 font-bold py-3 px-6 rounded-xl transition transform active:scale-95 text-base font-['Fredoka_One'] hover:border-gray-500 hover:text-gray-300"

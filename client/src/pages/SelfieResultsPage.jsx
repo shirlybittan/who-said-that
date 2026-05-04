@@ -5,6 +5,7 @@ import { socket } from '../socket';
 import Confetti from 'react-confetti';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
+import GameSwitcher from '../components/GameSwitcher.jsx';
 
 const CANVAS_W = 400;
 const CANVAS_H = 300;
@@ -71,6 +72,9 @@ const SubmissionCard = ({ sub, rank }) => {
         </div>
         <span className="font-['Nunito'] text-gray-400 text-sm">{sub.votes} {sub.votes === 1 ? 'vote' : 'votes'}</span>
       </div>
+      {sub.prompt && (
+        <p className="mt-1 text-xs font-['Nunito'] text-[#FFE66D] italic">{sub.prompt}</p>
+      )}
     </div>
   );
 };
@@ -101,8 +105,14 @@ export default function SelfieResultsPage() {
       initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.35, ease: 'easeOut' }}
     >
       <Confetti width={win.width} height={win.height} recycle={false} numberOfPieces={280} />
-      <h1 className="text-3xl font-['Fredoka_One'] text-[#FFE66D] mt-6 mb-1">Selfie Roast Results!</h1>
-      <p className="text-gray-400 font-['Nunito'] text-sm mb-6">📸 Selfie Roast</p>
+      <h1 className="text-3xl font-['Fredoka_One'] text-[#FFE66D] mt-6 mb-1">Selfie Artist Results! 🎨</h1>
+      {selfie.promptTemplate ? (
+        <div className="bg-[#FFE66D]/10 border border-[#FFE66D]/30 rounded-xl px-4 py-2 mb-4 text-center">
+          <p className="text-[#FFE66D] font-['Fredoka_One'] text-base">{selfie.promptTemplate.replace('[Name]', '…')}</p>
+        </div>
+      ) : (
+        <p className="text-gray-400 font-['Nunito'] text-sm mb-6">📸 Selfie Challenge</p>
+      )}
 
       {/* Submissions ranked by votes */}
       <motion.div
@@ -143,6 +153,9 @@ export default function SelfieResultsPage() {
           Play Again
         </button>
       )}
+      <div className="w-full max-w-md mb-3">
+        <GameSwitcher currentGameType={state.gameType} />
+      </div>
       <button
         onClick={handleMainMenu}
         className="w-full max-w-md bg-[#1A1A2E] border border-[#2D2D44] text-gray-300 font-['Fredoka_One'] text-xl py-4 rounded-2xl hover:bg-[#2D2D44] transition"

@@ -13,6 +13,7 @@ const {
 const { selectQuestions, selectSituationalQuestions, selectThisOrThatQuestions, selectDrawingQuestion, selectMixedQuestions, shuffleAnswers } = require('./game/gameLogic');
 const mltPromptBank = require('./questions/mostLikelyTo');
 const { words: drawWordBank, prompts: drawPrompts } = require('./questions/drawing');
+const { selfiePrompts } = require('./questions/selfie');
 
 const app = express();
 app.use(cors());
@@ -1865,6 +1866,10 @@ io.on('connection', (socket) => {
     if (room.selfie.phase !== 'photo') return;
     room.selfie.phase = 'drawing';
 
+    // Pick a random prompt template for this round
+    const promptObj = selfiePrompts[Math.floor(Math.random() * selfiePrompts.length)];
+    room.selfie.promptTemplate = promptObj.prompt;
+
     const photoOwnerIds = Object.keys(room.selfie.photos);
     // Shuffle photo owners so each drawer gets someone else's photo
     const shuffled = [...photoOwnerIds].sort(() => Math.random() - 0.5);
@@ -1892,18 +1897,21 @@ io.on('connection', (socket) => {
       const ownerPlayerId = room.selfie.assignments[p.id];
       const owner = room.players.find(pl => pl.id === ownerPlayerId);
       if (p.socketId && ownerPlayerId) {
+        const personalizedPrompt = (room.selfie.promptTemplate || 'Draw on [Name]\'s selfie').replace(/\[Name\]/g, owner?.name || '?');
         io.to(p.socketId).emit('selfie:draw_assigned', {
           photoData: room.selfie.photos[ownerPlayerId],
           ownerName: owner?.name || '?',
           ownerColor: owner?.color || '#fff',
           ownerPlayerId,
+          prompt: personalizedPrompt,
+          promptTemplate: room.selfie.promptTemplate,
         });
       }
     });
 
     // Broadcast drawing phase start
     const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
-    io.to(code).emit('selfie:drawing_phase', { players, totalDrawers: drawerIds.length });
+    io.to(code).emit('selfie:drawing_phase', { players, totalDrawers: drawerIds.length, promptTemplate: room.selfie.promptTemplate });
   };
 
   socket.on('selfie:skip_to_drawing', ({ code }) => {
@@ -1956,6 +1964,7 @@ io.on('connection', (socket) => {
       const drawer = room.players.find(p => p.id === drawerId);
       const ownerPlayerId = room.selfie.assignments[drawerId];
       const owner = room.players.find(p => p.id === ownerPlayerId);
+      const personalizedPrompt = (room.selfie.promptTemplate || '').replace(/\[Name\]/g, owner?.name || '?');
       return {
         drawerId,
         drawerName: drawer?.name || '?',
@@ -1964,6 +1973,7 @@ io.on('connection', (socket) => {
         ownerName: owner?.name || '?',
         photoData: room.selfie.photos[ownerPlayerId] || null,
         strokes: room.selfie.strokes[drawerId],
+        prompt: personalizedPrompt,
       };
     });
     // Shuffle so drawer order is not obvious
@@ -2020,6 +2030,7 @@ io.on('connection', (socket) => {
       const drawer = room.players.find(p => p.id === drawerId);
       const ownerPlayerId = room.selfie.assignments[drawerId];
       const owner = room.players.find(p => p.id === ownerPlayerId);
+      const personalizedPrompt = (room.selfie.promptTemplate || '').replace(/\[Name\]/g, owner?.name || '?');
       return {
         drawerId,
         drawerName: drawer?.name || '?',
@@ -2029,6 +2040,7 @@ io.on('connection', (socket) => {
         photoData: room.selfie.photos[ownerPlayerId] || null,
         strokes: room.selfie.strokes[drawerId],
         votes: voteCounts[drawerId] || 0,
+        prompt: personalizedPrompt,
       };
     }).sort((a, b) => b.votes - a.votes);
 
@@ -2037,7 +2049,7 @@ io.on('connection', (socket) => {
       .sort((a, b) => b.score - a.score);
 
     room.phase = 'selfieEnd';
-    io.to(code).emit('selfie:results', { submissions, scores: room.selfie.scores, leaderboard });
+    io.to(code).emit('selfie:results', { submissions, scores: room.selfie.scores, leaderboard, promptTemplate: room.selfie.promptTemplate });
     mergeToGlobalScores(io, room, room.selfie.scores);
   };
 
@@ -2058,6 +2070,33 @@ io.on('connection', (socket) => {
     room.selfie = { phase: 'waiting', photos: {}, assignments: {}, strokes: {}, votes: {}, scores: {} };
     room.players.forEach(p => { p.isReady = false; });
     io.to(code).emit('selfie:restarted', { code, players: room.players });
+  });
+
+  // ─── Change game (keep same room/players, switch game type) ───────────────
+
+  socket.on('change_game', ({ code, newGameType }) => {
+    const room = getRoom(code);
+    if (!room) return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+    const validGameTypes = ['who-said-that', 'most-likely-to', 'situational', 'this-or-that', 'mixed', 'drawing', 'fill-in-the-blank', 'selfie-roast'];
+    if (!validGameTypes.includes(newGameType)) return;
+
+    room.gameType = newGameType;
+    room.phase = 'lobby';
+    room.players.forEach(p => { p.isReady = false; });
+    // Reset all game-specific state
+    room.mlt = { phase: 'waiting', prompts: [], currentPromptIndex: 0, votes: {}, scores: {}, leaderboard: [] };
+    room.draw = { phase: 'waiting', rounds: [], currentRound: 0, submissions: {}, votes: {}, scores: {}, leaderboard: [] };
+    room.fitb = { phase: 'waiting', rounds: [], currentRound: 0, submissions: {}, votes: {}, scores: {}, leaderboard: [] };
+    room.selfie = { phase: 'waiting', photos: {}, assignments: {}, strokes: {}, votes: {}, scores: {} };
+
+    io.to(code).emit('game_changed', {
+      code,
+      gameType: newGameType,
+      players: room.players,
+      gameName: room.gameName || '',
+    });
   });
 
   // ─── Global scores management ──────────────────────────────────────────────

@@ -6,6 +6,7 @@ import { translations } from '../locales/translations';
 import Confetti from 'react-confetti';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
+import GameSwitcher from '../components/GameSwitcher.jsx';
 
 export default function DrawingEndPage() {
   const { state, dispatch } = useGame();
@@ -81,6 +82,7 @@ export default function DrawingEndPage() {
             🔄 {t.playAgain}
           </button>
         )}
+        <GameSwitcher currentGameType={state.gameType} />
         <button
           onClick={handleMainMenu}
           className="w-full py-3 rounded-2xl bg-[#1A1A2E] text-white font-['Fredoka_One'] text-lg border border-[#2D2D44] hover:border-[#C39BD3] transition"

@@ -99,8 +99,8 @@ export default function HomePage() {
     },
     {
       id: 'selfie-roast',
-      label: t?.gameSelfie || 'Selfie Roast',
-      desc: t?.gameSelfieDesc || 'Take a selfie, get roasted!',
+      label: t?.gameSelfie || 'Selfie Artist',
+      desc: t?.gameSelfieDesc || "Draw on someone's selfie!",
       accent: '#FD79A8',
       icon: '📸',
     },

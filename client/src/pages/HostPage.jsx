@@ -20,7 +20,7 @@ const GAME_TYPE_LABELS = {
   'mixed': '🎲 Mixed',
   'drawing': '🎨 Sketch It!',
   'fill-in-the-blank': '✏️ Fill in the Blank',
-  'selfie-roast': '📸 Selfie Roast',
+  'selfie-roast': '🎨 Selfie Artist',
 };
 
 // ─── Shared sub-components ───────────────────────────────────────────────────
@@ -1255,7 +1255,7 @@ function SelfieHostPanel({ selfieData, players, onSkipToVote, onShowResults }) {
   if (selfieData.phase === 'results') {
     return (
       <div className="flex flex-col items-center gap-8 w-full max-w-4xl">
-        <h1 className="text-4xl font-['Fredoka_One'] text-[#FD79A8]">📸 Selfie Roast — Results!</h1>
+        <h1 className="text-4xl font-['Fredoka_One'] text-[#FD79A8]">🎨 Selfie Artist — Results!</h1>
         <div className="w-full flex flex-col gap-3">
           {(selfieData.leaderboard || []).map((entry, i) => (
             <motion.div key={entry.playerId} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }}
@@ -1301,7 +1301,7 @@ function SelfieHostPanel({ selfieData, players, onSkipToVote, onShowResults }) {
   return (
     <div className="flex flex-col items-center gap-6 w-full max-w-xl">
       <p className="text-5xl">📸</p>
-      <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">Selfie Roast</h1>
+      <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">Selfie Artist</h1>
       <p className="text-gray-400 font-['Nunito']">Players are taking their selfies...</p>
       <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
         <div className="flex items-center justify-between mb-3">
@@ -1321,7 +1321,7 @@ const GAME_TYPES_FOR_CREATE = [
   { id: 'this-or-that',  label: '⚡ This or That',  desc: 'Pick a side!',           accent: '#6C5CE7' },
   { id: 'drawing',       label: '🎨 Sketch It!',    desc: 'Draw and guess!',        accent: '#C39BD3' },
   { id: 'fill-in-the-blank', label: '✏️ Fill in the Blank', desc: 'Finish the sentence!', accent: '#F9CA24' },
-  { id: 'selfie-roast',  label: '📸 Selfie Roast',  desc: 'Take a selfie, get roasted!', accent: '#FD79A8' },
+  { id: 'selfie-roast',  label: '🎨 Selfie Artist',  desc: "Draw on someone's selfie!", accent: '#FD79A8' },
   { id: 'mixed',         label: '🎲 Mixed',         desc: 'All modes shuffled!',    accent: '#FF8B94' },
 ];
 

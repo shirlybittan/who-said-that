@@ -5,6 +5,7 @@ import { socket } from '../socket';
 import Confetti from 'react-confetti';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
+import GameSwitcher from '../components/GameSwitcher.jsx';
 
 export default function FillBlankEndPage() {
   const { state } = useGame();
@@ -69,6 +70,9 @@ export default function FillBlankEndPage() {
           Play Again
         </button>
       )}
+      <div className="w-full max-w-sm mb-3">
+        <GameSwitcher currentGameType={state.gameType} />
+      </div>
       <button
         onClick={handleMainMenu}
         className="w-full max-w-sm bg-[#1A1A2E] border border-[#2D2D44] text-gray-300 font-['Fredoka_One'] text-xl py-4 rounded-2xl hover:bg-[#2D2D44] transition"

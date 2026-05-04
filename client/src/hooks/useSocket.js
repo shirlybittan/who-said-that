@@ -406,6 +406,11 @@ export const useSocket = () => {
       dispatch({ type: 'SELFIE_RESTARTED', payload: data });
       navigate('/lobby');
     };
+
+    const onGameChanged = ({ code, gameType, players, gameName }) => {
+      dispatch({ type: 'SET_ROOM', payload: { gameType, players, gameName, phase: 'lobby' } });
+      navigate('/lobby');
+    };
     // ────────────────────────────────────────────────────────────────────────
 
     socket.on('connect', onConnect);
@@ -479,6 +484,7 @@ export const useSocket = () => {
     };
     socket.on('global_scores_updated', onGlobalScoresUpdated);
     socket.on('phase_timer', onPhaseTimer);
+    socket.on('game_changed', onGameChanged);
 
     return () => {
       socket.off('connect', onConnect);
@@ -545,6 +551,7 @@ export const useSocket = () => {
       socket.off('selfie:restarted', onSelfieRestarted);
       socket.off('global_scores_updated', onGlobalScoresUpdated);
       socket.off('phase_timer', onPhaseTimer);
+      socket.off('game_changed', onGameChanged);
     };
   }, [dispatch, navigate, state.playerId]);
 };

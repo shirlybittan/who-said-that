@@ -121,7 +121,9 @@ const initialState = {
     assignedOwnerName: null,
     assignedOwnerColor: null,
     assignedOwnerPlayerId: null,
-    submissions: [],       // [{drawerId, drawerName, drawerColor, ownerName, photoData, strokes, votes?}]
+    assignedPrompt: null,       // e.g. "Turn Maya into a pirate"
+    promptTemplate: null,       // e.g. "Turn [Name] into a pirate"
+    submissions: [],       // [{drawerId, drawerName, drawerColor, ownerName, photoData, strokes, votes?, prompt}]
     voteCount: 0,
     totalVoters: 0,
     scores: {},
@@ -523,6 +525,8 @@ export const gameReducer = (state, action) => {
           assignedOwnerName: null,
           assignedOwnerColor: null,
           assignedOwnerPlayerId: null,
+          assignedPrompt: null,
+          promptTemplate: null,
           submissions: [],
         },
       };
@@ -546,6 +550,8 @@ export const gameReducer = (state, action) => {
           assignedOwnerName: action.payload.ownerName,
           assignedOwnerColor: action.payload.ownerColor,
           assignedOwnerPlayerId: action.payload.ownerPlayerId,
+          assignedPrompt: action.payload.prompt || null,
+          promptTemplate: action.payload.promptTemplate || null,
         },
       };
     case 'SELFIE_DRAWING_PHASE':
@@ -556,6 +562,7 @@ export const gameReducer = (state, action) => {
           phase: 'drawing',
           drawingCount: 0,
           totalDrawers: action.payload.totalDrawers || state.selfie.totalPhotographers,
+          promptTemplate: action.payload.promptTemplate || state.selfie.promptTemplate,
         },
       };
     case 'SELFIE_DRAWING_RECEIVED':
@@ -601,6 +608,7 @@ export const gameReducer = (state, action) => {
           submissions: action.payload.submissions,
           scores: action.payload.scores || {},
           leaderboard: action.payload.leaderboard || [],
+          promptTemplate: action.payload.promptTemplate || state.selfie.promptTemplate,
         },
       };
     case 'SELFIE_RESTARTED':
