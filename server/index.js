@@ -553,6 +553,13 @@ const closeSitVoting = (io, room, code) => {
 // Players who count toward round thresholds (connected, playing, not waiting for next round)
 const activePlayers = (room) => room.players.filter(p => p.isConnected && p.isPlaying && !p.joinedMidRound);
 
+// Cancel all active game timers for a room (called before starting a new game)
+function cancelAllTimers(room) {
+  if (room.mlt?.timerRef) { clearTimeout(room.mlt.timerRef); room.mlt.timerRef = null; }
+  if (room.draw?.timerRef) { clearInterval(room.draw.timerRef); room.draw.timerRef = null; }
+  if (room.fitb?.timerRef) { clearTimeout(room.fitb.timerRef); room.fitb.timerRef = null; }
+}
+
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
@@ -709,8 +716,9 @@ io.on('connection', (socket) => {
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isHost) return;
 
-    // For selfie/caption/photovote modes, skip_mini_game ends the game by resetting to lobby
-    if (['selfie', 'caption', 'photovote'].includes(room.phase)) {
+    // For phases that don't have a questions array, skip = reset to lobby
+    if (['mlt', 'mltEnd', 'selfie', 'caption', 'photovote', 'fitb', 'drawing', 'drawEnd', 'fitb-end'].includes(room.phase)) {
+      cancelAllTimers(room);
       room.phase = 'lobby';
       room.players.forEach(p => { p.isReady = false; });
       io.to(code).emit('game_changed', {
@@ -1162,6 +1170,7 @@ io.on('connection', (socket) => {
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isHost) return;
 
+    cancelAllTimers(room);
     // Let mid-round joiners participate from here on
     room.players.forEach(p => { p.joinedMidRound = false; });
 
@@ -1299,6 +1308,43 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Replace current prompt without advancing round number
+  socket.on('mlt:change_question', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'mlt') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+
+    if (room.mlt.timerRef) { clearTimeout(room.mlt.timerRef); room.mlt.timerRef = null; }
+
+    // Pick a new prompt not already used
+    const usedSet = new Set(room.mlt.prompts.slice(0, room.mlt.round - 1).map(p => JSON.stringify(p)));
+    const allPrompts = room.mlt.prompts.concat();
+    const freshPool = allPrompts.filter(p => !usedSet.has(JSON.stringify(p)));
+    // fallback: any prompt
+    const candidate = freshPool.length > 0
+      ? freshPool[Math.floor(Math.random() * freshPool.length)]
+      : allPrompts[Math.floor(Math.random() * allPrompts.length)];
+
+    room.mlt.currentPrompt = candidate;
+    room.mlt.prompts[room.mlt.round - 1] = candidate;
+    room.mlt.votes = {};
+    room.mlt.jokersThisRound = {};
+    room.mlt.roundState = 'voting';
+    room.mlt.paused = false;
+
+    room.players.forEach(p => { p.joinedMidRound = false; });
+    const nonHostPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    io.to(code).emit('mlt:prompt', {
+      prompt: room.mlt.currentPrompt,
+      round: room.mlt.round,
+      totalRounds: room.mlt.totalRounds,
+      players: nonHostPlayers.map(p => ({ id: p.id, name: p.name, color: p.color })),
+      gameName: room.gameName,
+    });
+    startMltTimer(io, room, code, 30);
+  });
+
   socket.on('mlt:skip', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'mlt') return;
@@ -1417,6 +1463,7 @@ io.on('connection', (socket) => {
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isHost) return;
 
+    cancelAllTimers(room);
     room.players.forEach(p => { p.joinedMidRound = false; });
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
     if (playingPlayers.length < 2) return;
@@ -1689,6 +1736,7 @@ io.on('connection', (socket) => {
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isHost) return;
 
+    cancelAllTimers(room);
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
     if (playingPlayers.length < 2) return;
 
@@ -1770,6 +1818,24 @@ io.on('connection', (socket) => {
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isHost) return;
     startFitbVoting(io, room, code);
+  });
+
+  socket.on('fitb:change_question', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'fitb' || room.fitb.phase !== 'answering') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+    room.fitb.answers = [];
+    room.fitb._votes = {};
+    room.fitb.question = pickFitbQuestion(room, room.players);
+    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
+    io.to(code).emit('fitb:round_start', {
+      question: room.fitb.question,
+      round: room.fitb.round,
+      totalRounds: room.fitb.totalRounds,
+      players,
+    });
   });
 
   socket.on('fitb:vote', ({ code, answerId }) => {
@@ -1878,6 +1944,7 @@ io.on('connection', (socket) => {
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isHost) return;
 
+    cancelAllTimers(room);
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
     if (playingPlayers.length < 2) return;
 
@@ -2294,6 +2361,7 @@ io.on('connection', (socket) => {
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isHost) return;
 
+    cancelAllTimers(room);
     const { captionPrompts } = require('./questions/captionPrompts');
     const shuffled = [...captionPrompts].sort(() => Math.random() - 0.5);
 
@@ -2555,6 +2623,7 @@ io.on('connection', (socket) => {
     if (!player || !player.isHost) return;
     if (!['pmatch', 'photoassoc'].includes(subType)) return;
 
+    cancelAllTimers(room);
     let prompts;
     if (subType === 'pmatch') {
       const { pmatchPrompts } = require('./questions/pmatchPrompts');
@@ -2772,6 +2841,10 @@ io.on('connection', (socket) => {
     if (!player || !player.isHost) return;
     const validGameTypes = ['who-said-that', 'most-likely-to', 'situational', 'this-or-that', 'mixed', 'drawing', 'fill-in-the-blank', 'selfie-roast', 'caption', 'pmatch', 'photoassoc', 'selfie-beforeafter'];
     if (!validGameTypes.includes(newGameType)) return;
+
+    // Cancel any active timers before resetting state
+    if (room.mlt?.timerRef) { clearTimeout(room.mlt.timerRef); room.mlt.timerRef = null; }
+    if (room.draw?.timerRef) { clearInterval(room.draw.timerRef); room.draw.timerRef = null; }
 
     room.gameType = newGameType;
     room.phase = 'lobby';

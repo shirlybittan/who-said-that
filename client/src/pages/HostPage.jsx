@@ -1668,7 +1668,7 @@ const QUEUE_GAME_LABELS = {
   'mixed': 'Mixed',
 };
 
-function HostControlBar({ status, isRoomCreator, players, mlt, votingData, isMixedMode, onStart, onMltPauseResume, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, onNewGame, gameQueue, queueIndex, onSelfieNextRound, onSelfieSkipQuestion, onShowSelfieResults }) {
+function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbData, isMixedMode, onStart, onMltPauseResume, onMltChangeQuestion, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, onNewGame, gameQueue, queueIndex, onSelfieNextRound, onSelfieSkipQuestion, onShowSelfieResults, onFitbChangeQuestion, onFitbSkipToVote, onFitbShowResults, onFitbNextRound }) {
   if (!isRoomCreator) return null;
 
   const playingCount = players.filter(p => p.isPlaying && p.isConnected).length;
@@ -1694,6 +1694,9 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, isMix
       <div className="flex gap-3">
         <button onClick={onMltPauseResume} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FFE66D] text-[#FFE66D] bg-[#FFE66D]/10 hover:bg-[#FFE66D]/20 active:scale-95 transition">
           {mlt.paused ? '▶ Resume' : '⏸ Pause'}
+        </button>
+        <button onClick={onMltChangeQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#4ECDC4] hover:text-[#4ECDC4] active:scale-95 transition">
+          🔄 Change Question
         </button>
         <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
           🔀 Skip Mini Game
@@ -1813,6 +1816,53 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, isMix
         <button onClick={onDrawNextRound} className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#C39BD3] text-black hover:bg-[#b085c4] active:scale-95 transition" style={{ boxShadow: '0 0 20px #C39BD340' }}>
           Next Round →
         </button>
+        <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+          🔀 Skip Mini Game
+        </button>
+      </div>
+    );
+  } else if (status === 'fitb') {
+    const fitbPhase = fitbData?.phase;
+    if (fitbPhase === 'answering') {
+      controls = (
+        <div className="flex gap-3">
+          <button onClick={onFitbChangeQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#F9CA24] hover:text-[#F9CA24] active:scale-95 transition">
+            🔄 Change Question
+          </button>
+          <button onClick={onFitbSkipToVote} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FFE66D] hover:text-[#FFE66D] active:scale-95 transition">
+            ⏭ Skip to Vote
+          </button>
+          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+            🔀 Skip Mini Game
+          </button>
+        </div>
+      );
+    } else if (fitbPhase === 'voting') {
+      controls = (
+        <div className="flex gap-3">
+          <button onClick={onFitbShowResults} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#F9CA24] text-[#F9CA24] hover:bg-[#F9CA24]/10 active:scale-95 transition">
+            🏆 Show Results
+          </button>
+          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+            🔀 Skip Mini Game
+          </button>
+        </div>
+      );
+    } else if (fitbPhase === 'results') {
+      controls = (
+        <div className="flex gap-3">
+          <button onClick={onFitbNextRound} className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#F9CA24] text-black hover:opacity-90 active:scale-95 transition" style={{ boxShadow: '0 0 20px #F9CA2440' }}>
+            Next Round →
+          </button>
+          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+            🔀 Skip Mini Game
+          </button>
+        </div>
+      );
+    }
+  } else if (status === 'caption' || status === 'photovote') {
+    controls = (
+      <div className="flex gap-3">
         <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
           🔀 Skip Mini Game
         </button>
@@ -2234,6 +2284,7 @@ export default function HostPage() {
     sock.on('game_changed', ({ gameType, players: p, gameName }) => {
       setGameInfo(prev => ({ ...prev, gameType: gameType || prev.gameType, gameName: gameName || prev.gameName }));
       setPlayers(p || []);
+      setCreatorSettings(prev => ({ ...prev, gameType: gameType || prev.gameType }));
       setStatus('lobby');
     });
 
@@ -2275,6 +2326,7 @@ export default function HostPage() {
 
     sock.on('spectator_joined', ({ room }) => {
       setIsRoomCreator(true); // TV screen always has full host control
+      setCreatorSettings(prev => ({ ...prev, gameType: room.gameType || prev.gameType }));
       setGameInfo({ code: room.code, gameName: room.gameName || '', gameType: room.gameType || '' });
       setPlayers(room.players || []);
       if (room.phase === 'mlt' || room.phase === 'mltEnd') {
@@ -2381,7 +2433,11 @@ export default function HostPage() {
     else sock.emit('mlt:pause', { code: gameInfo.code });
   };
 
+  // "Change Question" in MLT replaces the current round's prompt without advancing the round counter
+  const handleMltChangeQuestion = () => socketRef.current?.emit('mlt:change_question', { code: gameInfo.code });
   const handleMltSkip = () => socketRef.current?.emit('mlt:skip', { code: gameInfo.code });
+
+  const handleFitbChangeQuestion = () => socketRef.current?.emit('fitb:change_question', { code: gameInfo.code });
   const handleMltNext = () => socketRef.current?.emit('mlt:next_round', { code: gameInfo.code });
   const handleNextRound = () => socketRef.current?.emit('ready_next_round', { code: gameInfo.code });
   const handleSkipQuestion = () => socketRef.current?.emit('skip_question', { code: gameInfo.code });
@@ -2405,9 +2461,25 @@ export default function HostPage() {
     const nextIdx = queueIndex + 1;
     if (nextIdx >= gameQueue.length) return;
     const nextGame = gameQueue[nextIdx];
-    socketRef.current?.emit('change_game', { code: gameInfo.code, newGameType: nextGame.type });
+    const code = gameInfo.code;
+    const sock = socketRef.current;
+    if (!sock || !code) return;
     setQueueIndex(nextIdx);
-    setCreatorSettings({ gameType: nextGame.type, rounds: nextGame.rounds || 5, drawMode: nextGame.mode || 'classic' });
+    const nextRounds = nextGame.rounds || 5;
+    const nextMode = nextGame.mode || 'classic';
+    setCreatorSettings({ gameType: nextGame.type, rounds: nextRounds, drawMode: nextMode });
+    setGameInfo(prev => ({ ...prev, gameType: nextGame.type }));
+    // Start the next game directly — server start handlers cancel previous timers and reset state
+    // (no change_game needed; players navigate on receiving the new game's first event)
+    const t = nextGame.type;
+    if (t === 'most-likely-to') sock.emit('mlt:start', { code, rounds: nextRounds, allowSelfVote: true });
+    else if (t === 'drawing') sock.emit('draw:start', { code, rounds: nextRounds, mode: nextMode });
+    else if (t === 'fill-in-the-blank') sock.emit('fitb:start', { code, rounds: nextRounds });
+    else if (t === 'selfie-roast') sock.emit('selfie:start', { code, rounds: nextRounds });
+    else if (t === 'caption') sock.emit('caption:start', { code, rounds: nextRounds });
+    else if (t === 'pmatch') sock.emit('photovote:start', { code, subType: 'pmatch', rounds: nextRounds });
+    else if (t === 'photoassoc') sock.emit('photovote:start', { code, subType: 'photoassoc', rounds: nextRounds });
+    else sock.emit('start_game', { code });
   };
 
   const handleNewGame = () => {
@@ -2586,6 +2658,7 @@ export default function HostPage() {
                   key={g.id}
                   onClick={() => {
                     socketRef.current?.emit('change_game', { code: gameInfo.code, newGameType: g.id });
+                    setCreatorSettings(prev => ({ ...prev, gameType: g.id }));
                     setGameQueue([]);
                     setQueueIndex(0);
                     setShowGamePicker(false);
@@ -2622,8 +2695,10 @@ export default function HostPage() {
         players={players}
         mlt={mlt}
         votingData={votingData}
+        fitbData={fitbData}
         onStart={handleStartGame}
         onMltPauseResume={handleMltPauseResume}
+        onMltChangeQuestion={handleMltChangeQuestion}
         onMltSkip={handleMltSkip}
         onMltNext={handleMltNext}
         onNextRound={handleNextRound}
@@ -2645,6 +2720,10 @@ export default function HostPage() {
         onSelfieNextRound={handleSelfieNextRound}
         onSelfieSkipQuestion={handleSelfieSkipQuestion}
         onShowSelfieResults={() => socketRef.current?.emit('selfie:show_results', { code: gameInfo.code })}
+        onFitbChangeQuestion={handleFitbChangeQuestion}
+        onFitbSkipToVote={() => socketRef.current?.emit('fitb:skip_to_vote', { code: gameInfo.code })}
+        onFitbShowResults={() => socketRef.current?.emit('fitb:show_results', { code: gameInfo.code })}
+        onFitbNextRound={() => socketRef.current?.emit('fitb:next_round', { code: gameInfo.code })}
       />
     </div>
   );
