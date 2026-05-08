@@ -21,6 +21,13 @@ export default function LobbyPage() {
   const sounds = useSounds();
   const prevPlayerCount = useRef(state.players.length);
 
+  // Update the address bar to show the join URL so players can share/bookmark it
+  useEffect(() => {
+    if (state.roomCode && !state.isHost) {
+      window.history.replaceState(null, '', `/?join=${state.roomCode}`);
+    }
+  }, [state.roomCode, state.isHost]);
+
   useEffect(() => {
     const current = state.players.length;
     if (current > prevPlayerCount.current) {

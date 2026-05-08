@@ -29,8 +29,8 @@ const createRoom = (socketId, playerName = 'Host', gameType = 'most-likely-to', 
     isConnected: true
   };
 
-  const validGameTypes = ['who-said-that', 'most-likely-to', 'situational', 'this-or-that', 'mixed', 'drawing', 'fill-in-the-blank', 'selfie-roast'];
-  const standaloneTypes = new Set(['drawing', 'fill-in-the-blank', 'selfie-roast']);
+  const validGameTypes = ['who-said-that', 'most-likely-to', 'situational', 'this-or-that', 'mixed', 'drawing', 'fill-in-the-blank', 'selfie-roast', 'caption', 'pmatch', 'photoassoc'];
+  const standaloneTypes = new Set(['drawing', 'fill-in-the-blank', 'selfie-roast', 'caption', 'pmatch', 'photoassoc']);
   let resolvedGameType = gameType;
   let selectedSubGames = [];
 
@@ -135,6 +135,8 @@ const createRoom = (socketId, playerName = 'Host', gameType = 'most-likely-to', 
       votes: {},           // {voterPlayerId: drawerPlayerId}
       scores: {},
     },
+    // Persistent selfie bank — survives game switches, only cleared when room is destroyed
+    playerPhotos: {},      // {playerId: base64DataUrl}  — reused across all selfie-based mini games
   };
   
   rooms.set(code, room);
@@ -231,8 +233,8 @@ const setGameOptions = (code, socketId, mode, totalRounds, gameType, mltRounds, 
   if (mode !== undefined) room.mode = mode;
   if (totalRounds !== undefined) room.totalRounds = totalRounds;
   
-  const validGameTypes = ['who-said-that', 'most-likely-to', 'situational', 'this-or-that', 'mixed', 'drawing', 'fill-in-the-blank', 'selfie-roast'];
-  const standaloneTypes = new Set(['drawing', 'fill-in-the-blank', 'selfie-roast']);
+  const validGameTypes = ['who-said-that', 'most-likely-to', 'situational', 'this-or-that', 'mixed', 'drawing', 'fill-in-the-blank', 'selfie-roast', 'caption', 'pmatch', 'photoassoc'];
+  const standaloneTypes = new Set(['drawing', 'fill-in-the-blank', 'selfie-roast', 'caption', 'pmatch', 'photoassoc']);
 
   if (gameType !== undefined) {
     if (Array.isArray(gameType)) {

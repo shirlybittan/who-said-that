@@ -411,6 +411,78 @@ export const useSocket = () => {
       navigate('/lobby');
     };
 
+    const onSelfiePromptUpdated = (data) => {
+      dispatch({ type: 'SELFIE_UPDATE_PROMPT', payload: data });
+    };
+
+    const onSelfieRetakeReady = () => {
+      dispatch({ type: 'SELFIE_RETAKE_READY' });
+      navigate('/selfie-photo');
+    };
+
+    // ─── Caption handlers ──────────────────────────────────────────────────
+    const onCaptionPhotoPhase = (data) => {
+      dispatch({ type: 'CAPTION_PHOTO_PHASE', payload: data });
+      navigate('/caption-photo');
+    };
+    const onCaptionPhotoSubmitted = (data) => {
+      dispatch({ type: 'CAPTION_PHOTO_SUBMITTED', payload: data });
+    };
+    const onCaptionWritingPhase = (data) => {
+      dispatch({ type: 'CAPTION_WRITING_PHASE', payload: data });
+      navigate('/caption-write');
+    };
+    const onCaptionCaptionSubmitted = (data) => {
+      dispatch({ type: 'CAPTION_CAPTION_SUBMITTED', payload: data });
+    };
+    const onCaptionVotingPhase = (data) => {
+      dispatch({ type: 'CAPTION_VOTING_PHASE', payload: data });
+      navigate('/caption-vote');
+    };
+    const onCaptionVoteReceived = (data) => {
+      dispatch({ type: 'CAPTION_VOTE_RECEIVED', payload: data });
+    };
+    const onCaptionRoundResults = (data) => {
+      dispatch({ type: 'CAPTION_ROUND_RESULTS', payload: data });
+      navigate('/caption-results');
+    };
+    const onCaptionGameOver = (data) => {
+      dispatch({ type: 'CAPTION_GAME_OVER', payload: data });
+      navigate('/caption-results');
+    };
+    const onCaptionRestarted = (data) => {
+      dispatch({ type: 'CAPTION_RESTARTED', payload: data });
+      navigate('/lobby');
+    };
+
+    // ─── PhotoVote handlers ────────────────────────────────────────────────
+    const onPhotoVotePhotoPhase = (data) => {
+      dispatch({ type: 'PHOTOVOTE_PHOTO_PHASE', payload: data });
+      navigate('/photo-vote-photo');
+    };
+    const onPhotoVotePhotoSubmitted = (data) => {
+      dispatch({ type: 'PHOTOVOTE_PHOTO_SUBMITTED', payload: data });
+    };
+    const onPhotoVoteVotingPhase = (data) => {
+      dispatch({ type: 'PHOTOVOTE_VOTING_PHASE', payload: data });
+      navigate('/photo-vote');
+    };
+    const onPhotoVoteVoteReceived = (data) => {
+      dispatch({ type: 'PHOTOVOTE_VOTE_RECEIVED', payload: data });
+    };
+    const onPhotoVoteRoundResults = (data) => {
+      dispatch({ type: 'PHOTOVOTE_ROUND_RESULTS', payload: data });
+      navigate('/photo-vote-results');
+    };
+    const onPhotoVoteGameOver = (data) => {
+      dispatch({ type: 'PHOTOVOTE_GAME_OVER', payload: data });
+      navigate('/photo-vote-results');
+    };
+    const onPhotoVoteRestarted = (data) => {
+      dispatch({ type: 'PHOTOVOTE_RESTARTED', payload: data });
+      navigate('/lobby');
+    };
+
     const onGameChanged = ({ code, gameType, players, gameName }) => {
       dispatch({ type: 'SET_ROOM', payload: { gameType, players, gameName, phase: 'lobby' } });
       navigate('/lobby');
@@ -480,6 +552,31 @@ export const useSocket = () => {
     socket.on('selfie:vote_received', onSelfieVoteReceived);
     socket.on('selfie:results', onSelfieResults);
     socket.on('selfie:restarted', onSelfieRestarted);
+    socket.on('selfie:prompt_updated', onSelfiePromptUpdated);
+    socket.on('selfie:retake_ready', onSelfieRetakeReady);
+    socket.on('caption:photo_phase', onCaptionPhotoPhase);
+    socket.on('caption:photo_submitted', onCaptionPhotoSubmitted);
+    socket.on('caption:writing_phase', onCaptionWritingPhase);
+    socket.on('caption:caption_submitted', onCaptionCaptionSubmitted);
+    socket.on('caption:voting_phase', onCaptionVotingPhase);
+    socket.on('caption:vote_received', onCaptionVoteReceived);
+    socket.on('caption:round_results', onCaptionRoundResults);
+    socket.on('caption:game_over', onCaptionGameOver);
+    socket.on('caption:restarted', onCaptionRestarted);
+    socket.on('photovote:photo_phase', onPhotoVotePhotoPhase);
+    socket.on('photovote:photo_submitted', onPhotoVotePhotoSubmitted);
+    socket.on('photovote:voting_phase', onPhotoVoteVotingPhase);
+    socket.on('photovote:vote_received', onPhotoVoteVoteReceived);
+    socket.on('photovote:round_results', onPhotoVoteRoundResults);
+    socket.on('photovote:game_over', onPhotoVoteGameOver);
+    socket.on('photovote:restarted', onPhotoVoteRestarted);
+
+    const onPhotoReused = ({ gameType }) => {
+      if (gameType === 'selfie') dispatch({ type: 'SELFIE_MARK_PHOTO_SUBMITTED' });
+      else if (gameType === 'caption') dispatch({ type: 'CAPTION_MARK_PHOTO_SUBMITTED' });
+      else if (gameType === 'photovote') dispatch({ type: 'PHOTOVOTE_MARK_PHOTO_SUBMITTED' });
+    };
+    socket.on('player:photo_reused', onPhotoReused);
 
     const onGlobalScoresUpdated = (data) => {
       dispatch({ type: 'GLOBAL_SCORES_UPDATED', payload: data });
@@ -555,6 +652,25 @@ export const useSocket = () => {
       socket.off('selfie:vote_received', onSelfieVoteReceived);
       socket.off('selfie:results', onSelfieResults);
       socket.off('selfie:restarted', onSelfieRestarted);
+      socket.off('selfie:prompt_updated', onSelfiePromptUpdated);
+      socket.off('selfie:retake_ready', onSelfieRetakeReady);
+      socket.off('caption:photo_phase', onCaptionPhotoPhase);
+      socket.off('caption:photo_submitted', onCaptionPhotoSubmitted);
+      socket.off('caption:writing_phase', onCaptionWritingPhase);
+      socket.off('caption:caption_submitted', onCaptionCaptionSubmitted);
+      socket.off('caption:voting_phase', onCaptionVotingPhase);
+      socket.off('caption:vote_received', onCaptionVoteReceived);
+      socket.off('caption:round_results', onCaptionRoundResults);
+      socket.off('caption:game_over', onCaptionGameOver);
+      socket.off('caption:restarted', onCaptionRestarted);
+      socket.off('photovote:photo_phase', onPhotoVotePhotoPhase);
+      socket.off('photovote:photo_submitted', onPhotoVotePhotoSubmitted);
+      socket.off('photovote:voting_phase', onPhotoVoteVotingPhase);
+      socket.off('photovote:vote_received', onPhotoVoteVoteReceived);
+      socket.off('photovote:round_results', onPhotoVoteRoundResults);
+      socket.off('photovote:game_over', onPhotoVoteGameOver);
+      socket.off('photovote:restarted', onPhotoVoteRestarted);
+      socket.off('player:photo_reused', onPhotoReused);
       socket.off('global_scores_updated', onGlobalScoresUpdated);
       socket.off('phase_timer', onPhaseTimer);
       socket.off('game_changed', onGameChanged);

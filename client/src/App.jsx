@@ -23,6 +23,13 @@ import SelfiePhotoPage from './pages/SelfiePhotoPage.jsx';
 import SelfieDrawPage from './pages/SelfieDrawPage.jsx';
 import SelfieVotePage from './pages/SelfieVotePage.jsx';
 import SelfieResultsPage from './pages/SelfieResultsPage.jsx';
+import CaptionPhotoPage from './pages/CaptionPhotoPage.jsx';
+import CaptionWritePage from './pages/CaptionWritePage.jsx';
+import CaptionVotePage from './pages/CaptionVotePage.jsx';
+import CaptionResultsPage from './pages/CaptionResultsPage.jsx';
+import PhotoVotePhotoPage from './pages/PhotoVotePhotoPage.jsx';
+import PhotoVotePage from './pages/PhotoVotePage.jsx';
+import PhotoVoteResultsPage from './pages/PhotoVoteResultsPage.jsx';
 import HostPage from './pages/HostPage.jsx';
 import { useSocket } from './hooks/useSocket';
 
@@ -56,6 +63,13 @@ const AnimatedRoutes = () => {
         <Route path="/selfie-draw" element={<SelfieDrawPage />} />
         <Route path="/selfie-vote" element={<SelfieVotePage />} />
         <Route path="/selfie-results" element={<SelfieResultsPage />} />
+        <Route path="/caption-photo" element={<CaptionPhotoPage />} />
+        <Route path="/caption-write" element={<CaptionWritePage />} />
+        <Route path="/caption-vote" element={<CaptionVotePage />} />
+        <Route path="/caption-results" element={<CaptionResultsPage />} />
+        <Route path="/photo-vote-photo" element={<PhotoVotePhotoPage />} />
+        <Route path="/photo-vote" element={<PhotoVotePage />} />
+        <Route path="/photo-vote-results" element={<PhotoVoteResultsPage />} />
       </Routes>
     </AnimatePresence>
   );

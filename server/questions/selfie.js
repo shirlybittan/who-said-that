@@ -70,6 +70,16 @@ const selfiePrompts = [
   { prompt: 'Make it look like [Name] is on a dating profile', category: 'situation', spice: 2 },
   { prompt: 'Make it look like [Name] is being interviewed', category: 'situation', spice: 1 },
   { prompt: 'Make it look like [Name] is giving a bad excuse', category: 'situation', spice: 2 },
-];
+  // ── BEFORE / AFTER TRANSFORMATIONS ──────────────────────────────────────────
+  { prompt: 'Transform [Name] into their final boss form', category: 'transformation', spice: 1 },
+  { prompt: 'Show [Name] ten years from now', category: 'transformation', spice: 1 },
+  { prompt: 'Draw [Name] after they discover their superpower', category: 'transformation', spice: 1 },
+  { prompt: 'Transform [Name] into their alter ego', category: 'transformation', spice: 1 },
+  { prompt: 'Draw [Name] after winning the championship', category: 'transformation', spice: 1 },
+  { prompt: 'Show [Name] as they looked as a toddler', category: 'transformation', spice: 1 },
+  { prompt: 'Transform [Name] into their evil twin', category: 'transformation', spice: 2 },
+  { prompt: 'Draw [Name] after switching careers to rockstar', category: 'transformation', spice: 1 },
+  { prompt: 'Transform [Name] into their most confident version', category: 'transformation', spice: 1 },
+  { prompt: 'Draw [Name] after they\'ve been up for 48 hours coding', category: 'transformation', spice: 2 },];
 
 module.exports = { selfiePrompts };

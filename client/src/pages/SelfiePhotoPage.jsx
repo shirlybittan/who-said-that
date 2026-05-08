@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
@@ -37,11 +37,22 @@ export default function SelfiePhotoPage() {
   const [preview, setPreview] = useState(null);
   const [compressed, setCompressed] = useState(null);
   const [processing, setProcessing] = useState(false);
+  const [usingSaved, setUsingSaved] = useState(false);
+
+  // Pre-fill with saved selfie if available and photo not yet submitted
+  useEffect(() => {
+    if (state.savedSelfie && !selfie.hasSubmittedPhoto && !compressed) {
+      setCompressed(state.savedSelfie);
+      setPreview(state.savedSelfie);
+      setUsingSaved(true);
+    }
+  }, []);
 
   const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setProcessing(true);
+    setUsingSaved(false);
     try {
       const dataUrl = await compressPhoto(file);
       setCompressed(dataUrl);
@@ -58,11 +69,13 @@ export default function SelfiePhotoPage() {
     sounds.answer?.();
     socket.emit('selfie:submit_photo', { code: state.roomCode, photoData: compressed });
     dispatch({ type: 'SELFIE_MARK_PHOTO_SUBMITTED' });
+    dispatch({ type: 'SAVED_SELFIE_STORED', payload: compressed });
   };
 
   const handleRetake = () => {
     setPreview(null);
     setCompressed(null);
+    setUsingSaved(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -101,6 +114,11 @@ export default function SelfiePhotoPage() {
             </div>
           ) : (
             <div className="w-full max-w-xs flex flex-col items-center gap-4">
+              {usingSaved && (
+                <div className="w-full py-2 px-3 rounded-xl bg-[#4ECDC4]/15 border border-[#4ECDC4]/40 text-center">
+                  <span className="text-[#4ECDC4] font-['Fredoka_One'] text-sm">✅ Using your saved selfie</span>
+                </div>
+              )}
               <img
                 src={preview}
                 alt="Preview"
@@ -112,13 +130,13 @@ export default function SelfiePhotoPage() {
                   onClick={handleRetake}
                   className="flex-1 bg-[#1A1A2E] border border-[#2D2D44] text-gray-300 font-['Fredoka_One'] py-3 rounded-xl hover:bg-[#2D2D44] transition"
                 >
-                  Retake
+                  {usingSaved ? '📷 New Photo' : 'Retake'}
                 </button>
                 <button
                   onClick={handleSubmit}
                   className="flex-1 bg-[#FF6B6B] text-white font-['Fredoka_One'] py-3 rounded-xl hover:bg-[#e05a5a] transition"
                 >
-                  Use This!
+                  {usingSaved ? 'Use This ✓' : 'Use This!'}
                 </button>
               </div>
             </div>

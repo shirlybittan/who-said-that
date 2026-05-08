@@ -21,6 +21,9 @@ const GAME_TYPE_LABELS = {
   'drawing': '🎨 Sketch It!',
   'fill-in-the-blank': '✏️ Fill in the Blank',
   'selfie-roast': '🎨 Selfie Artist',
+  'caption': '💬 Selfie Captions',
+  'pmatch': '🎯 Who Fits?',
+  'photoassoc': '🏆 Photo Traits',
 };
 
 // ─── Shared sub-components ───────────────────────────────────────────────────
@@ -278,7 +281,7 @@ function LobbyPanel({ gameInfo, players, joinUrl, onKickPlayer }) {
                   <button
                     onClick={() => onKickPlayer(p.id)}
                     title={`Kick ${p.name}`}
-                    className="text-xs font-['Nunito'] text-gray-600 hover:text-red-400 transition opacity-0 group-hover:opacity-100 absolute -top-1 -right-1 bg-[#0D0D1A] border border-[#2D2D44] rounded-full w-5 h-5 flex items-center justify-center leading-none"
+                    className="text-xs font-['Nunito'] text-gray-500 hover:text-red-400 transition absolute -top-1 -right-1 bg-[#0D0D1A] border border-[#2D2D44] rounded-full w-5 h-5 flex items-center justify-center leading-none"
                   >
                     ✕
                   </button>
@@ -306,7 +309,7 @@ function LobbyPanel({ gameInfo, players, joinUrl, onKickPlayer }) {
           <p className="text-[#FFE66D] font-['Fredoka_One'] text-lg">
             {activePlayers.length < 3
               ? `Need ${3 - activePlayers.length} more player${3 - activePlayers.length !== 1 ? 's' : ''} to start`
-              : '✅ Ready to start — host controls the game from their device'}
+              : '✅ Ready to start — use the Start Game button below ↓'}
           </p>
         </div>
       </div>
@@ -1261,12 +1264,36 @@ function FitbHostPanel({ fitbData, players, onSkipToVote, onShowResults, onNextR
   );
 }
 
+function SimplePhotoHostPanel({ label, phase, players, onSkipToResults, onNextRound }) {
+  const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
+  return (
+    <div className="flex flex-col items-center gap-6 w-full max-w-xl">
+      <h1 className="text-3xl font-['Fredoka_One'] text-[#FFE66D]">{label}</h1>
+      <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
+        <p className="text-lg font-['Fredoka_One'] text-white mb-2 capitalize">Phase: {phase || '—'}</p>
+        <p className="text-sm font-['Nunito'] text-gray-400">{activePlayers.length} active players</p>
+      </div>
+      {(phase === 'voting') && (
+        <button onClick={onSkipToResults} className="w-full py-3 rounded-2xl bg-[#FFE66D] text-black font-['Fredoka_One'] text-lg">
+          Skip to Results ⏭️
+        </button>
+      )}
+      {(phase === 'results') && (
+        <button onClick={onNextRound} className="w-full py-3 rounded-2xl bg-[#4ECDC4] text-black font-['Fredoka_One'] text-lg">
+          Next Round ▶️
+        </button>
+      )}
+    </div>
+  );
+}
+
 function SelfieHostPanel({ selfieData, players, onSkipToVote, onShowResults }) {
   const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
+  const roundLabel = selfieData.totalRounds > 1 ? ` — Round ${selfieData.round}/${selfieData.totalRounds}` : '';
   if (selfieData.phase === 'results') {
     return (
       <div className="flex flex-col items-center gap-8 w-full max-w-4xl">
-        <h1 className="text-4xl font-['Fredoka_One'] text-[#FD79A8]">🎨 Selfie Artist — Results!</h1>
+        <h1 className="text-4xl font-['Fredoka_One'] text-[#FD79A8]">🎨 Selfie Artist — Results{roundLabel}!</h1>
         <div className="w-full flex flex-col gap-3">
           {(selfieData.leaderboard || []).map((entry, i) => (
             <motion.div key={entry.playerId} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }}
@@ -1326,15 +1353,18 @@ function SelfieHostPanel({ selfieData, players, onSkipToVote, onShowResults }) {
 }
 
 const GAME_TYPES_FOR_CREATE = [
-  { id: 'most-likely-to', label: '👑 Most Likely To', desc: 'Who fits the prompt?', accent: '#4ECDC4' },
-  { id: 'who-said-that',  label: '🤔 Who Said That?', desc: 'Guess who wrote it!',  accent: '#FFE66D' },
-  { id: 'situational',   label: '🎭 Situational',   desc: 'Answer for someone!',   accent: '#A8E6CF' },
-  { id: 'this-or-that',  label: '⚡ This or That',  desc: 'Pick a side!',           accent: '#6C5CE7' },
-  { id: 'drawing',       label: '🎨 Sketch It!',    desc: 'Draw and guess!',        accent: '#C39BD3' },
-  { id: 'fill-in-the-blank', label: '✏️ Fill in the Blank', desc: 'Finish the sentence!', accent: '#F9CA24' },
-  { id: 'selfie-roast',  label: '🎨 Selfie Artist',  desc: "Draw on someone's selfie!", accent: '#FD79A8' },
-  { id: 'mixed',         label: '🎲 Mixed',         desc: 'All modes shuffled!',    accent: '#FF8B94' },
-  { id: 'playlist',      label: '📋 Playlist',      desc: 'Play multiple games in order!', accent: '#FDCB6E', colSpan: 2 },
+  { id: 'most-likely-to',    label: '👑 Most Likely To',      desc: 'Who fits the prompt?',           accent: '#4ECDC4' },
+  { id: 'who-said-that',     label: '🤔 Who Said That?',      desc: 'Guess who wrote it!',            accent: '#FFE66D' },
+  { id: 'situational',       label: '🎭 Situational',         desc: 'Answer for someone!',            accent: '#A8E6CF' },
+  { id: 'this-or-that',      label: '⚡ This or That',        desc: 'Pick a side!',                   accent: '#6C5CE7' },
+  { id: 'drawing',           label: '🎨 Sketch It!',          desc: 'Draw and guess!',                accent: '#C39BD3' },
+  { id: 'fill-in-the-blank', label: '✏️ Fill in the Blank',  desc: 'Finish the sentence!',           accent: '#F9CA24' },
+  { id: 'selfie-roast',      label: '📸 Selfie Artist',       desc: "Draw on someone's selfie!",     accent: '#FD79A8' },
+  { id: 'caption',           label: '💬 Selfie Captions',     desc: 'Write funny captions!',          accent: '#FD79A8' },
+  { id: 'pmatch',            label: '🎯 Who Fits?',           desc: 'Match people to prompts!',       accent: '#FDCB6E' },
+  { id: 'photoassoc',        label: '🏆 Photo Traits',        desc: 'Vote who matches the vibe!',     accent: '#A29BFE' },
+  { id: 'mixed',             label: '🎲 Mixed',               desc: 'All modes shuffled!',            accent: '#FF8B94' },
+  { id: 'playlist',          label: '📋 Playlist',            desc: 'Play multiple games in order!',  accent: '#FDCB6E', colSpan: 2 },
 ];
 
 function SetupScreen({ onCreateRoom, onSpectate }) {
@@ -1462,7 +1492,10 @@ function CreateRoomForm({ onSubmit, onBack }) {
     { id: 'this-or-that',  label: '⚡ This or That',  accent: '#6C5CE7' },
     { id: 'drawing',       label: '🎨 Sketch It!',    accent: '#C39BD3' },
     { id: 'fill-in-the-blank', label: '✏️ Fill in the Blank', accent: '#F9CA24' },
-    { id: 'selfie-roast',  label: '🎨 Selfie Artist', accent: '#FD79A8' },
+    { id: 'selfie-roast',  label: '📸 Selfie Artist', accent: '#FD79A8' },
+    { id: 'caption',       label: '💬 Selfie Captions', accent: '#FD79A8' },
+    { id: 'pmatch',        label: '🎯 Who Fits?',       accent: '#FDCB6E' },
+    { id: 'photoassoc',    label: '🏆 Photo Traits',    accent: '#A29BFE' },
   ];
 
   return (
@@ -1638,7 +1671,7 @@ const QUEUE_GAME_LABELS = {
   'mixed': 'Mixed',
 };
 
-function HostControlBar({ status, isRoomCreator, players, mlt, votingData, isMixedMode, onStart, onMltPauseResume, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, gameQueue, queueIndex }) {
+function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbData, isMixedMode, onStart, onMltPauseResume, onMltChangeQuestion, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, onNewGame, onPlayAgain, onNewPartyPack, gameQueue, queueIndex, onSelfieNextRound, onSelfieSkipQuestion, onShowSelfieResults, onFitbChangeQuestion, onFitbSkipToVote, onFitbShowResults, onFitbNextRound }) {
   if (!isRoomCreator) return null;
 
   const playingCount = players.filter(p => p.isPlaying && p.isConnected).length;
@@ -1665,8 +1698,8 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, isMix
         <button onClick={onMltPauseResume} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FFE66D] text-[#FFE66D] bg-[#FFE66D]/10 hover:bg-[#FFE66D]/20 active:scale-95 transition">
           {mlt.paused ? '▶ Resume' : '⏸ Pause'}
         </button>
-        <button onClick={onMltSkip} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF6B6B] hover:text-[#FF6B6B] active:scale-95 transition">
-          ⏭ Skip Round
+        <button onClick={onMltChangeQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#4ECDC4] hover:text-[#4ECDC4] active:scale-95 transition">
+          🔄 Change Question
         </button>
         <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
           🔀 Skip Mini Game
@@ -1791,27 +1824,105 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, isMix
         </button>
       </div>
     );
-  } else if (status === 'game-end' || status === 'mlt-end' || status === 'tot-end' || status === 'draw-end') {
+  } else if (status === 'fitb') {
+    const fitbPhase = fitbData?.phase;
+    if (fitbPhase === 'answering') {
+      controls = (
+        <div className="flex gap-3">
+          <button onClick={onFitbChangeQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#F9CA24] hover:text-[#F9CA24] active:scale-95 transition">
+            🔄 Change Question
+          </button>
+          <button onClick={onFitbSkipToVote} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FFE66D] hover:text-[#FFE66D] active:scale-95 transition">
+            ⏭ Skip to Vote
+          </button>
+          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+            🔀 Skip Mini Game
+          </button>
+        </div>
+      );
+    } else if (fitbPhase === 'voting') {
+      controls = (
+        <div className="flex gap-3">
+          <button onClick={onFitbShowResults} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#F9CA24] text-[#F9CA24] hover:bg-[#F9CA24]/10 active:scale-95 transition">
+            🏆 Show Results
+          </button>
+          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+            🔀 Skip Mini Game
+          </button>
+        </div>
+      );
+    } else if (fitbPhase === 'results') {
+      controls = (
+        <div className="flex gap-3">
+          <button onClick={onFitbNextRound} className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#F9CA24] text-black hover:opacity-90 active:scale-95 transition" style={{ boxShadow: '0 0 20px #F9CA2440' }}>
+            Next Round →
+          </button>
+          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+            🔀 Skip Mini Game
+          </button>
+        </div>
+      );
+    }
+  } else if (status === 'caption' || status === 'photovote') {
+    controls = (
+      <div className="flex gap-3">
+        <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+          🔀 Skip Mini Game
+        </button>
+      </div>
+    );
+  } else if (status === 'selfie') {
+    controls = (
+      <div className="flex gap-3">
+        <button onClick={onSelfieSkipQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FD79A8] hover:text-[#FD79A8] active:scale-95 transition">
+          🔄 Change Question
+        </button>
+        <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+          🔀 Skip Mini Game
+        </button>
+      </div>
+    );
+  } else if (status === 'selfie-vote') {
+    controls = (
+      <div className="flex gap-3">
+        <button onClick={onShowSelfieResults} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FD79A8] text-[#FD79A8] hover:bg-[#FD79A8]/10 active:scale-95 transition">
+          🏆 Show Results
+        </button>
+        <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+          🔀 Skip Mini Game
+        </button>
+      </div>
+    );
+  } else if (status === 'selfie-round-results') {
+    controls = (
+      <div className="flex gap-3">
+        <button onClick={onSelfieNextRound} className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#FD79A8] text-black hover:bg-[#e8628f] active:scale-95 transition" style={{ boxShadow: '0 0 20px #FD79A840' }}>
+          Next Round →
+        </button>
+        <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+          🔀 Skip Mini Game
+        </button>
+      </div>
+    );
+  } else if (status === 'game-end' || status === 'mlt-end' || status === 'tot-end' || status === 'draw-end' || status === 'fitb-end' || status === 'selfie-results') {
     const hasNextInQueue = gameQueue && gameQueue.length > 1 && queueIndex < gameQueue.length - 1;
     const nextGame = hasNextInQueue ? gameQueue[queueIndex + 1] : null;
     controls = (
-      <div className="flex gap-3">
-        {status === 'draw-end' && (
-          <button onClick={onDrawRestart} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#C39BD3] text-[#C39BD3] hover:bg-[#C39BD3]/10 active:scale-95 transition">
-            🔄 Play Again
-          </button>
-        )}
+      <div className="flex gap-3 flex-wrap justify-center">
+        <button onClick={onPlayAgain} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#4ECDC4] text-[#4ECDC4] hover:bg-[#4ECDC4]/10 active:scale-95 transition">
+          🔄 Play Again
+        </button>
         {hasNextInQueue && (
-          <button onClick={onNextQueueGame} className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#4ECDC4] text-black hover:bg-[#3dbdb5] active:scale-95 transition" style={{ boxShadow: '0 0 20px #4ECDC460' }}>
+          <button onClick={onNextQueueGame} className="px-8 py-2.5 rounded-xl font-['Fredoka_One'] text-base bg-[#6C5CE7] text-white hover:bg-[#5a4bd0] active:scale-95 transition" style={{ boxShadow: '0 0 16px #6C5CE740' }}>
             ▶ Next: {QUEUE_GAME_LABELS[nextGame.type] || nextGame.type}
           </button>
         )}
         <button
-          onClick={() => { window.location.href = '/host'; }}
-          className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#FFE66D] text-black hover:bg-[#ffdd33] active:scale-95 transition"
-          style={{ boxShadow: '0 0 20px #FFE66D60' }}
+          onClick={onNewPartyPack}
+          className="px-8 py-2.5 rounded-xl font-['Fredoka_One'] text-base bg-[#FFE66D] text-black hover:bg-[#ffdd33] active:scale-95 transition"
+          style={{ boxShadow: '0 0 16px #FFE66D40' }}
         >
-          🎮 New Game
+          🎮 New Party Pack
         </button>
       </div>
     );
@@ -1884,14 +1995,21 @@ export default function HostPage() {
   });
 
   const [selfieData, setSelfieData] = useState({
-    phase: 'waiting', photoCount: 0, totalPhotographers: 0,
+    phase: 'waiting', round: 1, totalRounds: 1, isFinal: false,
+    photoCount: 0, totalPhotographers: 0,
     drawingCount: 0, totalDrawers: 0, voteCount: 0, totalVoters: 0,
     submissions: [], scores: {}, leaderboard: [],
   });
 
+  const [captionData, setCaptionData] = useState({ phase: 'waiting', round: 0, totalRounds: 3 });
+  const [photoVoteData, setPhotoVoteData] = useState({ subType: 'pmatch', phase: 'waiting', round: 0, totalRounds: 5 });
+
   // Queue state for "Game Playlist" mode
   const [gameQueue, setGameQueue] = useState([]); // [{type, rounds, mode?}]
   const [queueIndex, setQueueIndex] = useState(0);
+
+  // Change Game picker overlay
+  const [showGamePicker, setShowGamePicker] = useState(false);
 
   const socketRef = useRef(null);
 
@@ -2093,7 +2211,7 @@ export default function HostPage() {
 
     // Selfie handlers
     sock.on('selfie:photo_phase', (data) => {
-      setSelfieData(prev => ({ ...prev, phase: 'photo', photoCount: 0, totalPhotographers: data.totalPhotographers || 0 }));
+      setSelfieData(prev => ({ ...prev, phase: 'photo', photoCount: 0, totalPhotographers: data.totalPhotographers || 0, round: data.round || prev.round, totalRounds: data.totalRounds || prev.totalRounds }));
       setStatus('selfie');
     });
     sock.on('selfie:photo_received', ({ photoCount, totalPhotographers }) => {
@@ -2113,8 +2231,49 @@ export default function HostPage() {
       setSelfieData(prev => ({ ...prev, voteCount, totalVoters }));
     });
     sock.on('selfie:results', (data) => {
-      setSelfieData(prev => ({ ...prev, phase: 'results', submissions: data.submissions || [], scores: data.scores || {}, leaderboard: data.leaderboard || [] }));
-      setStatus('selfie-results');
+      setSelfieData(prev => ({ ...prev, phase: 'results', submissions: data.submissions || [], scores: data.scores || {}, leaderboard: data.leaderboard || [], round: data.round || prev.round, totalRounds: data.totalRounds || prev.totalRounds, isFinal: !!data.isFinal }));
+      setStatus(data.isFinal ? 'selfie-results' : 'selfie-round-results');
+    });
+
+    sock.on('caption:photo_phase', (data) => {
+      setCaptionData({ phase: 'photo', round: data.round, totalRounds: data.totalRounds });
+      setStatus('caption');
+    });
+    sock.on('caption:writing_phase', (data) => {
+      setCaptionData(prev => ({ ...prev, phase: 'writing', round: data.round }));
+    });
+    sock.on('caption:voting_phase', () => {
+      setCaptionData(prev => ({ ...prev, phase: 'voting' }));
+    });
+    sock.on('caption:round_results', (data) => {
+      setCaptionData(prev => ({ ...prev, phase: 'results', round: data.round }));
+    });
+    sock.on('caption:game_over', () => {
+      setCaptionData(prev => ({ ...prev, phase: 'ended' }));
+    });
+    sock.on('caption:restarted', ({ players: p }) => {
+      setPlayers(p || []);
+      setCaptionData({ phase: 'waiting', round: 0, totalRounds: 3 });
+      setStatus('lobby');
+    });
+
+    sock.on('photovote:photo_phase', (data) => {
+      setPhotoVoteData({ subType: data.subType || 'pmatch', phase: 'photo', round: data.round, totalRounds: data.totalRounds });
+      setStatus('photovote');
+    });
+    sock.on('photovote:voting_phase', (data) => {
+      setPhotoVoteData(prev => ({ ...prev, phase: 'voting', round: data.round }));
+    });
+    sock.on('photovote:round_results', (data) => {
+      setPhotoVoteData(prev => ({ ...prev, phase: 'results', round: data.round }));
+    });
+    sock.on('photovote:game_over', () => {
+      setPhotoVoteData(prev => ({ ...prev, phase: 'ended' }));
+    });
+    sock.on('photovote:restarted', ({ players: p }) => {
+      setPlayers(p || []);
+      setPhotoVoteData({ subType: 'pmatch', phase: 'waiting', round: 0, totalRounds: 5 });
+      setStatus('lobby');
     });
 
     sock.on('draw:restarted', ({ players: p }) => {
@@ -2126,6 +2285,7 @@ export default function HostPage() {
     sock.on('game_changed', ({ gameType, players: p, gameName }) => {
       setGameInfo(prev => ({ ...prev, gameType: gameType || prev.gameType, gameName: gameName || prev.gameName }));
       setPlayers(p || []);
+      setCreatorSettings(prev => ({ ...prev, gameType: gameType || prev.gameType }));
       setStatus('lobby');
     });
 
@@ -2166,6 +2326,8 @@ export default function HostPage() {
     sock.on('connect', () => sock.emit('join_spectator', { code: roomCodeParam }));
 
     sock.on('spectator_joined', ({ room }) => {
+      setIsRoomCreator(true); // TV screen always has full host control
+      setCreatorSettings(prev => ({ ...prev, gameType: room.gameType || prev.gameType }));
       setGameInfo({ code: room.code, gameName: room.gameName || '', gameType: room.gameType || '' });
       setPlayers(room.players || []);
       if (room.phase === 'mlt' || room.phase === 'mltEnd') {
@@ -2253,7 +2415,13 @@ export default function HostPage() {
     } else if (creatorSettings.gameType === 'fill-in-the-blank') {
       sock.emit('fitb:start', { code: gameInfo.code, rounds: creatorSettings.rounds });
     } else if (creatorSettings.gameType === 'selfie-roast') {
-      sock.emit('selfie:start', { code: gameInfo.code });
+      sock.emit('selfie:start', { code: gameInfo.code, rounds: creatorSettings.rounds });
+    } else if (creatorSettings.gameType === 'caption') {
+      sock.emit('caption:start', { code: gameInfo.code, rounds: creatorSettings.rounds });
+    } else if (creatorSettings.gameType === 'pmatch') {
+      sock.emit('photovote:start', { code: gameInfo.code, subType: 'pmatch', rounds: creatorSettings.rounds });
+    } else if (creatorSettings.gameType === 'photoassoc') {
+      sock.emit('photovote:start', { code: gameInfo.code, subType: 'photoassoc', rounds: creatorSettings.rounds });
     } else {
       sock.emit('start_game', { code: gameInfo.code });
     }
@@ -2266,11 +2434,24 @@ export default function HostPage() {
     else sock.emit('mlt:pause', { code: gameInfo.code });
   };
 
+  // "Change Question" in MLT replaces the current round's prompt without advancing the round counter
+  const handleMltChangeQuestion = () => socketRef.current?.emit('mlt:change_question', { code: gameInfo.code });
   const handleMltSkip = () => socketRef.current?.emit('mlt:skip', { code: gameInfo.code });
+
+  const handleFitbChangeQuestion = () => socketRef.current?.emit('fitb:change_question', { code: gameInfo.code });
   const handleMltNext = () => socketRef.current?.emit('mlt:next_round', { code: gameInfo.code });
   const handleNextRound = () => socketRef.current?.emit('ready_next_round', { code: gameInfo.code });
   const handleSkipQuestion = () => socketRef.current?.emit('skip_question', { code: gameInfo.code });
-  const handleSkipMiniGame = () => socketRef.current?.emit('skip_mini_game', { code: gameInfo.code });
+  const handleSelfieNextRound = () => socketRef.current?.emit('selfie:next_round', { code: gameInfo.code });
+  const handleSelfieSkipQuestion = () => socketRef.current?.emit('selfie:skip_question', { code: gameInfo.code });
+  const handleSkipMiniGame = () => {
+    // If there's a next game in the playlist queue, advance to it
+    if (gameQueue && gameQueue.length > 1 && queueIndex + 1 < gameQueue.length) {
+      handleNextQueueGame();
+    } else {
+      socketRef.current?.emit('skip_mini_game', { code: gameInfo.code });
+    }
+  };
   const handleKickPlayer = (playerId) => socketRef.current?.emit('kick_player', { code: gameInfo.code, targetPlayerId: playerId });
   const handleTotNext = () => socketRef.current?.emit('tot:next_round', { code: gameInfo.code });
   const handleSitNext = () => socketRef.current?.emit('sit:next', { code: gameInfo.code });
@@ -2281,9 +2462,59 @@ export default function HostPage() {
     const nextIdx = queueIndex + 1;
     if (nextIdx >= gameQueue.length) return;
     const nextGame = gameQueue[nextIdx];
-    socketRef.current?.emit('change_game', { code: gameInfo.code, newGameType: nextGame.type });
+    const code = gameInfo.code;
+    const sock = socketRef.current;
+    if (!sock || !code) return;
     setQueueIndex(nextIdx);
-    setCreatorSettings({ gameType: nextGame.type, rounds: nextGame.rounds || 5, drawMode: nextGame.mode || 'classic' });
+    const nextRounds = nextGame.rounds || 5;
+    const nextMode = nextGame.mode || 'classic';
+    setCreatorSettings({ gameType: nextGame.type, rounds: nextRounds, drawMode: nextMode });
+    setGameInfo(prev => ({ ...prev, gameType: nextGame.type }));
+    // Start the next game directly — server start handlers cancel previous timers and reset state
+    // (no change_game needed; players navigate on receiving the new game's first event)
+    const t = nextGame.type;
+    if (t === 'most-likely-to') sock.emit('mlt:start', { code, rounds: nextRounds, allowSelfVote: true });
+    else if (t === 'drawing') sock.emit('draw:start', { code, rounds: nextRounds, mode: nextMode });
+    else if (t === 'fill-in-the-blank') sock.emit('fitb:start', { code, rounds: nextRounds });
+    else if (t === 'selfie-roast') sock.emit('selfie:start', { code, rounds: nextRounds });
+    else if (t === 'caption') sock.emit('caption:start', { code, rounds: nextRounds });
+    else if (t === 'pmatch') sock.emit('photovote:start', { code, subType: 'pmatch', rounds: nextRounds });
+    else if (t === 'photoassoc') sock.emit('photovote:start', { code, subType: 'photoassoc', rounds: nextRounds });
+    else sock.emit('start_game', { code });
+  };
+
+  const handleNewGame = () => {
+    // Reset room to lobby keeping all players connected, so group can play again
+    socketRef.current?.emit('change_game', { code: gameInfo.code, newGameType: gameInfo.gameType || 'who-said-that' });
+    setGameQueue([]);
+    setQueueIndex(0);
+  };
+
+  const handlePlayAgain = () => {
+    const code = gameInfo.code;
+    const sock = socketRef.current;
+    if (!sock || !code) return;
+    const gameType = creatorSettings.gameType || gameInfo.gameType;
+    const rounds = creatorSettings.rounds || 5;
+    // Reset to lobby first, then immediately start the same game type
+    sock.emit('change_game', { code, newGameType: gameType });
+    if (gameType === 'most-likely-to') sock.emit('mlt:start', { code, rounds, allowSelfVote: true });
+    else if (gameType === 'drawing') sock.emit('draw:start', { code, rounds, mode: creatorSettings.drawMode || 'classic' });
+    else if (gameType === 'fill-in-the-blank') sock.emit('fitb:start', { code, rounds });
+    else if (gameType === 'selfie-roast') sock.emit('selfie:start', { code, rounds });
+    else if (gameType === 'caption') sock.emit('caption:start', { code, rounds });
+    else if (gameType === 'pmatch') sock.emit('photovote:start', { code, subType: 'pmatch', rounds });
+    else if (gameType === 'photoassoc') sock.emit('photovote:start', { code, subType: 'photoassoc', rounds });
+    else sock.emit('start_game', { code });
+    setGameQueue([]);
+    setQueueIndex(0);
+  };
+
+  const handleNewPartyPack = () => {
+    // Create a brand-new room — navigate to the setup/create screen
+    setGameQueue([]);
+    setQueueIndex(0);
+    setStatus('creating');
   };
 
   // ─── Render ───────────────────────────────────────────────────────────────
@@ -2366,8 +2597,13 @@ export default function HostPage() {
         return <FitbHostPanel fitbData={fitbData} players={players} onSkipToVote={() => socketRef.current?.emit('fitb:skip_to_vote', { code: gameInfo.code })} onShowResults={() => socketRef.current?.emit('fitb:show_results', { code: gameInfo.code })} onNextRound={() => socketRef.current?.emit('fitb:next_round', { code: gameInfo.code })} />;
       case 'selfie':
       case 'selfie-vote':
+      case 'selfie-round-results':
       case 'selfie-results':
         return <SelfieHostPanel selfieData={selfieData} players={players} onSkipToVote={() => socketRef.current?.emit('selfie:skip_to_vote', { code: gameInfo.code })} onShowResults={() => socketRef.current?.emit('selfie:show_results', { code: gameInfo.code })} />;
+      case 'caption':
+        return <SimplePhotoHostPanel label="💬 Selfie Captions" phase={captionData?.phase} players={players} onSkipToResults={() => socketRef.current?.emit('caption:skip_to_results', { code: gameInfo.code })} onNextRound={() => socketRef.current?.emit('caption:next_round', { code: gameInfo.code })} />;
+      case 'photovote':
+        return <SimplePhotoHostPanel label={photoVoteData?.subType === 'photoassoc' ? '🏆 Photo Traits' : '🎯 Who Fits?'} phase={photoVoteData?.phase} players={players} onSkipToResults={() => socketRef.current?.emit('photovote:skip_to_results', { code: gameInfo.code })} onNextRound={() => socketRef.current?.emit('photovote:next_round', { code: gameInfo.code })} />
       default:
         return null;
     }
@@ -2405,11 +2641,79 @@ export default function HostPage() {
               📋 Host URL
             </button>
           )}
+          {isRoomCreator && status !== 'setup' && status !== 'creating' && status !== 'connecting' && status !== 'error' && (
+            <button
+              onClick={() => setShowGamePicker(true)}
+              className="px-3 py-1 rounded-lg text-xs font-['Fredoka_One'] border border-[#2D2D44] text-gray-400 hover:border-[#4ECDC4] hover:text-[#4ECDC4] active:scale-95 transition"
+            >
+              🎮 Change Game
+            </button>
+          )}
         </div>
       </div>
 
-      {['game-end', 'mlt-end', 'tot-end', 'draw-end'].includes(status) && (
+      {['game-end', 'mlt-end', 'tot-end', 'draw-end', 'fitb-end', 'selfie-results'].includes(status) && (
         <Confetti width={window.innerWidth} height={window.innerHeight} recycle={false} numberOfPieces={400} />
+      )}
+
+      {/* Change Game picker overlay */}
+      {showGamePicker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={() => setShowGamePicker(false)}>
+          <div
+            className="relative bg-[#1A1A2E] border border-[#2D2D44] rounded-3xl p-6 w-full max-w-lg mx-4 shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-5">
+              <h2 className="text-2xl font-['Fredoka_One'] text-[#F7F7F7]">🎮 Change Game</h2>
+              <button onClick={() => setShowGamePicker(false)} className="text-gray-500 hover:text-white text-2xl leading-none transition">✕</button>
+            </div>
+            <p className="text-sm font-['Nunito'] text-gray-400 mb-4 text-center">Same room &amp; players — new game starts immediately</p>
+            <div className="grid grid-cols-2 gap-2 max-h-[60vh] overflow-y-auto pr-1">
+              {[
+                { id: 'most-likely-to',    label: '👑 Most Likely To',      accent: '#4ECDC4' },
+                { id: 'who-said-that',     label: '🤔 Who Said That?',      accent: '#FFE66D' },
+                { id: 'situational',       label: '💭 Situational',         accent: '#6C5CE7' },
+                { id: 'this-or-that',      label: '🆚 This or That',        accent: '#A29BFE' },
+                { id: 'drawing',           label: '🎨 Sketch It!',          accent: '#C39BD3' },
+                { id: 'fill-in-the-blank', label: '✏️ Fill in the Blank',  accent: '#55EFC4' },
+                { id: 'selfie-roast',      label: '📸 Selfie Artist',       accent: '#FD79A8' },
+                { id: 'caption',           label: '💬 Selfie Captions',     accent: '#FD79A8' },
+                { id: 'pmatch',            label: '🎯 Who Fits?',           accent: '#FDCB6E' },
+                { id: 'photoassoc',        label: '🏆 Photo Traits',        accent: '#A29BFE' },
+                { id: 'mixed',             label: '🎲 Mixed Pack',          accent: '#FDCB6E' },
+              ].map(g => (
+                <button
+                  key={g.id}
+                  onClick={() => {
+                    const code = gameInfo.code;
+                    const sock = socketRef.current;
+                    if (!sock || !code) return;
+                    const rounds = creatorSettings.rounds || 5;
+                    sock.emit('change_game', { code, newGameType: g.id });
+                    // Auto-start the selected game immediately after reset
+                    if (g.id === 'most-likely-to') sock.emit('mlt:start', { code, rounds, allowSelfVote: true });
+                    else if (g.id === 'drawing') sock.emit('draw:start', { code, rounds, mode: creatorSettings.drawMode || 'classic' });
+                    else if (g.id === 'fill-in-the-blank') sock.emit('fitb:start', { code, rounds });
+                    else if (g.id === 'selfie-roast') sock.emit('selfie:start', { code, rounds });
+                    else if (g.id === 'caption') sock.emit('caption:start', { code, rounds });
+                    else if (g.id === 'pmatch') sock.emit('photovote:start', { code, subType: 'pmatch', rounds });
+                    else if (g.id === 'photoassoc') sock.emit('photovote:start', { code, subType: 'photoassoc', rounds });
+                    else sock.emit('start_game', { code });
+                    setCreatorSettings(prev => ({ ...prev, gameType: g.id }));
+                    setGameQueue([]);
+                    setQueueIndex(0);
+                    setShowGamePicker(false);
+                  }}
+                  className="py-3 px-4 rounded-2xl font-['Fredoka_One'] text-base text-black active:scale-95 hover:opacity-90 transition text-left"
+                  style={{ backgroundColor: g.accent }}
+                >
+                  {g.label}
+                  {g.id === gameInfo.gameType && <span className="ml-1 text-xs opacity-60">(current)</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
       <div className="flex-1 flex items-center justify-center p-6 overflow-auto">
         <AnimatePresence mode="wait">
@@ -2432,8 +2736,10 @@ export default function HostPage() {
         players={players}
         mlt={mlt}
         votingData={votingData}
+        fitbData={fitbData}
         onStart={handleStartGame}
         onMltPauseResume={handleMltPauseResume}
+        onMltChangeQuestion={handleMltChangeQuestion}
         onMltSkip={handleMltSkip}
         onMltNext={handleMltNext}
         onNextRound={handleNextRound}
@@ -2449,8 +2755,18 @@ export default function HostPage() {
         onDrawNewWord={handleDrawNewWord}
         onDrawRestart={handleDrawRestart}
         onNextQueueGame={handleNextQueueGame}
+        onNewGame={handleNewGame}
+        onPlayAgain={handlePlayAgain}
+        onNewPartyPack={handleNewPartyPack}
         gameQueue={gameQueue}
         queueIndex={queueIndex}
+        onSelfieNextRound={handleSelfieNextRound}
+        onSelfieSkipQuestion={handleSelfieSkipQuestion}
+        onShowSelfieResults={() => socketRef.current?.emit('selfie:show_results', { code: gameInfo.code })}
+        onFitbChangeQuestion={handleFitbChangeQuestion}
+        onFitbSkipToVote={() => socketRef.current?.emit('fitb:skip_to_vote', { code: gameInfo.code })}
+        onFitbShowResults={() => socketRef.current?.emit('fitb:show_results', { code: gameInfo.code })}
+        onFitbNextRound={() => socketRef.current?.emit('fitb:next_round', { code: gameInfo.code })}
       />
     </div>
   );
