@@ -716,8 +716,9 @@ io.on('connection', (socket) => {
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isHost) return;
 
-    // For phases that don't have a questions array, skip = reset to lobby
-    if (['mlt', 'mltEnd', 'selfie', 'caption', 'photovote', 'fitb', 'drawing', 'drawEnd', 'fitb-end'].includes(room.phase)) {
+    // For any non-mixed game mode, OR for dedicated single-game phases — reset to lobby
+    // Mixed-pack games fall through to the mini-game type switch logic below
+    if (room.gameType !== 'mixed' || ['mlt', 'mltEnd', 'selfie', 'caption', 'photovote', 'fitb', 'drawing', 'drawEnd', 'fitb-end'].includes(room.phase)) {
       cancelAllTimers(room);
       room.phase = 'lobby';
       room.players.forEach(p => { p.isReady = false; });

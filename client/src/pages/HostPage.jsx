@@ -1353,15 +1353,18 @@ function SelfieHostPanel({ selfieData, players, onSkipToVote, onShowResults }) {
 }
 
 const GAME_TYPES_FOR_CREATE = [
-  { id: 'most-likely-to', label: '👑 Most Likely To', desc: 'Who fits the prompt?', accent: '#4ECDC4' },
-  { id: 'who-said-that',  label: '🤔 Who Said That?', desc: 'Guess who wrote it!',  accent: '#FFE66D' },
-  { id: 'situational',   label: '🎭 Situational',   desc: 'Answer for someone!',   accent: '#A8E6CF' },
-  { id: 'this-or-that',  label: '⚡ This or That',  desc: 'Pick a side!',           accent: '#6C5CE7' },
-  { id: 'drawing',       label: '🎨 Sketch It!',    desc: 'Draw and guess!',        accent: '#C39BD3' },
-  { id: 'fill-in-the-blank', label: '✏️ Fill in the Blank', desc: 'Finish the sentence!', accent: '#F9CA24' },
-  { id: 'selfie-roast',  label: '🎨 Selfie Artist',  desc: "Draw on someone's selfie!", accent: '#FD79A8' },
-  { id: 'mixed',         label: '🎲 Mixed',         desc: 'All modes shuffled!',    accent: '#FF8B94' },
-  { id: 'playlist',      label: '📋 Playlist',      desc: 'Play multiple games in order!', accent: '#FDCB6E', colSpan: 2 },
+  { id: 'most-likely-to',    label: '👑 Most Likely To',      desc: 'Who fits the prompt?',           accent: '#4ECDC4' },
+  { id: 'who-said-that',     label: '🤔 Who Said That?',      desc: 'Guess who wrote it!',            accent: '#FFE66D' },
+  { id: 'situational',       label: '🎭 Situational',         desc: 'Answer for someone!',            accent: '#A8E6CF' },
+  { id: 'this-or-that',      label: '⚡ This or That',        desc: 'Pick a side!',                   accent: '#6C5CE7' },
+  { id: 'drawing',           label: '🎨 Sketch It!',          desc: 'Draw and guess!',                accent: '#C39BD3' },
+  { id: 'fill-in-the-blank', label: '✏️ Fill in the Blank',  desc: 'Finish the sentence!',           accent: '#F9CA24' },
+  { id: 'selfie-roast',      label: '📸 Selfie Artist',       desc: "Draw on someone's selfie!",     accent: '#FD79A8' },
+  { id: 'caption',           label: '💬 Selfie Captions',     desc: 'Write funny captions!',          accent: '#FD79A8' },
+  { id: 'pmatch',            label: '🎯 Who Fits?',           desc: 'Match people to prompts!',       accent: '#FDCB6E' },
+  { id: 'photoassoc',        label: '🏆 Photo Traits',        desc: 'Vote who matches the vibe!',     accent: '#A29BFE' },
+  { id: 'mixed',             label: '🎲 Mixed',               desc: 'All modes shuffled!',            accent: '#FF8B94' },
+  { id: 'playlist',          label: '📋 Playlist',            desc: 'Play multiple games in order!',  accent: '#FDCB6E', colSpan: 2 },
 ];
 
 function SetupScreen({ onCreateRoom, onSpectate }) {
@@ -2664,7 +2667,7 @@ export default function HostPage() {
               <h2 className="text-2xl font-['Fredoka_One'] text-[#F7F7F7]">🎮 Change Game</h2>
               <button onClick={() => setShowGamePicker(false)} className="text-gray-500 hover:text-white text-2xl leading-none transition">✕</button>
             </div>
-            <p className="text-sm font-['Nunito'] text-gray-400 mb-4 text-center">Same room &amp; players — game resets to lobby</p>
+            <p className="text-sm font-['Nunito'] text-gray-400 mb-4 text-center">Same room &amp; players — new game starts immediately</p>
             <div className="grid grid-cols-2 gap-2 max-h-[60vh] overflow-y-auto pr-1">
               {[
                 { id: 'most-likely-to',    label: '👑 Most Likely To',      accent: '#4ECDC4' },
