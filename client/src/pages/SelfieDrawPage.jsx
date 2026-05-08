@@ -75,6 +75,17 @@ export default function SelfieDrawPage() {
     ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
   }, []);
 
+  // When the host changes the prompt mid-round, clear existing strokes and let player re-draw
+  const prevPromptRef = useRef(selfie.assignedPrompt);
+  useEffect(() => {
+    if (prevPromptRef.current !== null && prevPromptRef.current !== selfie.assignedPrompt && selfie.assignedPrompt !== null) {
+      strokesRef.current = [];
+      setStrokeCount(0);
+      if (canvasRef.current) redrawOverlay(canvasRef.current, []);
+    }
+    prevPromptRef.current = selfie.assignedPrompt;
+  }, [selfie.assignedPrompt]);
+
   const getEventPos = useCallback((e) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
@@ -134,6 +145,11 @@ export default function SelfieDrawPage() {
   const handleSkip = () => {
     sounds.click?.();
     socket.emit('selfie:skip_to_vote', { code: state.roomCode });
+  };
+
+  const handleRetake = () => {
+    sounds.click?.();
+    socket.emit('selfie:retake_photo', { code: state.roomCode });
   };
 
   if (!selfie.assignedPhotoData) {
@@ -242,6 +258,13 @@ export default function SelfieDrawPage() {
             className="w-full max-w-xs bg-[#FF6B6B] text-white font-['Fredoka_One'] text-lg py-3 rounded-xl hover:bg-[#e05a5a] transition"
           >
             Submit Drawing ✓
+          </button>
+
+          <button
+            onClick={handleRetake}
+            className="mt-2 text-sm text-[#4ECDC4] underline font-['Nunito'] hover:text-white transition"
+          >
+            📷 Retake Photo
           </button>
         </>
       ) : (

@@ -31,6 +31,8 @@ const initialState = {
   lang: localStorage.getItem('wst_lang') || 'en',
   gameType: 'most-likely-to',
   gameName: '',
+  // Persistent selfie: stored across game switches in localStorage
+  savedSelfie: localStorage.getItem('wst_saved_selfie') || null,
   tot: {
     question: null,
     a: '',
@@ -160,6 +162,48 @@ const initialState = {
   globalLeaderboard: [],        // sorted [{id, name, color, score}]
   phaseTimer: { secondsLeft: 60, active: false },
   roomConfig: { roundDurationSecs: 60, anonymousMode: false },
+  caption: {
+    phase: 'waiting',      // 'waiting' | 'photo' | 'writing' | 'voting' | 'results' | 'ended'
+    round: 0,
+    totalRounds: 3,
+    prompt: null,
+    featuredOwnerId: null,
+    featuredOwnerName: null,
+    featuredPhotoData: null,
+    writers: [],           // players who can write (not the owner)
+    captions: [],          // [{id, text}] during voting (anonymised)
+    captionResults: [],    // [{id, text, playerName, voteCount}] in results
+    hasSubmittedPhoto: false,
+    hasWrittenCaption: false,
+    hasVoted: false,
+    myVote: null,          // captionId
+    photoSubmittedCount: 0,
+    totalPhotographers: 0,
+    captionSubmittedCount: 0,
+    totalWriters: 0,
+    voteCount: 0,
+    totalVoters: 0,
+    scores: {},
+    roundScores: {},
+  },
+  photoVote: {
+    subType: 'pmatch',     // 'pmatch' | 'photoassoc'
+    phase: 'waiting',      // 'waiting' | 'photo' | 'voting' | 'results' | 'ended'
+    round: 0,
+    totalRounds: 5,
+    prompt: null,
+    photos: [],            // [{playerId, playerName, photoData}]
+    hasSubmittedPhoto: false,
+    hasVoted: false,
+    myVote: null,          // targetPlayerId
+    photoSubmittedCount: 0,
+    totalPhotographers: 0,
+    voteCount: 0,
+    totalVoters: 0,
+    voteResults: [],       // [{playerId, playerName, photoData, voteCount, isWinner}]
+    scores: {},
+    roundScores: {},
+  },
 };
 
 export const gameReducer = (state, action) => {
@@ -167,6 +211,9 @@ export const gameReducer = (state, action) => {
     case 'SET_LANG':
       localStorage.setItem('wst_lang', action.payload);
       return { ...state, lang: action.payload };
+    case 'SAVED_SELFIE_STORED':
+      try { localStorage.setItem('wst_saved_selfie', action.payload); } catch (_) {}
+      return { ...state, savedSelfie: action.payload };
     case 'RESET_GAME':
       return initialState;
     case 'SET_PLAYER_ID':
@@ -579,6 +626,23 @@ export const gameReducer = (state, action) => {
         ...state,
         selfie: { ...state.selfie, hasSubmittedDrawing: true },
       };
+    case 'SELFIE_UPDATE_PROMPT':
+      // Prompt changed by host — keep existing photo, only update prompt text
+      return {
+        ...state,
+        selfie: {
+          ...state.selfie,
+          assignedPrompt: action.payload.prompt,
+          promptTemplate: action.payload.promptTemplate || state.selfie.promptTemplate,
+          hasSubmittedDrawing: false,
+        },
+      };
+    case 'SELFIE_RETAKE_READY':
+      // Player requested a retake — reset photo-submitted flag so they can capture again
+      return {
+        ...state,
+        selfie: { ...state.selfie, hasSubmittedPhoto: false },
+      };
     case 'SELFIE_VOTING_STARTED':
       return {
         ...state,
@@ -745,6 +809,167 @@ export const gameReducer = (state, action) => {
       return { ...state, phaseTimer: { secondsLeft: 0, active: false } };
     case 'SET_ROOM_CONFIG':
       return { ...state, roomConfig: { ...state.roomConfig, ...action.payload } };
+    // ─── Caption actions ─────────────────────────────────────────────────────
+    case 'CAPTION_PHOTO_PHASE':
+      return {
+        ...state,
+        phase: 'caption',
+        caption: {
+          ...initialState.caption,
+          phase: 'photo',
+          round: action.payload.round,
+          totalRounds: action.payload.totalRounds,
+          totalPhotographers: (action.payload.players || []).length,
+        },
+      };
+    case 'CAPTION_PHOTO_SUBMITTED':
+      return {
+        ...state,
+        caption: {
+          ...state.caption,
+          photoSubmittedCount: action.payload.submittedCount,
+        },
+      };
+    case 'CAPTION_MARK_PHOTO_SUBMITTED':
+      return { ...state, caption: { ...state.caption, hasSubmittedPhoto: true } };
+    case 'CAPTION_WRITING_PHASE':
+      return {
+        ...state,
+        caption: {
+          ...state.caption,
+          phase: 'writing',
+          round: action.payload.round,
+          prompt: action.payload.prompt,
+          featuredOwnerId: action.payload.featuredOwnerId,
+          featuredOwnerName: action.payload.featuredOwnerName,
+          featuredPhotoData: action.payload.featuredPhotoData,
+          writers: action.payload.writers || [],
+          totalWriters: (action.payload.writers || []).length,
+          captionSubmittedCount: 0,
+          hasWrittenCaption: false,
+        },
+      };
+    case 'CAPTION_CAPTION_SUBMITTED':
+      return {
+        ...state,
+        caption: {
+          ...state.caption,
+          captionSubmittedCount: action.payload.submittedCount,
+        },
+      };
+    case 'CAPTION_MARK_CAPTION_WRITTEN':
+      return { ...state, caption: { ...state.caption, hasWrittenCaption: true } };
+    case 'CAPTION_VOTING_PHASE':
+      return {
+        ...state,
+        caption: {
+          ...state.caption,
+          phase: 'voting',
+          captions: action.payload.captions,
+          featuredPhotoData: action.payload.featuredPhotoData,
+          featuredOwnerName: action.payload.featuredOwnerName,
+          featuredOwnerId: action.payload.featuredOwnerId,
+          hasVoted: false,
+          myVote: null,
+          voteCount: 0,
+        },
+      };
+    case 'CAPTION_VOTE_RECEIVED':
+      return { ...state, caption: { ...state.caption, voteCount: action.payload.voteCount, totalVoters: action.payload.totalVoters } };
+    case 'CAPTION_MARK_VOTED':
+      return { ...state, caption: { ...state.caption, hasVoted: true, myVote: action.payload.captionId } };
+    case 'CAPTION_ROUND_RESULTS':
+      return {
+        ...state,
+        caption: {
+          ...state.caption,
+          phase: 'results',
+          round: action.payload.round,
+          captionResults: action.payload.captionResults,
+          roundScores: action.payload.roundScores,
+          scores: action.payload.scores,
+        },
+      };
+    case 'CAPTION_GAME_OVER':
+      return {
+        ...state,
+        caption: { ...state.caption, phase: 'ended', scores: action.payload.scores },
+      };
+    case 'CAPTION_RESTARTED':
+      return {
+        ...state,
+        phase: 'lobby',
+        players: action.payload.players || state.players,
+        caption: { ...initialState.caption },
+      };
+    // ─── PhotoVote actions ────────────────────────────────────────────────────
+    case 'PHOTOVOTE_PHOTO_PHASE':
+      return {
+        ...state,
+        phase: 'photovote',
+        photoVote: {
+          ...initialState.photoVote,
+          subType: action.payload.subType || 'pmatch',
+          phase: 'photo',
+          round: action.payload.round,
+          totalRounds: action.payload.totalRounds,
+          totalPhotographers: (action.payload.players || []).length,
+          hasSubmittedPhoto: false,
+          photoSubmittedCount: 0,
+        },
+      };
+    case 'PHOTOVOTE_PHOTO_SUBMITTED':
+      return {
+        ...state,
+        photoVote: {
+          ...state.photoVote,
+          photoSubmittedCount: action.payload.submittedCount,
+        },
+      };
+    case 'PHOTOVOTE_MARK_PHOTO_SUBMITTED':
+      return { ...state, photoVote: { ...state.photoVote, hasSubmittedPhoto: true } };
+    case 'PHOTOVOTE_VOTING_PHASE':
+      return {
+        ...state,
+        photoVote: {
+          ...state.photoVote,
+          phase: 'voting',
+          round: action.payload.round,
+          prompt: action.payload.prompt,
+          photos: action.payload.photos || [],
+          hasVoted: false,
+          myVote: null,
+          voteCount: 0,
+        },
+      };
+    case 'PHOTOVOTE_VOTE_RECEIVED':
+      return { ...state, photoVote: { ...state.photoVote, voteCount: action.payload.voteCount, totalVoters: action.payload.totalVoters } };
+    case 'PHOTOVOTE_MARK_VOTED':
+      return { ...state, photoVote: { ...state.photoVote, hasVoted: true, myVote: action.payload.targetPlayerId } };
+    case 'PHOTOVOTE_ROUND_RESULTS':
+      return {
+        ...state,
+        photoVote: {
+          ...state.photoVote,
+          phase: 'results',
+          round: action.payload.round,
+          voteResults: action.payload.voteResults,
+          roundScores: action.payload.roundScores,
+          scores: action.payload.scores,
+        },
+      };
+    case 'PHOTOVOTE_GAME_OVER':
+      return {
+        ...state,
+        photoVote: { ...state.photoVote, phase: 'ended', scores: action.payload.scores },
+      };
+    case 'PHOTOVOTE_RESTARTED':
+      return {
+        ...state,
+        phase: 'lobby',
+        players: action.payload.players || state.players,
+        photoVote: { ...initialState.photoVote },
+      };
     // ────────────────────────────────────────────────────────────────────────
     default:
       return state;

@@ -135,6 +135,8 @@ const createRoom = (socketId, playerName = 'Host', gameType = 'most-likely-to', 
       votes: {},           // {voterPlayerId: drawerPlayerId}
       scores: {},
     },
+    // Persistent selfie bank — survives game switches, only cleared when room is destroyed
+    playerPhotos: {},      // {playerId: base64DataUrl}  — reused across all selfie-based mini games
   };
   
   rooms.set(code, room);
