@@ -1668,7 +1668,7 @@ const QUEUE_GAME_LABELS = {
   'mixed': 'Mixed',
 };
 
-function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbData, isMixedMode, onStart, onMltPauseResume, onMltChangeQuestion, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, onNewGame, gameQueue, queueIndex, onSelfieNextRound, onSelfieSkipQuestion, onShowSelfieResults, onFitbChangeQuestion, onFitbSkipToVote, onFitbShowResults, onFitbNextRound }) {
+function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbData, isMixedMode, onStart, onMltPauseResume, onMltChangeQuestion, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, onNewGame, onPlayAgain, onNewPartyPack, gameQueue, queueIndex, onSelfieNextRound, onSelfieSkipQuestion, onShowSelfieResults, onFitbChangeQuestion, onFitbSkipToVote, onFitbShowResults, onFitbNextRound }) {
   if (!isRoomCreator) return null;
 
   const playingCount = players.filter(p => p.isPlaying && p.isConnected).length;
@@ -1905,23 +1905,21 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
     const hasNextInQueue = gameQueue && gameQueue.length > 1 && queueIndex < gameQueue.length - 1;
     const nextGame = hasNextInQueue ? gameQueue[queueIndex + 1] : null;
     controls = (
-      <div className="flex gap-3">
-        {status === 'draw-end' && (
-          <button onClick={onDrawRestart} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#C39BD3] text-[#C39BD3] hover:bg-[#C39BD3]/10 active:scale-95 transition">
-            🔄 Play Again
-          </button>
-        )}
+      <div className="flex gap-3 flex-wrap justify-center">
+        <button onClick={onPlayAgain} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#4ECDC4] text-[#4ECDC4] hover:bg-[#4ECDC4]/10 active:scale-95 transition">
+          🔄 Play Again
+        </button>
         {hasNextInQueue && (
-          <button onClick={onNextQueueGame} className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#4ECDC4] text-black hover:bg-[#3dbdb5] active:scale-95 transition" style={{ boxShadow: '0 0 20px #4ECDC460' }}>
+          <button onClick={onNextQueueGame} className="px-8 py-2.5 rounded-xl font-['Fredoka_One'] text-base bg-[#6C5CE7] text-white hover:bg-[#5a4bd0] active:scale-95 transition" style={{ boxShadow: '0 0 16px #6C5CE740' }}>
             ▶ Next: {QUEUE_GAME_LABELS[nextGame.type] || nextGame.type}
           </button>
         )}
         <button
-          onClick={onNewGame}
-          className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#FFE66D] text-black hover:bg-[#ffdd33] active:scale-95 transition"
-          style={{ boxShadow: '0 0 20px #FFE66D60' }}
+          onClick={onNewPartyPack}
+          className="px-8 py-2.5 rounded-xl font-['Fredoka_One'] text-base bg-[#FFE66D] text-black hover:bg-[#ffdd33] active:scale-95 transition"
+          style={{ boxShadow: '0 0 16px #FFE66D40' }}
         >
-          🎮 New Game
+          🎮 New Party Pack
         </button>
       </div>
     );
@@ -2489,6 +2487,33 @@ export default function HostPage() {
     setQueueIndex(0);
   };
 
+  const handlePlayAgain = () => {
+    const code = gameInfo.code;
+    const sock = socketRef.current;
+    if (!sock || !code) return;
+    const gameType = creatorSettings.gameType || gameInfo.gameType;
+    const rounds = creatorSettings.rounds || 5;
+    // Reset to lobby first, then immediately start the same game type
+    sock.emit('change_game', { code, newGameType: gameType });
+    if (gameType === 'most-likely-to') sock.emit('mlt:start', { code, rounds, allowSelfVote: true });
+    else if (gameType === 'drawing') sock.emit('draw:start', { code, rounds, mode: creatorSettings.drawMode || 'classic' });
+    else if (gameType === 'fill-in-the-blank') sock.emit('fitb:start', { code, rounds });
+    else if (gameType === 'selfie-roast') sock.emit('selfie:start', { code, rounds });
+    else if (gameType === 'caption') sock.emit('caption:start', { code, rounds });
+    else if (gameType === 'pmatch') sock.emit('photovote:start', { code, subType: 'pmatch', rounds });
+    else if (gameType === 'photoassoc') sock.emit('photovote:start', { code, subType: 'photoassoc', rounds });
+    else sock.emit('start_game', { code });
+    setGameQueue([]);
+    setQueueIndex(0);
+  };
+
+  const handleNewPartyPack = () => {
+    // Create a brand-new room — navigate to the setup/create screen
+    setGameQueue([]);
+    setQueueIndex(0);
+    setStatus('creating');
+  };
+
   // ─── Render ───────────────────────────────────────────────────────────────
   if (status === 'setup') {
     return (
@@ -2657,7 +2682,20 @@ export default function HostPage() {
                 <button
                   key={g.id}
                   onClick={() => {
-                    socketRef.current?.emit('change_game', { code: gameInfo.code, newGameType: g.id });
+                    const code = gameInfo.code;
+                    const sock = socketRef.current;
+                    if (!sock || !code) return;
+                    const rounds = creatorSettings.rounds || 5;
+                    sock.emit('change_game', { code, newGameType: g.id });
+                    // Auto-start the selected game immediately after reset
+                    if (g.id === 'most-likely-to') sock.emit('mlt:start', { code, rounds, allowSelfVote: true });
+                    else if (g.id === 'drawing') sock.emit('draw:start', { code, rounds, mode: creatorSettings.drawMode || 'classic' });
+                    else if (g.id === 'fill-in-the-blank') sock.emit('fitb:start', { code, rounds });
+                    else if (g.id === 'selfie-roast') sock.emit('selfie:start', { code, rounds });
+                    else if (g.id === 'caption') sock.emit('caption:start', { code, rounds });
+                    else if (g.id === 'pmatch') sock.emit('photovote:start', { code, subType: 'pmatch', rounds });
+                    else if (g.id === 'photoassoc') sock.emit('photovote:start', { code, subType: 'photoassoc', rounds });
+                    else sock.emit('start_game', { code });
                     setCreatorSettings(prev => ({ ...prev, gameType: g.id }));
                     setGameQueue([]);
                     setQueueIndex(0);
@@ -2715,6 +2753,8 @@ export default function HostPage() {
         onDrawRestart={handleDrawRestart}
         onNextQueueGame={handleNextQueueGame}
         onNewGame={handleNewGame}
+        onPlayAgain={handlePlayAgain}
+        onNewPartyPack={handleNewPartyPack}
         gameQueue={gameQueue}
         queueIndex={queueIndex}
         onSelfieNextRound={handleSelfieNextRound}

@@ -1317,14 +1317,15 @@ io.on('connection', (socket) => {
 
     if (room.mlt.timerRef) { clearTimeout(room.mlt.timerRef); room.mlt.timerRef = null; }
 
-    // Pick a new prompt not already used
-    const usedSet = new Set(room.mlt.prompts.slice(0, room.mlt.round - 1).map(p => JSON.stringify(p)));
-    const allPrompts = room.mlt.prompts.concat();
-    const freshPool = allPrompts.filter(p => !usedSet.has(JSON.stringify(p)));
-    // fallback: any prompt
-    const candidate = freshPool.length > 0
-      ? freshPool[Math.floor(Math.random() * freshPool.length)]
-      : allPrompts[Math.floor(Math.random() * allPrompts.length)];
+    // Pick a new prompt not already used — draw from full bank to avoid same question
+    const usedPrompts = new Set(room.mlt.prompts.slice(0, room.mlt.round - 1));
+    const currentPrompt = room.mlt.currentPrompt;
+    const customMltPrompts = (room.customQuestions || []).map(q => q.text).filter(Boolean);
+    const fullBank = customMltPrompts.length > 0 ? [...customMltPrompts, ...mltPromptBank] : [...mltPromptBank];
+    const freshPool = fullBank.filter(p => p !== currentPrompt && !usedPrompts.has(p));
+    const pool = freshPool.length > 0 ? freshPool : fullBank.filter(p => p !== currentPrompt);
+    // fallback: any prompt from full bank
+    const candidate = (pool.length > 0 ? pool : fullBank)[Math.floor(Math.random() * (pool.length > 0 ? pool : fullBank).length)];
 
     room.mlt.currentPrompt = candidate;
     room.mlt.prompts[room.mlt.round - 1] = candidate;
