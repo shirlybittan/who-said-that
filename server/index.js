@@ -226,7 +226,10 @@ const startMltTimer = (io, room, code, seconds) => {
   room.mlt.paused = false;
 
   const tick = () => {
-    if (room.mlt.roundState !== 'voting' || room.mlt.paused) return;
+    if (room.phase !== 'mlt' || room.mlt.roundState !== 'voting' || room.mlt.paused) {
+      room.mlt.timerRef = null;
+      return;
+    }
     room.mlt.secondsLeft = remaining;
     io.to(code).emit('mlt:timer', { secondsLeft: remaining });
     if (remaining === 0) {
@@ -558,6 +561,7 @@ function cancelAllTimers(room) {
   if (room.mlt?.timerRef) { clearTimeout(room.mlt.timerRef); room.mlt.timerRef = null; }
   if (room.draw?.timerRef) { clearInterval(room.draw.timerRef); room.draw.timerRef = null; }
   if (room.fitb?.timerRef) { clearTimeout(room.fitb.timerRef); room.fitb.timerRef = null; }
+  stopAnswerTimer(room);
 }
 
 io.on('connection', (socket) => {
@@ -716,9 +720,9 @@ io.on('connection', (socket) => {
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isHost) return;
 
-    // For any non-mixed game mode, OR for dedicated single-game phases — reset to lobby
+    // For any non-mixed game mode — reset to lobby
     // Mixed-pack games fall through to the mini-game type switch logic below
-    if (room.gameType !== 'mixed' || ['mlt', 'mltEnd', 'selfie', 'caption', 'photovote', 'fitb', 'drawing', 'drawEnd', 'fitb-end'].includes(room.phase)) {
+    if (room.gameType !== 'mixed') {
       cancelAllTimers(room);
       room.phase = 'lobby';
       room.players.forEach(p => { p.isReady = false; });
@@ -733,8 +737,30 @@ io.on('connection', (socket) => {
 
     const denormalizeType = (t) => t === 'wst' ? 'who-said-that' : t;
     const normalizeType = (t) => t === 'who-said-that' ? 'wst' : t;
-    const rawCurrentType = room.questions[room.currentQuestionIndex]?.type || (room.phase === 'drawing' ? 'drawing' : null);
-    if (!rawCurrentType) return;
+
+    // Determine current mini-game type — fall back to phase inspection when question slot is ambiguous
+    let rawCurrentType = room.questions[room.currentQuestionIndex]?.type;
+    if (!rawCurrentType) {
+      if (room.phase === 'drawing' || room.phase === 'drawEnd') rawCurrentType = 'drawing';
+      else if (room.phase === 'tot') rawCurrentType = 'this-or-that';
+      else if (room.phase === 'sit-voting' || room.phase === 'sit-results') rawCurrentType = 'situational';
+      else if (room.phase === 'question' || room.phase === 'voting' || room.phase === 'roundEnd') rawCurrentType = 'wst';
+    }
+
+    if (!rawCurrentType) {
+      // Unknown phase — reset to lobby as safe fallback
+      cancelAllTimers(room);
+      room.phase = 'lobby';
+      room.players.forEach(p => { p.isReady = false; });
+      io.to(code).emit('game_changed', {
+        code,
+        gameType: room.gameType,
+        players: room.players,
+        gameName: room.gameName || '',
+      });
+      return;
+    }
+
     const currentType = denormalizeType(rawCurrentType);
 
     const allTypes = room.miniGameSelectedTypes || room.selectedSubGames || [];
@@ -747,6 +773,7 @@ io.on('connection', (socket) => {
     const targetType = normalizeType(nextType);
 
     // Reset in-progress state for the current mini-game
+    cancelAllTimers(room);
     room.answers = [];
     room.skipVotes = [];
     room.sit = room.sit || {};
@@ -754,10 +781,6 @@ io.on('connection', (socket) => {
     room.tot = room.tot || {};
     room.tot.votesA = {};
     room.tot.votesB = {};
-    if (room.phase === 'drawing' && room.draw?.timerRef) {
-      clearInterval(room.draw.timerRef);
-      room.draw.timerRef = null;
-    }
 
     // Generate a new question of the target type and replace the current slot in-place.
     // This keeps currentRound and totalRounds stable — no round inflation.
@@ -2845,8 +2868,7 @@ io.on('connection', (socket) => {
     if (!validGameTypes.includes(newGameType)) return;
 
     // Cancel any active timers before resetting state
-    if (room.mlt?.timerRef) { clearTimeout(room.mlt.timerRef); room.mlt.timerRef = null; }
-    if (room.draw?.timerRef) { clearInterval(room.draw.timerRef); room.draw.timerRef = null; }
+    cancelAllTimers(room);
 
     room.gameType = newGameType;
     room.phase = 'lobby';
