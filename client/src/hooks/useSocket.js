@@ -19,6 +19,8 @@ export const useSocket = () => {
 
     const onRoomCreated = ({ code, playerId, players, gameType, gameName, selectedSubGames, isPlaying, roomConfig, globalScores }) => {
       localStorage.setItem('wst_roomCode', code);
+      const myPlayer = players?.find(p => p.id === playerId);
+      if (myPlayer?.name) localStorage.setItem('wst_playerName', myPlayer.name);
       dispatch({ type: 'SET_ROOM', payload: { roomCode: code, phase: 'lobby', isHost: true, isPlaying: !!isPlaying, players, gameType, gameName: gameName || '', selectedSubGames, roomConfig: roomConfig || {}, globalScores: globalScores || {} } });
       dispatch({ type: 'SET_PLAYER_ID', payload: playerId });
       navigate('/lobby');
@@ -27,6 +29,7 @@ export const useSocket = () => {
     const onJoinSuccess = ({ room, playerId, isRejoin }) => {
       localStorage.setItem('wst_roomCode', room.code);
       const myPlayer = room.players.find(p => p.id === playerId);
+      if (myPlayer?.name) localStorage.setItem('wst_playerName', myPlayer.name);
       const isPlaying = myPlayer?.isPlaying ?? true;
       const isHost = room.host === playerId;
       const phase = room.phase;
@@ -484,7 +487,7 @@ export const useSocket = () => {
     };
 
     const onGameChanged = ({ code, gameType, players, gameName }) => {
-      dispatch({ type: 'SET_ROOM', payload: { gameType, players, gameName, phase: 'lobby' } });
+      dispatch({ type: 'GAME_SWITCHED', payload: { gameType, players, gameName } });
       navigate('/lobby');
     };
     // ────────────────────────────────────────────────────────────────────────

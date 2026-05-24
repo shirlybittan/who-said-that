@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGame } from '../store/gameStore.jsx';
+import { socket } from '../socket';
 import { translations } from '../locales/translations';
 import Confetti from 'react-confetti';
 import { motion } from 'framer-motion';
@@ -25,7 +26,8 @@ export default function GameEndPage() {
 
   const handlePlayAgain = () => {
     sounds.click();
-    navigate('/');
+    socket.emit('change_game', { code: state.roomCode, newGameType: state.gameType || 'who-said-that' });
+    // navigation handled by game_changed → onGameChanged → navigate('/lobby')
   };
 
   const sortedPlayers = state.players.filter(p => p.isPlaying).sort((a, b) => (state.scores[b.id] || 0) - (state.scores[a.id] || 0));   

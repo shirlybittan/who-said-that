@@ -229,6 +229,15 @@ export default function DrawingPage() {
     dispatch({ type: 'DRAW_MARK_SUBMITTED' });
   };
 
+  // Auto-submit when timer is about to expire and player hasn't submitted yet.
+  // Trigger at ≤1 second remaining so the emit reaches the server before it closes submissions.
+  useEffect(() => {
+    if (draw.phase === 'drawing' && !draw.hasSubmitted && draw.secondsLeft <= 1) {
+      socket.emit('draw:submit', { code: roomCode, strokes: strokesRef.current });
+      dispatch({ type: 'DRAW_MARK_SUBMITTED' });
+    }
+  }, [draw.secondsLeft, draw.phase, draw.hasSubmitted, roomCode, dispatch]);
+
   const handleVote = (votedForPlayerId) => {
     if (draw.hasVoted || votedForPlayerId === playerId) return;
     socket.emit('draw:vote', { code: roomCode, votedForPlayerId });

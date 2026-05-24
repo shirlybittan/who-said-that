@@ -2495,17 +2495,8 @@ export default function HostPage() {
     const sock = socketRef.current;
     if (!sock || !code) return;
     const gameType = creatorSettings.gameType || gameInfo.gameType;
-    const rounds = creatorSettings.rounds || 5;
-    // Reset to lobby first, then immediately start the same game type
+    // Reset everyone to lobby — they'll start again from the lobby screen
     sock.emit('change_game', { code, newGameType: gameType });
-    if (gameType === 'most-likely-to') sock.emit('mlt:start', { code, rounds, allowSelfVote: true });
-    else if (gameType === 'drawing') sock.emit('draw:start', { code, rounds, mode: creatorSettings.drawMode || 'classic' });
-    else if (gameType === 'fill-in-the-blank') sock.emit('fitb:start', { code, rounds });
-    else if (gameType === 'selfie-roast') sock.emit('selfie:start', { code, rounds });
-    else if (gameType === 'caption') sock.emit('caption:start', { code, rounds });
-    else if (gameType === 'pmatch') sock.emit('photovote:start', { code, subType: 'pmatch', rounds });
-    else if (gameType === 'photoassoc') sock.emit('photovote:start', { code, subType: 'photoassoc', rounds });
-    else sock.emit('start_game', { code });
     setGameQueue([]);
     setQueueIndex(0);
   };
@@ -2688,17 +2679,7 @@ export default function HostPage() {
                     const code = gameInfo.code;
                     const sock = socketRef.current;
                     if (!sock || !code) return;
-                    const rounds = creatorSettings.rounds || 5;
                     sock.emit('change_game', { code, newGameType: g.id });
-                    // Auto-start the selected game immediately after reset
-                    if (g.id === 'most-likely-to') sock.emit('mlt:start', { code, rounds, allowSelfVote: true });
-                    else if (g.id === 'drawing') sock.emit('draw:start', { code, rounds, mode: creatorSettings.drawMode || 'classic' });
-                    else if (g.id === 'fill-in-the-blank') sock.emit('fitb:start', { code, rounds });
-                    else if (g.id === 'selfie-roast') sock.emit('selfie:start', { code, rounds });
-                    else if (g.id === 'caption') sock.emit('caption:start', { code, rounds });
-                    else if (g.id === 'pmatch') sock.emit('photovote:start', { code, subType: 'pmatch', rounds });
-                    else if (g.id === 'photoassoc') sock.emit('photovote:start', { code, subType: 'photoassoc', rounds });
-                    else sock.emit('start_game', { code });
                     setCreatorSettings(prev => ({ ...prev, gameType: g.id }));
                     setGameQueue([]);
                     setQueueIndex(0);

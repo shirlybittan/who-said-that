@@ -333,6 +333,27 @@ export const gameReducer = (state, action) => {
       };
     case 'SET_GAME_ENDED':
       return { ...state, gameEnded: true, phase: 'game_end', stats: action.payload.stats, players: action.payload.players || state.players, scores: action.payload.finalScores || state.scores };
+    case 'GAME_SWITCHED':
+      return {
+        ...state,
+        gameType: action.payload.gameType,
+        players: action.payload.players || state.players,
+        gameName: action.payload.gameName !== undefined ? action.payload.gameName : state.gameName,
+        phase: 'lobby',
+        hasAnswered: false,
+        hasVoted: false,
+        answers: [],
+        currentQuestion: null,
+        gameEnded: false,
+        mlt:       { ...initialState.mlt,      totalRounds: state.mlt.totalRounds, allowSelfVote: state.mlt.allowSelfVote },
+        draw:      { ...initialState.draw },
+        fitb:      { ...initialState.fitb },
+        selfie:    { ...initialState.selfie },
+        caption:   { ...initialState.caption },
+        photoVote: { ...initialState.photoVote },
+        sit:       { ...initialState.sit },
+        tot:       { ...initialState.tot },
+      };
     case 'SET_ERROR':
       return { ...state, error: action.payload };
     // ─── This or That actions ────────────────────────────────────────────────

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useGame } from '../store/gameStore.jsx';
+import { socket } from '../socket';
 import { translations } from '../locales/translations';
 import Confetti from 'react-confetti';
 import { motion } from 'framer-motion';
@@ -24,7 +25,8 @@ export default function ThisOrThatEndPage() {
   }, []);
 
   const handlePlayAgain = () => {
-    window.location.href = '/';
+    socket.emit('change_game', { code: roomCode, newGameType: 'this-or-that' });
+    // navigation handled by game_changed → onGameChanged → navigate('/lobby')
   };
 
   return (

@@ -175,6 +175,15 @@ const joinRoom = (code, socketId, playerName, playerId) => {
     room.host = player.id;
   }
   
+  // Initialize scores for new mid-game player so they appear on scoreboards
+  if (room.phase !== 'lobby') {
+    if (room.scores) room.scores[player.id] = 0;
+    if (room.mlt?.scores) room.mlt.scores[player.id] = 0;
+    if (room.tot?.scores) room.tot.scores[player.id] = 0;
+    if (room.fitb?.scores) room.fitb.scores[player.id] = 0;
+    if (room.draw?.scores) room.draw.scores[player.id] = 0;
+  }
+
   room.players.push(player);
   return { room, player, isRejoin: false };
 };
