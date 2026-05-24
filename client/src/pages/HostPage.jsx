@@ -428,10 +428,15 @@ function MltEndPanel({ mlt }) {
 
 function QuestionPanel({ questionData, players }) {
   const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
-  const [secondsLeft, setSecondsLeft] = useState(questionData.roundDuration || 60);
+  const computeSecondsLeft = () => {
+    const elapsed = questionData.startedAt ? Math.floor((Date.now() - questionData.startedAt) / 1000) : 0;
+    return Math.max(0, (questionData.roundDuration || 60) - elapsed);
+  };
+  const [secondsLeft, setSecondsLeft] = useState(computeSecondsLeft);
 
   useEffect(() => {
-    setSecondsLeft(questionData.roundDuration || 60);
+    const elapsed = questionData.startedAt ? Math.floor((Date.now() - questionData.startedAt) / 1000) : 0;
+    setSecondsLeft(Math.max(0, (questionData.roundDuration || 60) - elapsed));
   }, [questionData.text]); // Reset timer when question changes
 
   useEffect(() => {
@@ -2159,6 +2164,7 @@ export default function HostPage() {
           text: data.question || '', round: data.round, totalRounds: data.totalRounds,
           type: data.roundType || 'wst', target: data.target || null,
           answeredCount: 0, totalAnswerers: 0, answeredPlayerIds: [], roundDuration: data.roundDuration || 60,
+          startedAt: data.startedAt || Date.now(),
         });
         setStatus('question');
       }
@@ -2265,7 +2271,7 @@ export default function HostPage() {
 
     sock.on('draw:voting_started', (data) => {
       setDrawData(prev => ({ ...prev, phase: 'voting', voteCount: 0, totalVoters: data.totalVoters || 0, submissions: data.submissions || [], mode: data.mode || prev.mode }));
-      setStatus('draw-voting');
+      setStatus(prev => prev === 'drawing' ? 'draw-voting' : prev);
     });
 
     sock.on('draw:vote_received', ({ voteCount, totalVoters }) => {
@@ -2274,12 +2280,12 @@ export default function HostPage() {
 
     sock.on('draw:results', (data) => {
       setDrawData(prev => ({ ...prev, phase: 'results', results: data.results || [], scores: data.scores || {}, leaderboard: data.leaderboard || [], mode: data.mode || prev.mode }));
-      setStatus('draw-results');
+      setStatus(prev => (prev === 'draw-voting' || prev === 'drawing') ? 'draw-results' : prev);
     });
 
     sock.on('draw:end', (data) => {
       setDrawData(prev => ({ ...prev, leaderboard: data.leaderboard || [] }));
-      setStatus('draw-end');
+      setStatus(prev => (prev === 'draw-results' || prev === 'draw-voting' || prev === 'drawing') ? 'draw-end' : prev);
     });
 
     // FITB handlers

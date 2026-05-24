@@ -324,6 +324,7 @@ const emitWstQuestion = (io, room, code) => {
     roundType,
     target: target ? { id: target.id, name: target.name, color: target.color } : null,
     roundDuration,
+    startedAt: Date.now(),
   });
 
   // Server-side answer timer — auto-starts voting when time expires (handles disconnected players)

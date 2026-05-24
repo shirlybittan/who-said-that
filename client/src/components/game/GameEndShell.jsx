@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Confetti from 'react-confetti';
 import { motion } from 'framer-motion';
@@ -35,6 +35,7 @@ export default function GameEndShell({
 }) {
   const navigate = useNavigate();
   const sounds = useSounds();
+  const soundsRef = useRef(sounds);
 
   const [win, setWin] = useState({ width: window.innerWidth, height: window.innerHeight });
   useEffect(() => {
@@ -43,7 +44,7 @@ export default function GameEndShell({
     return () => window.removeEventListener('resize', fn);
   }, []);
 
-  useEffect(() => { sounds.gameEnd?.(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { soundsRef.current.gameEnd?.(); }, []);
 
   return (
     <motion.div
