@@ -11,11 +11,9 @@ export default function CaptionWritePage() {
   const [text, setText] = useState('');
   const MAX_LEN = 140;
 
-  const isOwner = state.playerId === caption.featuredOwnerId;
-
   const handleSubmit = () => {
     const trimmed = text.trim();
-    if (!trimmed || caption.hasWrittenCaption || isOwner) return;
+    if (!trimmed || caption.hasWrittenCaption) return;
     sounds.answer?.();
     socket.emit('caption:submit_caption', { code: state.roomCode, text: trimmed });
     dispatch({ type: 'CAPTION_MARK_CAPTION_WRITTEN' });
@@ -43,15 +41,7 @@ export default function CaptionWritePage() {
         <p className="text-[#FFE66D] font-['Nunito'] text-sm font-semibold">{caption.prompt}</p>
       </div>
 
-      {isOwner ? (
-        <div className="flex flex-col items-center gap-3 mt-4">
-          <div className="text-5xl">🤫</div>
-          <p className="text-gray-400 font-['Nunito'] text-center">That's your photo! Wait for others to caption it.</p>
-          <p className="text-gray-500 font-['Nunito'] text-sm">
-            {caption.captionSubmittedCount} / {caption.totalWriters} captions in
-          </p>
-        </div>
-      ) : !caption.hasWrittenCaption ? (
+      {!caption.hasWrittenCaption ? (
         <div className="w-full max-w-sm flex flex-col gap-3">
           <textarea
             value={text}

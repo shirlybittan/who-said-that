@@ -197,8 +197,6 @@ export default function DrawingPage() {
   const handleRestart = () => socket.emit('draw:restart', { code: roomCode });
 
   // Derived drawing-phase state
-  const canSkip = draw.skipsUsed < draw.maxSkips && !draw.hasSubmitted;
-  const skipsRemaining = draw.maxSkips - draw.skipsUsed;
   const displayWord = draw.yourWord || draw.word;
 
   // ── Render: Drawing phase ─────────────────────────────────────────────────
@@ -318,19 +316,6 @@ export default function DrawingPage() {
               ✓ {t.submitBtn}
             </button>
           </div>
-
-          {/* Skip word */}
-          {canSkip && (
-            <button
-              onClick={() => socket.emit('draw:skip_word', { code: roomCode })}
-              className="w-full py-2 rounded-lg text-xs font-['Nunito'] text-[#C39BD3] border border-[#C39BD3]/40 hover:border-[#C39BD3] hover:bg-[#C39BD3]/10 transition"
-            >
-              🔀 {t.skipWord || 'Skip word'} · {skipsRemaining} {t.skipsLeft || 'left'}
-            </button>
-          )}
-          {!canSkip && draw.skipsUsed >= draw.maxSkips && !draw.hasSubmitted && (
-            <p className="text-center text-xs text-gray-600 font-['Nunito']">{t.noSkipsLeft || 'No skips left'}</p>
-          )}
 
           {/* Host controls */}
           {isHost && (

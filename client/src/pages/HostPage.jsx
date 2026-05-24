@@ -428,6 +428,18 @@ function MltEndPanel({ mlt }) {
 
 function QuestionPanel({ questionData, players }) {
   const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
+  const [secondsLeft, setSecondsLeft] = useState(questionData.roundDuration || 60);
+
+  useEffect(() => {
+    setSecondsLeft(questionData.roundDuration || 60);
+  }, [questionData.text]); // Reset timer when question changes
+
+  useEffect(() => {
+    if (secondsLeft <= 0) return;
+    const id = setTimeout(() => setSecondsLeft(s => Math.max(0, s - 1)), 1000);
+    return () => clearTimeout(id);
+  }, [secondsLeft]);
+
   return (
     <div className="flex flex-col items-center gap-8 w-full max-w-5xl">
       <div className="flex items-center gap-4">
@@ -438,6 +450,7 @@ function QuestionPanel({ questionData, players }) {
           {questionData.type === 'situational' ? '🎭 Situational' : '🤔 Who Said That?'}
         </span>
       </div>
+      <TimerRing secondsLeft={secondsLeft} paused={false} size={100} />
 
       {questionData.type === 'situational' && questionData.target && (
         <div className="flex items-center gap-3 bg-[#A8E6CF]/10 border border-[#A8E6CF]/30 rounded-2xl px-5 py-3">
@@ -477,7 +490,10 @@ function QuestionPanel({ questionData, players }) {
 
       {/* Players row */}
       <div className="flex flex-wrap gap-4 justify-center">
-        {activePlayers.map(p => <PlayerAvatar key={p.id} player={p} size="sm" />)}
+        {activePlayers.map(p => (
+          <PlayerAvatar key={p.id} player={p} size="sm"
+            status={questionData.answeredPlayerIds?.includes(p.id) ? 'answered' : 'waiting'} />
+        ))}
       </div>
     </div>
   );
@@ -517,7 +533,10 @@ function VotingPanel({ votingData, players }) {
       </div>
 
       <div className="flex flex-wrap gap-4 justify-center">
-        {activePlayers.map(p => <PlayerAvatar key={p.id} player={p} size="sm" />)}
+        {activePlayers.map(p => (
+          <PlayerAvatar key={p.id} player={p} size="sm"
+            status={votingData.votedPlayerIds?.includes(p.id) ? 'voted' : 'waiting'} />
+        ))}
       </div>
     </div>
   );
@@ -778,7 +797,10 @@ function SitPanel({ sitData, players }) {
         />
       </div>
       <div className="flex flex-wrap gap-4 justify-center">
-        {activePlayers.map(p => <PlayerAvatar key={p.id} player={p} size="sm" />)}
+        {activePlayers.map(p => (
+          <PlayerAvatar key={p.id} player={p} size="sm"
+            status={sitData.votedPlayerIds?.includes(p.id) ? 'voted' : 'waiting'} />
+        ))}
       </div>
     </div>
   );
@@ -887,12 +909,14 @@ function DrawingHostPanel({ drawData, players, status }) {
           <ProgressBar value={drawData.submittedCount} total={total} color="#C39BD3" />
         </div>
 
+        <TimerRing secondsLeft={drawData.secondsLeft ?? drawData.timeLimit ?? 90} paused={false} size={100} />
+
         <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-4">
           <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-3 text-center">
             Round {drawData.round}/{drawData.totalRounds}
           </p>
           <div className="flex flex-wrap gap-3 justify-center">
-            {activePlayers.map(p => <PlayerAvatar key={p.id} player={p} size="sm" />)}
+            {activePlayers.map(p => <PlayerAvatar key={p.id} player={p} size="sm" status={drawData.submittedPlayerIds?.includes(p.id) ? 'answered' : 'waiting'} />)}
           </div>
         </div>
       </div>
@@ -957,49 +981,85 @@ function DrawingHostPanel({ drawData, players, status }) {
   if (isResultsPhase) {
     const results = drawData.results || [];
     const medals = ['🥇', '🥈', '🥉'];
-    const podiumOrder = results.length >= 3
-      ? [results[1], results[0], results[2]]
-      : results.length === 2
-        ? [null, results[0], results[1]]
-        : [null, results[0], null];
-    const podiumHeights = ['h-28', 'h-36', 'h-20'];
-
     return (
-      <div className="flex flex-col items-center gap-8 w-full max-w-5xl">
+      <div className="flex flex-col items-center gap-6 w-full max-w-3xl">
         <motion.div className="text-center" initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }}>
-          <h1 className="text-4xl font-['Fredoka_One'] text-[#FFE66D]">🏆 Round Results</h1>
+          <h1 className="text-4xl font-['Fredoka_One'] text-[#FFE66D]">Round Results</h1>
           {isSecretMode
             ? <span className="mt-1 inline-block px-3 py-1 rounded-full bg-[#C39BD3]/20 text-[#C39BD3] text-sm font-['Nunito']">✦ Secret Words Mode</span>
             : <p className="text-gray-400 font-['Nunito'] mt-1">Word: <span className="text-[#FFE66D] font-bold">{drawData.word}</span></p>
           }
         </motion.div>
 
+        {/* Flat ranked list with drawing thumbnails */}
+        <div className="w-full flex flex-col gap-3">
+          {results.map((r, i) => (
+            <motion.div
+              key={r.playerId}
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: i * 0.1 }}
+              className="flex items-center gap-4 bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-3"
+            >
+              <span className="text-2xl w-10 text-center flex-shrink-0">{medals[i] || `${i + 1}.`}</span>
+              {r.strokes && (
+                <div className="rounded-xl overflow-hidden border border-[#C39BD3]/30 bg-white flex-shrink-0" style={{ width: 80 }}>
+                  <ReplayCanvas strokes={r.strokes} cssWidth="80px" cssHeight={60} className="w-full" />
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <p className="text-white font-['Fredoka_One'] text-lg truncate">{r.name}</p>
+                {isSecretMode && r.word && <p className="text-[#FFE66D] font-['Nunito'] text-sm italic">"{r.word}"</p>}
+              </div>
+              <span className="text-[#4ECDC4] font-['Fredoka_One'] text-xl flex-shrink-0">
+                {r.votes} vote{r.votes !== 1 ? 's' : ''}
+              </span>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // ── END PHASE (final leaderboard with podium) ─────────────────────────────
+  if (isEndPhase) {
+    const leaderboard = drawData.leaderboard || [];
+    const medals = ['🥇', '🥈', '🥉'];
+    const top3 = leaderboard.slice(0, 3);
+    const rest = leaderboard.slice(3);
+    // Podium order: 2nd (left), 1st (centre), 3rd (right)
+    const podiumOrder = top3.length >= 3
+      ? [top3[1], top3[0], top3[2]]
+      : top3.length === 2
+        ? [null, top3[0], top3[1]]
+        : [null, top3[0], null];
+    const podiumHeights = ['h-24', 'h-36', 'h-16'];
+    const podiumColors = ['#C0C0C033', '#FFE66D33', '#CD7F3233'];
+
+    return (
+      <div className="flex flex-col items-center gap-8 w-full max-w-3xl">
+        <motion.div className="text-center" initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }}>
+          <p className="text-6xl mb-3">🎨</p>
+          <h1 className="text-5xl font-['Fredoka_One'] text-[#C39BD3] mb-2">Sketch It!</h1>
+          <p className="text-2xl font-['Fredoka_One'] text-[#FFE66D]">Game Over!</p>
+        </motion.div>
+
         {/* Podium */}
-        {results.length > 0 && (
+        {top3.length > 0 && (
           <div className="w-full flex items-end justify-center gap-4">
-            {podiumOrder.map((r, idx) => r ? (
+            {podiumOrder.map((entry, idx) => entry ? (
               <motion.div
-                key={r.playerId}
+                key={entry.id}
                 initial={{ opacity: 0, y: 40 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: idx * 0.15 }}
                 className="flex flex-col items-center gap-2 flex-1 max-w-xs"
               >
                 <p className="text-3xl mb-1">{medals[idx === 1 ? 0 : idx === 0 ? 1 : 2]}</p>
-                {r.strokes && (
-                  <div className="rounded-xl overflow-hidden border-2 border-[#C39BD3]/40 bg-white w-full">
-                    <ReplayCanvas strokes={r.strokes} cssWidth="100%" cssHeight={120} className="w-full" />
-                  </div>
-                )}
-                {isSecretMode && r.word && (
-                  <p className="text-[#FFE66D] font-['Fredoka_One'] text-base">"{r.word}"</p>
-                )}
-                <p className="text-white font-['Fredoka_One'] text-lg">{r.name}</p>
-                <p className="text-[#4ECDC4] font-['Fredoka_One'] text-xl">
-                  {r.votes} vote{r.votes !== 1 ? 's' : ''}
-                </p>
+                <p className="text-white font-['Fredoka_One'] text-xl text-center">{entry.name}</p>
+                <p className={`font-['Fredoka_One'] text-2xl ${idx === 1 ? 'text-[#FFE66D]' : 'text-[#4ECDC4]'}`}>{entry.score}</p>
                 <div className={`w-full rounded-t-xl ${podiumHeights[idx]} flex items-end justify-center pb-2`}
-                  style={{ backgroundColor: idx === 1 ? '#FFE66D33' : idx === 0 ? '#C0C0C033' : '#CD7F3233' }}>
+                  style={{ backgroundColor: podiumColors[idx] }}>
                   <span className="font-['Fredoka_One'] text-2xl text-white">
                     {idx === 1 ? '1st' : idx === 0 ? '2nd' : '3rd'}
                   </span>
@@ -1011,66 +1071,24 @@ function DrawingHostPanel({ drawData, players, status }) {
           </div>
         )}
 
-        {/* Full ranked list if more than 3 */}
-        {results.length > 3 && (
-          <div className="w-full max-w-lg flex flex-col gap-2">
-            {results.slice(3).map((r, i) => (
-              <div key={r.playerId} className="flex items-center gap-3 bg-[#1A1A2E] border border-[#2D2D44] rounded-xl px-4 py-3">
-                <span className="text-gray-400 font-['Fredoka_One'] w-8 text-right">{i + 4}.</span>
-                <span className="flex-1 text-white font-['Fredoka_One']">{r.name}</span>
-                {isSecretMode && r.word && <span className="text-[#FFE66D] font-['Nunito'] text-sm italic">"{r.word}"</span>}
-                <span className="text-gray-300 font-['Nunito']">{r.votes} votes</span>
-              </div>
+        {/* Remaining players */}
+        {rest.length > 0 && (
+          <div className="w-full flex flex-col gap-2">
+            {rest.map((entry, i) => (
+              <motion.div
+                key={entry.id}
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.45 + i * 0.07 }}
+                className="flex items-center gap-4 rounded-2xl px-5 py-3 bg-[#1A1A2E] border border-[#2D2D44]"
+              >
+                <span className="text-xl w-8 text-center text-gray-400 font-['Fredoka_One']">{i + 4}.</span>
+                <span className="flex-1 text-white font-['Fredoka_One'] text-xl">{entry.name}</span>
+                <span className="font-['Fredoka_One'] text-xl text-[#4ECDC4]">{entry.score}</span>
+              </motion.div>
             ))}
           </div>
         )}
-
-        {/* Leaderboard */}
-        {(drawData.leaderboard || []).length > 0 && (
-          <div className="w-full max-w-lg">
-            <h3 className="text-lg font-['Fredoka_One'] text-[#4ECDC4] mb-3 text-center">📊 Overall Scores</h3>
-            <div className="flex flex-col gap-2">
-              {drawData.leaderboard.map((entry, i) => (
-                <div key={entry.id} className="flex items-center gap-3 bg-[#1A1A2E] border border-[#2D2D44] rounded-xl px-4 py-3">
-                  <span className="text-gray-400 font-['Fredoka_One'] w-6">{i + 1}</span>
-                  <span className="flex-1 text-white font-['Fredoka_One']">{entry.name}</span>
-                  <span className="text-[#FFE66D] font-['Fredoka_One'] text-xl">{entry.score}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // ── END PHASE (final leaderboard) ────────────────────────────────────────
-  if (isEndPhase) {
-    const leaderboard = drawData.leaderboard || [];
-    const medalEmojis = ['🥇', '🥈', '🥉'];
-    return (
-      <div className="flex flex-col items-center gap-8 w-full max-w-lg">
-        <motion.div className="text-center" initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }}>
-          <p className="text-6xl mb-3">🎨</p>
-          <h1 className="text-5xl font-['Fredoka_One'] text-[#C39BD3] mb-2">Sketch It!</h1>
-          <p className="text-2xl font-['Fredoka_One'] text-[#FFE66D]">Game Over!</p>
-        </motion.div>
-
-        <div className="w-full flex flex-col gap-3">
-          {leaderboard.map((entry, i) => (
-            <motion.div
-              key={entry.id}
-              initial={{ opacity: 0, x: -30 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: i * 0.08 }}
-              className={`flex items-center gap-4 rounded-2xl px-5 py-4 border-2 ${i === 0 ? 'bg-[#FFE66D]/10 border-[#FFE66D]/60' : i === 1 ? 'bg-[#C0C0C0]/10 border-[#C0C0C0]/40' : i === 2 ? 'bg-[#CD7F32]/10 border-[#CD7F32]/40' : 'bg-[#1A1A2E] border-[#2D2D44]'}`}
-            >
-              <span className="text-2xl w-10 text-center">{medalEmojis[i] || `${i + 1}.`}</span>
-              <span className="flex-1 text-white font-['Fredoka_One'] text-2xl">{entry.name}</span>
-              <span className={`font-['Fredoka_One'] text-2xl ${i === 0 ? 'text-[#FFE66D]' : 'text-[#4ECDC4]'}`}>{entry.score}</span>
-            </motion.div>
-          ))}
-        </div>
       </div>
     );
   }
@@ -1860,11 +1878,11 @@ export default function HostPage() {
 
   const [questionData, setQuestionData] = useState({
     text: '', round: 0, totalRounds: 0, type: 'wst', target: null,
-    answeredCount: 0, totalAnswerers: 0,
+    answeredCount: 0, totalAnswerers: 0, answeredPlayerIds: [], roundDuration: 60,
   });
 
   const [votingData, setVotingData] = useState({
-    answers: [], currentIndex: 0, voteCount: 0, totalPlayers: 0, allVotesIn: false,
+    answers: [], currentIndex: 0, voteCount: 0, totalPlayers: 0, allVotesIn: false, votedPlayerIds: [],
   });
 
   const [roundEndData, setRoundEndData] = useState({ scores: {}, prevScores: {}, players: [], answers: [] });
@@ -1878,13 +1896,13 @@ export default function HostPage() {
 
   const [sitData, setSitData] = useState({
     question: '', target: null, answers: [],
-    voteCount: 0, totalVoters: 0, hasResults: false, votingStarted: false, winners: [], scores: {},
+    voteCount: 0, totalVoters: 0, hasResults: false, votingStarted: false, winners: [], scores: {}, votedPlayerIds: [],
   });
 
   const [drawData, setDrawData] = useState({
     word: '', round: 0, totalRounds: 0, phase: 'drawing', mode: 'classic',
-    submittedCount: 0, totalDrawers: 0, voteCount: 0, totalVoters: 0,
-    submissions: [], results: [], scores: {}, leaderboard: [],
+    submittedCount: 0, submittedPlayerIds: [], totalDrawers: 0, voteCount: 0, totalVoters: 0,
+    submissions: [], results: [], scores: {}, leaderboard: [], secondsLeft: 90, timeLimit: 90,
   });
 
   const [fitbData, setFitbData] = useState({
@@ -1909,6 +1927,8 @@ export default function HostPage() {
 
   // Change Game picker overlay
   const [showGamePicker, setShowGamePicker] = useState(false);
+  // Main menu overlay
+  const [showMainMenu, setShowMainMenu] = useState(false);
 
   const socketRef = useRef(null);
 
@@ -1969,23 +1989,23 @@ export default function HostPage() {
         setQuestionData({
           text: data.question || '', round: data.round, totalRounds: data.totalRounds,
           type: data.roundType || 'wst', target: data.target || null,
-          answeredCount: 0, totalAnswerers: 0,
+          answeredCount: 0, totalAnswerers: 0, answeredPlayerIds: [], roundDuration: data.roundDuration || 60,
         });
         setStatus('question');
       }
     });
 
-    sock.on('answer_received', ({ answeredCount, totalPlayers }) => {
-      setQuestionData(prev => ({ ...prev, answeredCount, totalAnswerers: totalPlayers }));
+    sock.on('answer_received', ({ answeredCount, totalPlayers, answeredPlayerIds }) => {
+      setQuestionData(prev => ({ ...prev, answeredCount, totalAnswerers: totalPlayers, answeredPlayerIds: answeredPlayerIds || [] }));
     });
 
     sock.on('voting_started', ({ answers, currentIndex, totalPlayers }) => {
-      setVotingData({ answers, currentIndex, voteCount: 0, totalPlayers: totalPlayers || 0 });
+      setVotingData({ answers, currentIndex, voteCount: 0, totalPlayers: totalPlayers || 0, votedPlayerIds: [] });
       setStatus('voting');
     });
 
-    sock.on('vote_received', ({ votedCount, totalPlayers }) => {
-      setVotingData(prev => ({ ...prev, voteCount: votedCount, totalPlayers }));
+    sock.on('vote_received', ({ votedCount, totalPlayers, votedPlayerIds }) => {
+      setVotingData(prev => ({ ...prev, voteCount: votedCount, totalPlayers, votedPlayerIds: votedPlayerIds || [] }));
     });
 
     sock.on('all_votes_in', () => {
@@ -1993,7 +2013,7 @@ export default function HostPage() {
     });
 
     sock.on('next_answer', ({ currentIndex }) => {
-      setVotingData(prev => ({ ...prev, currentIndex, voteCount: 0, allVotesIn: false }));
+      setVotingData(prev => ({ ...prev, currentIndex, voteCount: 0, allVotesIn: false, votedPlayerIds: [] }));
     });
 
     sock.on('round_ended', (data) => {
@@ -2028,12 +2048,12 @@ export default function HostPage() {
         ...prev,
         question: data.question || '', answers: data.answers || [],
         totalVoters: data.totalVoters, voteCount: 0,
-        hasResults: false, votingStarted: true, winners: [],
+        hasResults: false, votingStarted: true, winners: [], votedPlayerIds: [],
       }));
       setStatus('sit-voting');
     });
 
-    sock.on('sit:vote_received', ({ voteCount, totalVoters }) => setSitData(prev => ({ ...prev, voteCount, totalVoters })));
+    sock.on('sit:vote_received', ({ voteCount, totalVoters, votedPlayerIds }) => setSitData(prev => ({ ...prev, voteCount, totalVoters, votedPlayerIds: votedPlayerIds || [] })));
 
     sock.on('sit:results', (data) => {
       setSitData(prev => ({ ...prev, answers: data.answers || [], scores: data.scores || {}, winners: data.winners || [], hasResults: true }));
@@ -2048,6 +2068,7 @@ export default function HostPage() {
         phase: 'drawing',
         mode: data.mode || 'classic',
         submittedCount: 0,
+        submittedPlayerIds: [],
         totalDrawers: data.players?.length || 0,
         voteCount: 0,
         totalVoters: 0,
@@ -2055,12 +2076,22 @@ export default function HostPage() {
         results: [],
         scores: {},
         leaderboard: [],
+        timeLimit: data.timeLimit || 90,
+        secondsLeft: data.timeLimit || 90,
       });
       setStatus('drawing');
     });
 
-    sock.on('draw:submission_received', ({ submittedCount, totalDrawers }) => {
-      setDrawData(prev => ({ ...prev, submittedCount, totalDrawers }));
+    sock.on('draw:timer', ({ secondsLeft }) => {
+      setDrawData(prev => ({ ...prev, secondsLeft }));
+    });
+
+    sock.on('draw:submission_received', ({ submittedCount, totalDrawers, submittedPlayerIds }) => {
+      setDrawData(prev => ({ ...prev, submittedCount, totalDrawers, submittedPlayerIds: submittedPlayerIds || [] }));
+    });
+
+    sock.on('draw:word_changed', (data) => {
+      setDrawData(prev => ({ ...prev, word: data.word, submittedCount: 0, submittedPlayerIds: [] }));
     });
 
     sock.on('draw:voting_started', (data) => {
@@ -2118,6 +2149,7 @@ export default function HostPage() {
     });
     sock.on('selfie:drawing_phase', (data) => {
       setSelfieData(prev => ({ ...prev, phase: 'drawing', drawingCount: 0, totalDrawers: data.totalDrawers || 0 }));
+      setStatus('selfie'); // Ensure host shows selfie panel even when photo phase was skipped
     });
     sock.on('selfie:drawing_received', ({ drawingCount, totalDrawers }) => {
       setSelfieData(prev => ({ ...prev, drawingCount, totalDrawers }));
@@ -2177,7 +2209,7 @@ export default function HostPage() {
 
     sock.on('draw:restarted', ({ players: p }) => {
       setPlayers(p || []);
-      setDrawData({ word: '', round: 0, totalRounds: 0, phase: 'drawing', mode: 'classic', submittedCount: 0, totalDrawers: 0, voteCount: 0, totalVoters: 0, submissions: [], results: [], scores: {}, leaderboard: [] });
+      setDrawData({ word: '', round: 0, totalRounds: 0, phase: 'drawing', mode: 'classic', submittedCount: 0, submittedPlayerIds: [], totalDrawers: 0, voteCount: 0, totalVoters: 0, submissions: [], results: [], scores: {}, leaderboard: [] });
       setStatus('lobby');
     });
 
@@ -2539,11 +2571,64 @@ export default function HostPage() {
               🎮 Change Game
             </button>
           )}
+          {isRoomCreator && status !== 'setup' && status !== 'creating' && status !== 'connecting' && status !== 'error' && (
+            <button
+              onClick={() => setShowMainMenu(true)}
+              className="px-3 py-1 rounded-lg text-xs font-['Fredoka_One'] border border-[#2D2D44] text-gray-400 hover:border-[#FF6B6B] hover:text-[#FF6B6B] active:scale-95 transition"
+            >
+              🏠 Main Menu
+            </button>
+          )}
         </div>
       </div>
 
       {['game-end', 'mlt-end', 'tot-end', 'draw-end', 'fitb-end', 'selfie-results'].includes(status) && (
         <Confetti width={window.innerWidth} height={window.innerHeight} recycle={false} numberOfPieces={400} />
+      )}
+
+      {/* Main Menu overlay */}
+      {showMainMenu && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={() => setShowMainMenu(false)}>
+          <div
+            className="relative bg-[#1A1A2E] border border-[#2D2D44] rounded-3xl p-6 w-full max-w-sm mx-4 shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-['Fredoka_One'] text-[#F7F7F7]">🏠 Main Menu</h2>
+              <button onClick={() => setShowMainMenu(false)} className="text-gray-500 hover:text-white text-2xl leading-none transition">✕</button>
+            </div>
+            <p className="text-sm font-['Nunito'] text-gray-400 mb-5 text-center">Return to lobby to choose a new game. What should happen to the current points?</p>
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={() => {
+                  const sock = socketRef.current;
+                  const code = gameInfo.code;
+                  if (!sock || !code) return;
+                  sock.emit('change_game', { code, newGameType: creatorSettings.gameType || gameInfo.gameType || 'who-said-that' });
+                  setShowMainMenu(false);
+                }}
+                className="py-3 px-5 rounded-2xl font-['Fredoka_One'] text-lg bg-[#4ECDC4] text-black hover:bg-[#3dbdb5] active:scale-95 transition text-left"
+              >
+                🏆 Keep Points
+                <p className="text-xs font-['Nunito'] font-normal mt-0.5 text-black/70">Return to lobby, keep accumulated scores</p>
+              </button>
+              <button
+                onClick={() => {
+                  const sock = socketRef.current;
+                  const code = gameInfo.code;
+                  if (!sock || !code) return;
+                  sock.emit('reset_global_scores', { code });
+                  sock.emit('change_game', { code, newGameType: creatorSettings.gameType || gameInfo.gameType || 'who-said-that' });
+                  setShowMainMenu(false);
+                }}
+                className="py-3 px-5 rounded-2xl font-['Fredoka_One'] text-lg bg-[#FF6B6B] text-white hover:bg-[#ff5252] active:scale-95 transition text-left"
+              >
+                🔄 Start Fresh
+                <p className="text-xs font-['Nunito'] font-normal mt-0.5 text-white/70">Return to lobby, reset all scores to zero</p>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Change Game picker overlay */}

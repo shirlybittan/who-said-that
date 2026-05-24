@@ -78,22 +78,6 @@ export default function SituationalVotingPage() {
           })}
         </motion.div>
 
-        {/* Scoreboard */}
-        <div className="w-full max-w-md bg-[#1A1A2E] rounded-2xl border border-[#2D2D44] p-4 mb-6">
-          <h3 className="text-lg font-['Fredoka_One'] text-[#FFE66D] mb-3">Scores</h3>
-          {[...sit.scorePlayers]
-            .sort((a, b) => (sit.scores[b.id] || 0) - (sit.scores[a.id] || 0))
-            .map((p) => (
-              <div key={p.id} className="flex items-center justify-between py-1">
-                <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full" style={{ backgroundColor: p.color }} />
-                  <span className="font-['Nunito']">{p.name}</span>
-                </div>
-                <span className="font-['Fredoka_One'] text-[#FF6B6B]">{sit.scores[p.id] || 0} pts</span>
-              </div>
-            ))}
-        </div>
-
         {state.isHost ? (
           <button
             onClick={handleContinue}

@@ -659,10 +659,14 @@ io.on('connection', (socket) => {
       room.tot.totalRounds = count;
       room.phase = 'tot';
     } else if (room.gameType === 'mixed') {
-      room.questions = selectMixedQuestions(count, room.mode, room.customQuestions, room.selectedSubGames);
-      room.miniGameSelectedTypes = room.selectedSubGames && room.selectedSubGames.length > 0
+      // Use one question per selected type so players experience each mini-game exactly once
+      const mixedTypes = (room.selectedSubGames && room.selectedSubGames.length > 0)
         ? room.selectedSubGames
         : ['who-said-that', 'situational', 'this-or-that'];
+      const mixedCount = mixedTypes.length;
+      room.totalRounds = mixedCount;
+      room.questions = selectMixedQuestions(mixedCount, room.mode, room.customQuestions, mixedTypes);
+      room.miniGameSelectedTypes = mixedTypes;
       room.miniGamePlayedTypes = [];
     } else {
       // who-said-that
@@ -866,7 +870,7 @@ io.on('connection', (socket) => {
     }
 
     const connectedPlayersCount = activePlayers(room).length;
-    io.to(code).emit('answer_received', { answeredCount: room.answers.length, totalPlayers: connectedPlayersCount });
+    io.to(code).emit('answer_received', { answeredCount: room.answers.length, totalPlayers: connectedPlayersCount, answeredPlayerIds: room.answers.map(a => a.playerId) });
 
     if (room.answers.length >= connectedPlayersCount) {
       stopAnswerTimer(room);
@@ -916,6 +920,7 @@ io.on('connection', (socket) => {
     io.to(code).emit('sit:vote_received', {
       voteCount: Object.keys(room.sit.votes).length,
       totalVoters: connectedPlayersCount,
+      votedPlayerIds: Object.keys(room.sit.votes),
     });
 
     if (Object.keys(room.sit.votes).length >= connectedPlayersCount) {
@@ -930,11 +935,18 @@ io.on('connection', (socket) => {
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isHost) return;
 
-    room.phase = 'roundEnd';
     room.sit.votes = {};
-    const numPlayers = room.players.filter(p => p.isPlaying).length;
-    // Scores already updated in closeSitVoting — just broadcast round_ended
-    io.to(code).emit('round_ended', { scores: room.scores, players: room.players, answers: room.answers, stats: {} });
+    // Skip round-end phase — go directly to next question or end the game
+    if (room.currentRound < room.totalRounds) {
+      room.currentRound++;
+      room.currentQuestionIndex++;
+      emitNextQuestion(io, room, code);
+    } else {
+      room.phase = 'gameEnd';
+      const finalStats = require('./game/gameLogic').computeStats(room.players, room.answers, room.scores);
+      io.to(code).emit('game_ended', { finalScores: room.scores, players: room.players, stats: finalStats });
+      mergeToGlobalScores(io, room, room.scores);
+    }
   });
 
   socket.on('submit_vote', ({ code, votedPlayerId }) => {
@@ -956,7 +968,7 @@ io.on('connection', (socket) => {
     const connectedPlayersCount = activePlayers(room).length;
     const expectedVotes = connectedPlayersCount - 1; // Author doesn't vote
 
-    io.to(code).emit('vote_received', { votedCount: currentAnswer.votes.length, totalPlayers: expectedVotes });
+    io.to(code).emit('vote_received', { votedCount: currentAnswer.votes.length, totalPlayers: expectedVotes, votedPlayerIds: currentAnswer.votes.map(v => v.voterId) });
 
     if (currentAnswer.votes.length >= expectedVotes) {
       io.to(code).emit('all_votes_in', { currentIndex: room.currentAnswerIndex });
@@ -2481,7 +2493,7 @@ io.on('connection', (socket) => {
       featuredOwnerId: room.caption.featuredOwnerId,
       featuredOwnerName: owner?.name || '?',
       featuredPhotoData: room.caption.photos[room.caption.featuredOwnerId],
-      writers: playingPlayers.filter(p => p.id !== room.caption.featuredOwnerId).map(p => ({ id: p.id, name: p.name })),
+      writers: playingPlayers.map(p => ({ id: p.id, name: p.name })),
     });
   }
 
@@ -2490,8 +2502,6 @@ io.on('connection', (socket) => {
     if (!room || room.phase !== 'caption' || room.caption.phase !== 'writing') return;
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
-    // Owner can't write a caption for their own photo
-    if (player.id === room.caption.featuredOwnerId) return;
     if (room.caption.captions[player.id]) return; // already submitted
 
     if (!text || typeof text !== 'string') return;
@@ -2501,7 +2511,7 @@ io.on('connection', (socket) => {
     const captionId = `cap_${player.id}_${Date.now()}`;
     room.caption.captions[player.id] = { id: captionId, playerId: player.id, text: sanitized };
 
-    const writers = room.players.filter(p => p.isConnected && p.isPlaying && p.id !== room.caption.featuredOwnerId);
+    const writers = room.players.filter(p => p.isConnected && p.isPlaying);
     const submittedCount = Object.keys(room.caption.captions).length;
     io.to(code).emit('caption:caption_submitted', { playerId: player.id, submittedCount, totalCount: writers.length });
 
@@ -2610,18 +2620,10 @@ io.on('connection', (socket) => {
       });
     } else {
       room.caption.currentRound++;
-      // New photo phase for next round
-      room.caption.phase = 'photo';
-      room.caption.photos = {};
+      // Reuse existing photos — skip the photo collection phase
       room.caption.captions = {};
       room.caption.votes = {};
-      const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
-      const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
-      io.to(code).emit('caption:photo_phase', {
-        round: room.caption.currentRound,
-        totalRounds: room.caption.totalRounds,
-        players,
-      });
+      startCaptionWritingPhase(io, room, code);
     }
   });
 
@@ -2873,6 +2875,10 @@ io.on('connection', (socket) => {
     room.gameType = newGameType;
     room.phase = 'lobby';
     room.players.forEach(p => { p.isReady = false; });
+    // When switching to mixed, reset selectedSubGames to defaults so all types are active
+    if (newGameType === 'mixed') {
+      room.selectedSubGames = ['who-said-that', 'situational', 'this-or-that'];
+    }
     // Reset all game-specific state
     room.mlt = { phase: 'waiting', prompts: [], currentPromptIndex: 0, votes: {}, scores: {}, leaderboard: [] };
     room.draw = { phase: 'waiting', rounds: [], currentRound: 0, submissions: {}, votes: {}, scores: {}, leaderboard: [] };
