@@ -4,6 +4,7 @@ import { socket } from '../socket';
 import { translations } from '../locales/translations';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
+import VoteLocked from '../components/game/VoteLocked';
 
 export default function ThisOrThatPage() {
   const { state, dispatch } = useGame();
@@ -113,12 +114,12 @@ export default function ThisOrThatPage() {
           </button>
 
           {tot.hasVoted && (
-            <div className="text-center mt-2">
-              <p className="text-[#FFE66D] font-['Fredoka_One'] text-lg">{t.voteLocked}</p>
-              <p className="text-gray-400 font-['Nunito'] text-sm mt-1">
-                {tot.voteCount} / {tot.totalVoters} {t.votesIn}
-              </p>
-            </div>
+            <VoteLocked
+              label={t.voteLocked}
+              voteCount={tot.voteCount}
+              totalVoters={tot.totalVoters}
+              accentColor="#FFE66D"
+            />
           )}
 
           {!tot.hasVoted && (

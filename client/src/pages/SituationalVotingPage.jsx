@@ -5,6 +5,7 @@ import { translations } from '../locales/translations';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
 import VoteCoin from '../components/game/VoteCoin';
+import VoteLocked from '../components/game/VoteLocked';
 
 export default function SituationalVotingPage() {
   const { state, dispatch } = useGame();
@@ -151,8 +152,13 @@ export default function SituationalVotingPage() {
           </div>
 
           {sit.hasVoted && (
-            <div className="mt-6 text-center">
-              <p className="text-[#4ECDC4] font-['Fredoka_One'] text-lg">{t.voteLockedMsg}</p>
+            <div className="mt-6">
+              <VoteLocked
+                label={t.voteLockedMsg}
+                voteCount={sit.voteCount}
+                totalVoters={sit.totalVoters}
+                accentColor="#4ECDC4"
+              />
             </div>
           )}
         </>

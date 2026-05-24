@@ -1312,6 +1312,12 @@ function SimplePhotoHostPanel({ label, phase, players, onSkipToResults, onNextRo
         <p className="text-sm font-['Nunito'] text-gray-400">{activePlayers.length} active players</p>
       </div>
 
+      {(phase === 'voting') && (
+        <button onClick={onSkipToResults} className="w-full py-3 rounded-2xl bg-[#FFE66D] text-black font-['Fredoka_One'] text-lg">
+          🏆 Show Results
+        </button>
+      )}
+
       {(phase === 'results') && (
         <button onClick={onNextRound} className="w-full py-3 rounded-2xl bg-[#4ECDC4] text-black font-['Fredoka_One'] text-lg">
           Next Round ▶️
@@ -1713,7 +1719,7 @@ function CreateRoomForm({ onSubmit, onBack }) {
 // ─── Host control bar (creator only) ─────────────────────────────────────────
 // QUEUE_GAME_LABELS imported from '../config/hostControls'
 
-function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbData, photoVoteData, isMixedMode, onStart, onMltPauseResume, onMltChangeQuestion, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, onNewGame, onPlayAgain, onNewPartyPack, gameQueue, queueIndex, onSelfieNextRound, onSelfieSkipQuestion, onShowSelfieResults, onFitbChangeQuestion, onFitbSkipToVote, onFitbShowResults, onFitbNextRound, onPhotoVoteChangeQuestion, onPhotoVoteSkipToResults, onPhotoVoteNextRound }) {
+function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbData, photoVoteData, captionData, isMixedMode, onStart, onMltPauseResume, onMltChangeQuestion, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, onNewGame, onPlayAgain, onNewPartyPack, gameQueue, queueIndex, onSelfieNextRound, onSelfieSkipQuestion, onShowSelfieResults, onFitbChangeQuestion, onFitbSkipToVote, onFitbShowResults, onFitbNextRound, onPhotoVoteChangeQuestion, onPhotoVoteSkipToResults, onPhotoVoteNextRound, onCaptionSkipToVoting, onCaptionSkipToResults, onCaptionNextRound }) {
   if (!isRoomCreator) return null;
 
   const playingCount = players.filter(p => p.isPlaying && p.isConnected).length;
@@ -1906,13 +1912,49 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
       );
     }
   } else if (status === 'caption') {
-    controls = (
-      <div className="flex gap-3">
-        <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-          🔀 Skip Mini Game
-        </button>
-      </div>
-    );
+    const capPhase = captionData?.phase;
+    if (capPhase === 'writing') {
+      controls = (
+        <div className="flex gap-3">
+          <button onClick={onCaptionSkipToVoting} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FD79A8] hover:text-[#FD79A8] active:scale-95 transition">
+            🗳️ Show Captions
+          </button>
+          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+            🔀 Skip Mini Game
+          </button>
+        </div>
+      );
+    } else if (capPhase === 'voting') {
+      controls = (
+        <div className="flex gap-3">
+          <button onClick={onCaptionSkipToResults} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FFE66D] hover:text-[#FFE66D] active:scale-95 transition">
+            🏆 Show Results
+          </button>
+          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+            🔀 Skip Mini Game
+          </button>
+        </div>
+      );
+    } else if (capPhase === 'results') {
+      controls = (
+        <div className="flex gap-3">
+          <button onClick={onCaptionNextRound} className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#FD79A8] text-black hover:opacity-90 active:scale-95 transition" style={{ boxShadow: '0 0 20px #FD79A840' }}>
+            Next Round →
+          </button>
+          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+            🔀 Skip Mini Game
+          </button>
+        </div>
+      );
+    } else {
+      controls = (
+        <div className="flex gap-3">
+          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+            🔀 Skip Mini Game
+          </button>
+        </div>
+      );
+    }
   } else if (status === 'photovote') {
     const pvPhase = photoVoteData?.phase;
     if (pvPhase === 'voting') {
@@ -2974,6 +3016,10 @@ export default function HostPage() {
         onPhotoVoteChangeQuestion={() => socketRef.current?.emit('photovote:change_question', { code: gameInfo.code })}
         onPhotoVoteSkipToResults={() => socketRef.current?.emit('photovote:skip_to_results', { code: gameInfo.code })}
         onPhotoVoteNextRound={() => socketRef.current?.emit('photovote:next_round', { code: gameInfo.code })}
+        captionData={captionData}
+        onCaptionSkipToVoting={() => socketRef.current?.emit('caption:skip_to_voting', { code: gameInfo.code })}
+        onCaptionSkipToResults={() => socketRef.current?.emit('caption:skip_to_results', { code: gameInfo.code })}
+        onCaptionNextRound={() => socketRef.current?.emit('caption:next_round', { code: gameInfo.code })}
       />
     </div>
   );

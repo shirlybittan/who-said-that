@@ -2563,6 +2563,14 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('caption:skip_to_voting', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'caption' || room.caption.phase !== 'writing') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+    startCaptionVotingPhase(io, room, code);
+  });
+
   socket.on('caption:skip_to_results', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'caption') return;
