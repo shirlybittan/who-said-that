@@ -22,12 +22,12 @@ const GAME_TYPE_LABELS = {
   'this-or-that': '⚡ This or That',
   'most-likely-to': '👑 Most Likely To',
   'mixed': '🎲 Mixed',
-  'drawing': '🎨 Sketch It!',
+  'drawing': '🎨 Pictionary Battle',
   'fill-in-the-blank': '✏️ Fill in the Blank',
-  'selfie-roast': '🎨 Selfie Artist',
+  'selfie-roast': '📸 Draw on Friends',
   'caption': '💬 Selfie Captions',
-  'pmatch': '🎯 Who Fits?',
-  'photoassoc': '🏆 Photo Traits',
+  'pmatch': '� Selfie Challenge',
+  'photoassoc': '🎯 Prompt Match',
 };
 
 // ─── Shared sub-components ───────────────────────────────────────────────────
@@ -1196,7 +1196,7 @@ function PhotoVoteHostPanel({ photoVoteData, players }) {
     round = 0, totalRounds = 5, leaderboard = [],
   } = photoVoteData || {};
   const activePlayers = players.filter(p => p.isPlaying !== false && p.isConnected !== false);
-  const label = subType === 'photoassoc' ? '🏆 Photo Traits' : '🎯 Who Fits?';
+  const label = subType === 'photoassoc' ? '� Prompt Match' : '🎭 Selfie Challenge';
   const color = subType === 'photoassoc' ? '#A29BFE' : '#FDCB6E';
 
   if (phase === 'photo') {
@@ -1306,11 +1306,7 @@ function SimplePhotoHostPanel({ label, phase, players, onSkipToResults, onNextRo
         <p className="text-lg font-['Fredoka_One'] text-white mb-2 capitalize">Phase: {phase || '—'}</p>
         <p className="text-sm font-['Nunito'] text-gray-400">{activePlayers.length} active players</p>
       </div>
-      {(phase === 'voting') && (
-        <button onClick={onSkipToResults} className="w-full py-3 rounded-2xl bg-[#FFE66D] text-black font-['Fredoka_One'] text-lg">
-          Skip to Results ⏭️
-        </button>
-      )}
+
       {(phase === 'results') && (
         <button onClick={onNextRound} className="w-full py-3 rounded-2xl bg-[#4ECDC4] text-black font-['Fredoka_One'] text-lg">
           Next Round ▶️
@@ -1390,12 +1386,12 @@ const GAME_TYPES_FOR_CREATE = [
   { id: 'who-said-that',     label: '🤔 Who Said That?',      desc: 'Guess who wrote it!',            accent: '#FFE66D' },
   { id: 'situational',       label: '🎭 Situational',         desc: 'Answer for someone!',            accent: '#A8E6CF' },
   { id: 'this-or-that',      label: '⚡ This or That',        desc: 'Pick a side!',                   accent: '#6C5CE7' },
-  { id: 'drawing',           label: '🎨 Sketch It!',          desc: 'Draw and guess!',                accent: '#C39BD3' },
+  { id: 'drawing',           label: '🎨 Pictionary Battle',    desc: 'Draw and guess!',                accent: '#C39BD3' },
   { id: 'fill-in-the-blank', label: '✏️ Fill in the Blank',  desc: 'Finish the sentence!',           accent: '#F9CA24' },
   { id: 'selfie-roast',      label: '📸 Selfie Artist',       desc: "Draw on someone's selfie!",     accent: '#FD79A8' },
   { id: 'caption',           label: '💬 Selfie Captions',     desc: 'Write funny captions!',          accent: '#FD79A8' },
-  { id: 'pmatch',            label: '🎯 Who Fits?',           desc: 'Match people to prompts!',       accent: '#FDCB6E' },
-  { id: 'photoassoc',        label: '🏆 Photo Traits',        desc: 'Vote who matches the vibe!',     accent: '#A29BFE' },
+  { id: 'pmatch',            label: '� Selfie Challenge',    desc: 'Act out a prompt — best selfie wins!', accent: '#FDCB6E' },
+  { id: 'photoassoc',        label: '🎯 Prompt Match',        desc: 'Vote who matches the vibe!',     accent: '#A29BFE' },
   { id: 'mixed',             label: '🎲 Mixed',               desc: 'All modes shuffled!',            accent: '#FF8B94' },
   { id: 'playlist',          label: '📋 Playlist',            desc: 'Play multiple games in order!',  accent: '#FDCB6E', colSpan: 2 },
 ];
@@ -1460,7 +1456,7 @@ const MIXED_SUB_GAMES = [
   { id: 'who-said-that', label: '🤔 Who Said That?', accent: '#FFE66D' },
   { id: 'situational',   label: '🎭 Situational',   accent: '#A8E6CF' },
   { id: 'this-or-that',  label: '⚡ This or That',  accent: '#6C5CE7' },
-  { id: 'drawing',       label: '🎨 Sketch It!',    accent: '#C39BD3' },
+  { id: 'drawing',       label: '🎨 Pictionary Battle',  accent: '#C39BD3' },
 ];
 
 const DEFAULT_SUB_GAMES = ['who-said-that', 'situational', 'this-or-that', 'drawing'];
@@ -1524,12 +1520,12 @@ function CreateRoomForm({ onSubmit, onBack }) {
     { id: 'who-said-that',  label: '🤔 Who Said That?', accent: '#FFE66D' },
     { id: 'situational',   label: '🎭 Situational',   accent: '#A8E6CF' },
     { id: 'this-or-that',  label: '⚡ This or That',  accent: '#6C5CE7' },
-    { id: 'drawing',       label: '🎨 Sketch It!',    accent: '#C39BD3' },
+    { id: 'drawing',       label: '🎨 Pictionary Battle',  accent: '#C39BD3' },
     { id: 'fill-in-the-blank', label: '✏️ Fill in the Blank', accent: '#F9CA24' },
-    { id: 'selfie-roast',  label: '📸 Selfie Artist', accent: '#FD79A8' },
+    { id: 'selfie-roast',  label: '📸 Draw on Friends', accent: '#FD79A8' },
     { id: 'caption',       label: '💬 Selfie Captions', accent: '#FD79A8' },
-    { id: 'pmatch',        label: '🎯 Who Fits?',       accent: '#FDCB6E' },
-    { id: 'photoassoc',    label: '🏆 Photo Traits',    accent: '#A29BFE' },
+    { id: 'pmatch',        label: '� Selfie Challenge', accent: '#FDCB6E' },
+    { id: 'photoassoc',    label: '🎯 Prompt Match',     accent: '#A29BFE' },
   ];
 
   return (
@@ -1920,9 +1916,6 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
           <button onClick={onPhotoVoteChangeQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FDCB6E] hover:text-[#FDCB6E] active:scale-95 transition">
             🔄 Change Question
           </button>
-          <button onClick={onPhotoVoteSkipToResults} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FDCB6E] text-[#FDCB6E] hover:bg-[#FDCB6E]/10 active:scale-95 transition">
-            ⏭ Skip to Results
-          </button>
           <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
             🔀 Skip Mini Game
           </button>
@@ -2104,6 +2097,7 @@ export default function HostPage() {
   const [showGamePicker, setShowGamePicker] = useState(false);
   // Main menu overlay
   const [showMainMenu, setShowMainMenu] = useState(false);
+  const [mainMenuKeepPoints, setMainMenuKeepPoints] = useState(true);
 
   const socketRef = useRef(null);
 
@@ -2804,42 +2798,66 @@ export default function HostPage() {
       {showMainMenu && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={() => setShowMainMenu(false)}>
           <div
-            className="relative bg-[#1A1A2E] border border-[#2D2D44] rounded-3xl p-6 w-full max-w-sm mx-4 shadow-2xl"
+            className="relative bg-[#1A1A2E] border border-[#2D2D44] rounded-3xl p-6 w-full max-w-md mx-4 shadow-2xl max-h-[90vh] overflow-y-auto"
             onClick={e => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-2xl font-['Fredoka_One'] text-[#F7F7F7]">🏠 Main Menu</h2>
               <button onClick={() => setShowMainMenu(false)} className="text-gray-500 hover:text-white text-2xl leading-none transition">✕</button>
             </div>
-            <p className="text-sm font-['Nunito'] text-gray-400 mb-5 text-center">Return to lobby to choose a new game. What should happen to the current points?</p>
-            <div className="flex flex-col gap-3">
+
+            {/* Points toggle */}
+            <div className="flex gap-2 mb-5">
               <button
-                onClick={() => {
-                  const sock = socketRef.current;
-                  const code = gameInfo.code;
-                  if (!sock || !code) return;
-                  sock.emit('change_game', { code, newGameType: creatorSettings.gameType || gameInfo.gameType || 'who-said-that' });
-                  setShowMainMenu(false);
-                }}
-                className="py-3 px-5 rounded-2xl font-['Fredoka_One'] text-lg bg-[#4ECDC4] text-black hover:bg-[#3dbdb5] active:scale-95 transition text-left"
+                onClick={() => setMainMenuKeepPoints(true)}
+                className={`flex-1 py-2 rounded-xl font-['Fredoka_One'] text-sm transition active:scale-95 ${mainMenuKeepPoints ? 'bg-[#4ECDC4] text-black' : 'bg-[#2D2D44] text-gray-400 hover:text-white'}`}
               >
                 🏆 Keep Points
-                <p className="text-xs font-['Nunito'] font-normal mt-0.5 text-black/70">Return to lobby, keep accumulated scores</p>
               </button>
               <button
-                onClick={() => {
-                  const sock = socketRef.current;
-                  const code = gameInfo.code;
-                  if (!sock || !code) return;
-                  sock.emit('reset_global_scores', { code });
-                  sock.emit('change_game', { code, newGameType: creatorSettings.gameType || gameInfo.gameType || 'who-said-that' });
-                  setShowMainMenu(false);
-                }}
-                className="py-3 px-5 rounded-2xl font-['Fredoka_One'] text-lg bg-[#FF6B6B] text-white hover:bg-[#ff5252] active:scale-95 transition text-left"
+                onClick={() => setMainMenuKeepPoints(false)}
+                className={`flex-1 py-2 rounded-xl font-['Fredoka_One'] text-sm transition active:scale-95 ${!mainMenuKeepPoints ? 'bg-[#FF6B6B] text-white' : 'bg-[#2D2D44] text-gray-400 hover:text-white'}`}
               >
                 🔄 Start Fresh
-                <p className="text-xs font-['Nunito'] font-normal mt-0.5 text-white/70">Return to lobby, reset all scores to zero</p>
               </button>
+            </div>
+
+            <p className="text-xs font-['Nunito'] text-gray-500 mb-4 text-center">Choose the next mini game — same room &amp; players</p>
+
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { id: 'most-likely-to',    label: '👑 Most Likely To',      accent: '#4ECDC4' },
+                { id: 'who-said-that',     label: '🤔 Who Said That?',      accent: '#FFE66D' },
+                { id: 'situational',       label: '💭 Situational',         accent: '#6C5CE7' },
+                { id: 'this-or-that',      label: '🆚 This or That',        accent: '#A29BFE' },
+                { id: 'drawing',           label: '🎨 Pictionary Battle',   accent: '#C39BD3' },
+                { id: 'fill-in-the-blank', label: '✏️ Fill in the Blank',  accent: '#55EFC4' },
+                { id: 'selfie-roast',      label: '📸 Draw on Friends',     accent: '#FD79A8' },
+                { id: 'caption',           label: '💬 Selfie Captions',     accent: '#FD79A8' },
+                { id: 'pmatch',            label: '🎭 Selfie Challenge',    accent: '#FDCB6E' },
+                { id: 'photoassoc',        label: '🎯 Prompt Match',        accent: '#A29BFE' },
+                { id: 'mixed',             label: '🎲 Mixed Pack',          accent: '#FDCB6E', colSpan: true },
+              ].map(g => (
+                <button
+                  key={g.id}
+                  onClick={() => {
+                    const sock = socketRef.current;
+                    const code = gameInfo.code;
+                    if (!sock || !code) return;
+                    if (!mainMenuKeepPoints) sock.emit('reset_global_scores', { code });
+                    sock.emit('change_game', { code, newGameType: g.id });
+                    setCreatorSettings(prev => ({ ...prev, gameType: g.id }));
+                    setGameQueue([]);
+                    setQueueIndex(0);
+                    setShowMainMenu(false);
+                  }}
+                  className={`py-3 px-4 rounded-2xl font-['Fredoka_One'] text-sm text-black active:scale-95 hover:opacity-90 transition text-left${g.colSpan ? ' col-span-2 text-center' : ''}`}
+                  style={{ backgroundColor: g.accent }}
+                >
+                  {g.label}
+                  {g.id === gameInfo.gameType && <span className="ml-1 text-xs opacity-60">(current)</span>}
+                </button>
+              ))}
             </div>
           </div>
         </div>
@@ -2863,12 +2881,12 @@ export default function HostPage() {
                 { id: 'who-said-that',     label: '🤔 Who Said That?',      accent: '#FFE66D' },
                 { id: 'situational',       label: '💭 Situational',         accent: '#6C5CE7' },
                 { id: 'this-or-that',      label: '🆚 This or That',        accent: '#A29BFE' },
-                { id: 'drawing',           label: '🎨 Sketch It!',          accent: '#C39BD3' },
+                { id: 'drawing',           label: '🎨 Pictionary Battle',   accent: '#C39BD3' },
                 { id: 'fill-in-the-blank', label: '✏️ Fill in the Blank',  accent: '#55EFC4' },
-                { id: 'selfie-roast',      label: '📸 Selfie Artist',       accent: '#FD79A8' },
+                { id: 'selfie-roast',      label: '📸 Draw on Friends',     accent: '#FD79A8' },
                 { id: 'caption',           label: '💬 Selfie Captions',     accent: '#FD79A8' },
-                { id: 'pmatch',            label: '🎯 Who Fits?',           accent: '#FDCB6E' },
-                { id: 'photoassoc',        label: '🏆 Photo Traits',        accent: '#A29BFE' },
+                { id: 'pmatch',            label: '� Selfie Challenge',    accent: '#FDCB6E' },
+                { id: 'photoassoc',        label: '🎯 Prompt Match',        accent: '#A29BFE' },
                 { id: 'mixed',             label: '🎲 Mixed Pack',          accent: '#FDCB6E' },
               ].map(g => (
                 <button

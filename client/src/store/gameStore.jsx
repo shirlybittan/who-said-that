@@ -937,6 +937,7 @@ export const gameReducer = (state, action) => {
           totalPhotographers: (action.payload.players || []).length,
           hasSubmittedPhoto: false,
           photoSubmittedCount: 0,
+          prompt: action.payload.prompt || null,
         },
       };
     case 'PHOTOVOTE_PHOTO_SUBMITTED':

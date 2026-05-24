@@ -2689,12 +2689,21 @@ io.on('connection', (socket) => {
       return;
     }
 
+    // For Selfie Challenge (pmatch), pre-resolve the prompt so players know what to pose for
+    let photoPhasePrompt = undefined;
+    if (subType === 'pmatch' && pvPlayers.length > 0) {
+      const firstRaw = room.photoVote.prompts[0];
+      photoPhasePrompt = resolvePhotoVotePrompt(firstRaw, pvPlayers);
+      room.photoVote.pendingPrompt = photoPhasePrompt;
+    }
+
     const players = pvPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
     io.to(code).emit('photovote:photo_phase', {
       subType,
       round: 1,
       totalRounds: room.photoVote.totalRounds,
       players,
+      prompt: photoPhasePrompt,
     });
 
     // Notify pre-loaded players
@@ -2744,12 +2753,17 @@ io.on('connection', (socket) => {
     room.photoVote.phase = 'voting';
     room.photoVote.votes = {};
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
-    const rawPrompt = room.photoVote.prompts[room.photoVote.currentPromptIndex] || 'Strike your best pose!';
-    const prompt = resolvePhotoVotePrompt(rawPrompt, playingPlayers);
+    let prompt;
+    if (room.photoVote.pendingPrompt) {
+      prompt = room.photoVote.pendingPrompt;
+      room.photoVote.pendingPrompt = null;
+      room.photoVote.currentPromptIndex++;
+    } else {
+      const rawPrompt = room.photoVote.prompts[room.photoVote.currentPromptIndex] || 'Strike your best pose!';
+      prompt = resolvePhotoVotePrompt(rawPrompt, playingPlayers);
+      room.photoVote.currentPromptIndex++;
+    }
     room.photoVote.currentPrompt = prompt;
-    room.photoVote.currentPromptIndex++;
-
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
     const photoList = playingPlayers.map(p => ({
       playerId: p.id,
       playerName: p.name,
