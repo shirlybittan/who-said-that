@@ -50,9 +50,10 @@ const selectMixedQuestions = (count, mode, customQuestions = [], selectedTypes =
 
   // If no valid types matched, fall back to WST
   const activeSlots = typeSlots.length > 0 ? typeSlots : ['wst'];
+  const effectiveUseWst = useWst || activeSlots.includes('wst');
 
   // Build one question per slot (repeat pattern if count > number of types)
-  const wstPool = useWst ? shuffle(mode === 'family' ? familyQuestions : friendsQuestions) : [];
+  const wstPool = effectiveUseWst ? shuffle(mode === 'family' ? familyQuestions : friendsQuestions) : [];
   const sitPool = useSit ? shuffle(situationalQuestions) : [];
   const totPool = useTot ? shuffle(thisOrThatQuestions) : [];
   const drawPool = useDraw ? shuffle(drawingWords) : [];

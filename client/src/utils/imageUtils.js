@@ -27,7 +27,7 @@ export function compressPhoto(file, maxSize = MAX_PHOTO_SIZE, quality = JPEG_QUA
       canvas.getContext('2d').drawImage(img, 0, 0, width, height);
       resolve(canvas.toDataURL('image/jpeg', quality));
     };
-    img.onerror = reject;
+    img.onerror = (err) => { URL.revokeObjectURL(url); reject(err); };
     img.src = url;
   });
 }

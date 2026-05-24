@@ -18,7 +18,7 @@ const COLORS = ['#FF6B6B', '#4ECDC4', '#FFE66D', '#A8E6CF', '#FF8B94', '#6C5CE7'
 
 const GAME_TYPE_LABELS = {
   'who-said-that': '🤔 Who Said That?',
-  'situational': '🎭 Situational',
+  'situational': ' Situational',
   'this-or-that': '⚡ This or That',
   'most-likely-to': '👑 Most Likely To',
   'mixed': '🎲 Mixed',
@@ -26,7 +26,7 @@ const GAME_TYPE_LABELS = {
   'fill-in-the-blank': '✏️ Fill in the Blank',
   'selfie-roast': '📸 Draw on Friends',
   'caption': '💬 Selfie Captions',
-  'pmatch': '� Selfie Challenge',
+  'pmatch': '🎭 Selfie Challenge',
   'photoassoc': '🎯 Prompt Match',
 };
 
@@ -452,10 +452,10 @@ function QuestionPanel({ questionData, players }) {
           Round {questionData.round} of {questionData.totalRounds}
         </span>
         <span className="text-sm font-['Nunito'] text-gray-500 capitalize">
-          {questionData.type === 'situational' ? '🎭 Situational' : '🤔 Who Said That?'}
+          {questionData.type === 'situational' ? ' Situational' : '🤔 Who Said That?'}
         </span>
       </div>
-      <TimerRing secondsLeft={secondsLeft} paused={false} size={100} />
+      <TimerRing secondsLeft={secondsLeft} total={questionData.roundDuration || 60} paused={false} size={100} />
 
       {questionData.type === 'situational' && questionData.target && (
         <div className="flex items-center gap-3 bg-[#A8E6CF]/10 border border-[#A8E6CF]/30 rounded-2xl px-5 py-3">
@@ -732,7 +732,7 @@ function SitPanel({ sitData, players }) {
     return (
       <div className="flex flex-col items-center gap-6 w-full max-w-4xl">
         <div className="text-center">
-          <p className="text-xs font-['Nunito'] text-gray-400 uppercase tracking-widest mb-2">🎭 Situational · Results</p>
+          <p className="text-xs font-['Nunito'] text-gray-400 uppercase tracking-widest mb-2"> Situational · Results</p>
           <h2 className="text-2xl font-['Fredoka_One'] text-[#A8E6CF] leading-snug">{sitData.question}</h2>
         </div>
         <motion.div
@@ -778,7 +778,7 @@ function SitPanel({ sitData, players }) {
   return (
     <div className="flex flex-col items-center gap-8 w-full max-w-5xl">
       <div className="text-center">
-        <span className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">🎭 Situational</span>
+        <span className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest"> Situational</span>
       </div>
       <div className="w-full bg-[#1A1A2E] border-2 border-[#A8E6CF]/50 rounded-3xl p-10 text-center"
         style={{ boxShadow: '0 0 40px #A8E6CF10' }}>
@@ -914,7 +914,7 @@ function DrawingHostPanel({ drawData, players, status }) {
           <ProgressBar value={drawData.submittedCount} total={total} color="#C39BD3" />
         </div>
 
-        <TimerRing secondsLeft={drawData.secondsLeft ?? drawData.timeLimit ?? 90} paused={false} size={100} />
+        <TimerRing secondsLeft={drawData.secondsLeft ?? drawData.timeLimit ?? 90} total={drawData.timeLimit ?? 90} paused={false} size={100} />
 
         <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-4">
           <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-3 text-center">
@@ -1201,7 +1201,7 @@ function PhotoVoteHostPanel({ photoVoteData, players }) {
     round = 0, totalRounds = 5, leaderboard = [],
   } = photoVoteData || {};
   const activePlayers = players.filter(p => p.isPlaying !== false && p.isConnected !== false);
-  const label = subType === 'photoassoc' ? '� Prompt Match' : '🎭 Selfie Challenge';
+  const label = subType === 'photoassoc' ? '🎯 Prompt Match' : '🎭 Selfie Challenge';
   const color = subType === 'photoassoc' ? '#A29BFE' : '#FDCB6E';
 
   if (phase === 'photo') {
@@ -1525,13 +1525,13 @@ function SelfieHostPanel({ selfieData, players, onSkipToVote, onShowResults }) {
 const GAME_TYPES_FOR_CREATE = [
   { id: 'most-likely-to',    label: '👑 Most Likely To',      desc: 'Who fits the prompt?',           accent: '#4ECDC4' },
   { id: 'who-said-that',     label: '🤔 Who Said That?',      desc: 'Guess who wrote it!',            accent: '#FFE66D' },
-  { id: 'situational',       label: '🎭 Situational',         desc: 'Answer for someone!',            accent: '#A8E6CF' },
+  { id: 'situational',       label: ' Situational',         desc: 'Answer for someone!',            accent: '#A8E6CF' },
   { id: 'this-or-that',      label: '⚡ This or That',        desc: 'Pick a side!',                   accent: '#6C5CE7' },
   { id: 'drawing',           label: '🎨 Pictionary Battle',    desc: 'Draw and guess!',                accent: '#C39BD3' },
   { id: 'fill-in-the-blank', label: '✏️ Fill in the Blank',  desc: 'Finish the sentence!',           accent: '#F9CA24' },
   { id: 'selfie-roast',      label: '📸 Selfie Artist',       desc: "Draw on someone's selfie!",     accent: '#FD79A8' },
   { id: 'caption',           label: '💬 Selfie Captions',     desc: 'Write funny captions!',          accent: '#FD79A8' },
-  { id: 'pmatch',            label: '� Selfie Challenge',    desc: 'Act out a prompt — best selfie wins!', accent: '#FDCB6E' },
+  { id: 'pmatch',            label: '🎭 Selfie Challenge',    desc: 'Act out a prompt — best selfie wins!', accent: '#FDCB6E' },
   { id: 'photoassoc',        label: '🎯 Prompt Match',        desc: 'Vote who matches the vibe!',     accent: '#A29BFE' },
   { id: 'mixed',             label: '🎲 Mixed',               desc: 'All modes shuffled!',            accent: '#FF8B94' },
   { id: 'playlist',          label: '📋 Playlist',            desc: 'Play multiple games in order!',  accent: '#FDCB6E', colSpan: 2 },
@@ -1595,7 +1595,7 @@ function SetupScreen({ onCreateRoom, onSpectate }) {
 
 const MIXED_SUB_GAMES = [
   { id: 'who-said-that', label: '🤔 Who Said That?', accent: '#FFE66D' },
-  { id: 'situational',   label: '🎭 Situational',   accent: '#A8E6CF' },
+  { id: 'situational',   label: ' Situational',   accent: '#A8E6CF' },
   { id: 'this-or-that',  label: '⚡ This or That',  accent: '#6C5CE7' },
   { id: 'drawing',       label: '🎨 Pictionary Battle',  accent: '#C39BD3' },
 ];
@@ -1659,13 +1659,13 @@ function CreateRoomForm({ onSubmit, onBack }) {
   const PLAYLIST_GAME_OPTIONS = [
     { id: 'most-likely-to', label: '👑 Most Likely To', accent: '#4ECDC4' },
     { id: 'who-said-that',  label: '🤔 Who Said That?', accent: '#FFE66D' },
-    { id: 'situational',   label: '🎭 Situational',   accent: '#A8E6CF' },
+    { id: 'situational',   label: ' Situational',   accent: '#A8E6CF' },
     { id: 'this-or-that',  label: '⚡ This or That',  accent: '#6C5CE7' },
     { id: 'drawing',       label: '🎨 Pictionary Battle',  accent: '#C39BD3' },
     { id: 'fill-in-the-blank', label: '✏️ Fill in the Blank', accent: '#F9CA24' },
     { id: 'selfie-roast',  label: '📸 Draw on Friends', accent: '#FD79A8' },
     { id: 'caption',       label: '💬 Selfie Captions', accent: '#FD79A8' },
-    { id: 'pmatch',        label: '� Selfie Challenge', accent: '#FDCB6E' },
+    { id: 'pmatch',        label: '🎭 Selfie Challenge', accent: '#FDCB6E' },
     { id: 'photoassoc',    label: '🎯 Prompt Match',     accent: '#A29BFE' },
   ];
 
@@ -2297,6 +2297,7 @@ export default function HostPage() {
     });
 
     sock.on('mlt:timer', ({ secondsLeft }) => setMlt(prev => ({ ...prev, secondsLeft })));
+    sock.on('mlt:question_changed', (data) => setMlt(prev => ({ ...prev, currentPrompt: data.currentPrompt })));
     sock.on('mlt:paused', () => setMlt(prev => ({ ...prev, paused: true })));
     sock.on('mlt:resumed', ({ secondsLeft }) => setMlt(prev => ({ ...prev, paused: false, secondsLeft })));
     sock.on('mlt:vote_received', ({ voteCount, totalVoters }) => setMlt(prev => ({ ...prev, voteCount, totalVoters })));
@@ -3072,7 +3073,7 @@ export default function HostPage() {
                 { id: 'fill-in-the-blank', label: '✏️ Fill in the Blank',  accent: '#55EFC4' },
                 { id: 'selfie-roast',      label: '📸 Draw on Friends',     accent: '#FD79A8' },
                 { id: 'caption',           label: '💬 Selfie Captions',     accent: '#FD79A8' },
-                { id: 'pmatch',            label: '� Selfie Challenge',    accent: '#FDCB6E' },
+                { id: 'pmatch',            label: '🎭 Selfie Challenge',    accent: '#FDCB6E' },
                 { id: 'photoassoc',        label: '🎯 Prompt Match',        accent: '#A29BFE' },
                 { id: 'mixed',             label: '🎲 Mixed Pack',          accent: '#FDCB6E' },
               ].map(g => (
@@ -3164,3 +3165,6 @@ export default function HostPage() {
     </div>
   );
 }
+
+
+

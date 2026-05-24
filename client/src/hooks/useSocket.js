@@ -231,6 +231,10 @@ export const useSocket = () => {
       navigate('/mlt-vote');
     };
 
+    const onMltQuestionChanged = (data) => {
+      dispatch({ type: 'MLT_QUESTION_CHANGED', payload: data });
+    };
+
     const onMltTimer = (data) => {
       dispatch({ type: 'MLT_SET_TIMER', payload: data });
     };
@@ -518,6 +522,7 @@ export const useSocket = () => {
     socket.on('error', onError);
     socket.on('kicked', onKicked);
     socket.on('mlt:prompt', onMltPrompt);
+    socket.on('mlt:question_changed', onMltQuestionChanged);
     socket.on('mlt:timer', onMltTimer);
     socket.on('mlt:vote_received', onMltVoteReceived);
     socket.on('mlt:results', onMltResults);
@@ -619,6 +624,7 @@ export const useSocket = () => {
       socket.off('error', onError);
       socket.off('kicked', onKicked);
       socket.off('mlt:prompt', onMltPrompt);
+      socket.off('mlt:question_changed', onMltQuestionChanged);
       socket.off('mlt:timer', onMltTimer);
       socket.off('mlt:vote_received', onMltVoteReceived);
       socket.off('mlt:results', onMltResults);

@@ -447,6 +447,14 @@ export const gameReducer = (state, action) => {
           gameName: action.payload.gameName !== undefined ? action.payload.gameName : state.mlt.gameName,
         },
       };
+    case 'MLT_QUESTION_CHANGED':
+      return {
+        ...state,
+        mlt: {
+          ...state.mlt,
+          prompt: action.payload.currentPrompt,
+        },
+      };
     case 'MLT_SET_TIMER':
       return { ...state, mlt: { ...state.mlt, secondsLeft: action.payload.secondsLeft } };
     case 'MLT_VOTE_RECEIVED':

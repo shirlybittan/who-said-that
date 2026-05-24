@@ -37,10 +37,13 @@ export default function Leaderboard({ entries = [], accentColor = '#FFE66D', pts
               show: { opacity: 1, x: 0, transition: { duration: 0.35 } },
             }}
             className={`flex items-center gap-4 rounded-2xl px-5 py-4 border-2 transition-all ${
-              isFirst
-                ? 'bg-[#2E2000] border-[#FFE66D] shadow-[0_0_20px_rgba(255,230,109,0.2)]'
-                : 'bg-[#1A1A2E] border-[#2D2D44]'
+              isFirst ? '' : 'bg-[#1A1A2E] border-[#2D2D44]'
             }`}
+            style={isFirst ? {
+              backgroundColor: `${accentColor}15`,
+              borderColor: accentColor,
+              boxShadow: `0 0 20px ${accentColor}33`,
+            } : undefined}
           >
             <span className="font-['Fredoka_One'] text-2xl w-8 text-center flex-shrink-0">
               {MEDALS[i] || `${i + 1}`}
@@ -55,9 +58,8 @@ export default function Leaderboard({ entries = [], accentColor = '#FFE66D', pts
 
             <div className="flex-1 min-w-0">
               <p
-                className={`font-['Fredoka_One'] text-lg truncate ${
-                  isFirst ? 'text-[#FFE66D]' : 'text-white'
-                }`}
+                className="font-['Fredoka_One'] text-lg truncate"
+                style={isFirst ? { color: accentColor } : { color: 'white' }}
               >
                 {entry.name}
               </p>

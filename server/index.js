@@ -2315,15 +2315,26 @@ io.on('connection', (socket) => {
     if (room.selfie.round >= room.selfie.totalRounds) return;
 
     room.selfie.round++;
+    // Reuse existing photos from playerPhotos bank
     room.selfie.phase = 'photo';
     room.selfie.photos = {};
+    const savedPhotos = room.playerPhotos || {};
+    room.players.forEach(p => {
+      if (p.isConnected && p.isPlaying && savedPhotos[p.id]) {
+        room.selfie.photos[p.id] = savedPhotos[p.id];
+      }
+    });
     room.selfie.assignments = {};
     room.selfie.strokes = {};
     room.selfie.votes = {};
 
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
-    const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
-    io.to(code).emit('selfie:photo_phase', { round: room.selfie.round, totalRounds: room.selfie.totalRounds, players });
+    if (Object.keys(room.selfie.photos).length >= playingPlayers.length) {
+      assignSelfieDrawers(io, room, code);
+    } else {
+      const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
+      io.to(code).emit('selfie:photo_phase', { round: room.selfie.round, totalRounds: room.selfie.totalRounds, players });
+    }
   });
 
   socket.on('selfie:skip_question', ({ code }) => {
@@ -2360,12 +2371,22 @@ io.on('connection', (socket) => {
       // In photo (or other) phase — reset everything and restart photo submission
       room.selfie.phase = 'photo';
       room.selfie.photos = {};
+      const savedPhotos = room.playerPhotos || {};
+      room.players.forEach(p => {
+        if (p.isConnected && p.isPlaying && savedPhotos[p.id]) {
+          room.selfie.photos[p.id] = savedPhotos[p.id];
+        }
+      });
       room.selfie.assignments = {};
       room.selfie.strokes = {};
       room.selfie.votes = {};
       const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
-      const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
-      io.to(code).emit('selfie:photo_phase', { round: room.selfie.round, totalRounds: room.selfie.totalRounds, players });
+      if (Object.keys(room.selfie.photos).length >= playingPlayers.length) {
+        assignSelfieDrawers(io, room, code);
+      } else {
+        const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
+        io.to(code).emit('selfie:photo_phase', { round: room.selfie.round, totalRounds: room.selfie.totalRounds, players });
+      }
     }
   });
 
@@ -2704,12 +2725,13 @@ io.on('connection', (socket) => {
       scores: {},
     };
 
-    // Pre-populate photos from persistent selfie bank
-    const pvSaved = room.playerPhotos || {};
-    const pvPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
-    pvPlayers.forEach(p => {
-      if (pvSaved[p.id]) room.photoVote.photos[p.id] = pvSaved[p.id];
-    });
+    // Pre-populate photos from persistent selfie bank (except for pmatch which needs custom photos per prompt)
+    if (subType !== 'pmatch') {
+      const pvSaved = room.playerPhotos || {};
+      pvPlayers.forEach(p => {
+        if (pvSaved[p.id]) room.photoVote.photos[p.id] = pvSaved[p.id];
+      });
+    }
 
     // If all photos already available, skip photo phase
     if (Object.keys(room.photoVote.photos).length >= pvPlayers.length) {
@@ -2837,6 +2859,28 @@ io.on('connection', (socket) => {
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isHost) return;
 
+    if (room.photoVote.subType === 'pmatch') {
+      room.photoVote.phase = 'photo';
+      room.photoVote.photos = {};
+      room.photoVote.votes = {};
+      room.photoVote.currentPromptIndex++;
+      
+      const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+      const nextIndex = room.photoVote.currentPromptIndex % room.photoVote.prompts.length;
+      const rawNextPrompt = room.photoVote.prompts[nextIndex];
+      const photoPhasePrompt = resolvePhotoVotePrompt(rawNextPrompt, playingPlayers);
+      room.photoVote.pendingPrompt = photoPhasePrompt;
+      
+      io.to(code).emit('photovote:photo_phase', {
+        subType: room.photoVote.subType,
+        round: room.photoVote.currentRound,
+        totalRounds: room.photoVote.totalRounds,
+        players: playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color })),
+        prompt: photoPhasePrompt,
+      });
+      return;
+    }
+
     // Reset votes and pick the next prompt
     room.photoVote.votes = {};
     const playingPlayersForPrompt = room.players.filter(p => p.isConnected && p.isPlaying);
@@ -2932,9 +2976,29 @@ io.on('connection', (socket) => {
       });
     } else {
       room.photoVote.currentRound++;
-      room.photoVote.phase = 'voting';
-      room.photoVote.votes = {};
-      startPhotoVoteRound(io, room, code);
+      
+      if (room.photoVote.subType === 'pmatch') {
+        room.photoVote.phase = 'photo';
+        room.photoVote.photos = {};
+        room.photoVote.votes = {};
+        
+        const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+        const rawNextPrompt = room.photoVote.prompts[room.photoVote.currentPromptIndex];
+        const photoPhasePrompt = resolvePhotoVotePrompt(rawNextPrompt, playingPlayers);
+        room.photoVote.pendingPrompt = photoPhasePrompt;
+        
+        io.to(code).emit('photovote:photo_phase', {
+          subType: room.photoVote.subType,
+          round: room.photoVote.currentRound,
+          totalRounds: room.photoVote.totalRounds,
+          players: playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color })),
+          prompt: photoPhasePrompt,
+        });
+      } else {
+        room.photoVote.phase = 'voting';
+        room.photoVote.votes = {};
+        startPhotoVoteRound(io, room, code);
+      }
     }
   });
 
@@ -2967,7 +3031,7 @@ io.on('connection', (socket) => {
     room.players.forEach(p => { p.isReady = false; });
     // When switching to mixed, reset selectedSubGames to defaults so all types are active
     if (newGameType === 'mixed') {
-      room.selectedSubGames = ['who-said-that', 'situational', 'this-or-that'];
+      room.selectedSubGames = ['who-said-that', 'situational', 'this-or-that', 'drawing'];
     }
     // Reset all game-specific state
     room.mlt = { phase: 'waiting', prompts: [], currentPromptIndex: 0, votes: {}, scores: {}, leaderboard: [] };

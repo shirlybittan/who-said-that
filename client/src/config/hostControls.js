@@ -27,9 +27,12 @@ export const QUEUE_GAME_LABELS = {
   drawing: 'Sketch It',
   mixed: 'Mixed',
   'fill-in-the-blank': 'Fill in the Blank',
-  caption: 'Caption Me!',
+  caption: 'Selfie Captions',
   'photo-vote': 'Photo Vote',
   selfie: 'Selfie Roast',
+  'selfie-roast': 'Draw on Friends',
+  photoassoc: 'Prompt Match',
+  pmatch: 'Selfie Challenge',
 };
 
 /**
