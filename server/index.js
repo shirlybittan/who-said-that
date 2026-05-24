@@ -2765,11 +2765,41 @@ io.on('connection', (socket) => {
 
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
     const voteCount = Object.keys(room.photoVote.votes).length;
-    io.to(code).emit('photovote:vote_received', { voteCount, totalVoters: playingPlayers.length });
+    const votedPlayerIds = Object.keys(room.photoVote.votes);
+    io.to(code).emit('photovote:vote_received', { voteCount, totalVoters: playingPlayers.length, votedPlayerIds });
 
     if (voteCount >= playingPlayers.length) {
       endPhotoVoteRound(io, room, code);
     }
+  });
+
+  socket.on('photovote:change_question', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'photovote' || room.photoVote.phase !== 'voting') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+
+    // Reset votes and pick the next prompt
+    room.photoVote.votes = {};
+    const nextIndex = room.photoVote.currentPromptIndex % room.photoVote.prompts.length;
+    const prompt = room.photoVote.prompts[nextIndex];
+    room.photoVote.currentPrompt = prompt;
+    room.photoVote.currentPromptIndex++;
+
+    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const photoList = playingPlayers.map(p => ({
+      playerId: p.id,
+      playerName: p.name,
+      photoData: room.photoVote.photos[p.id],
+    }));
+
+    io.to(code).emit('photovote:voting_phase', {
+      subType: room.photoVote.subType,
+      round: room.photoVote.currentRound,
+      totalRounds: room.photoVote.totalRounds,
+      prompt,
+      photos: photoList,
+    });
   });
 
   socket.on('photovote:skip_to_results', ({ code }) => {

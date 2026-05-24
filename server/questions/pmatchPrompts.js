@@ -21,7 +21,7 @@ const pmatchPrompts = [
   'Who would last the longest without their phone?',
   'Who is most likely to become a meme?',
   'Who looks like they have a plan no one knows about?',
-  'Who is most likely to get lost on the way to the bathroom?',
+  'Who looks like they have a fake alibi ready?',
 ];
 
 module.exports = { pmatchPrompts };

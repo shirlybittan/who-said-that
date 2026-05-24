@@ -1189,6 +1189,114 @@ function FitbHostPanel({ fitbData, players, onSkipToVote, onShowResults, onNextR
   );
 }
 
+function PhotoVoteHostPanel({ photoVoteData, players }) {
+  const {
+    subType = 'pmatch', phase = 'waiting', prompt = '', photos = [],
+    votedPlayerIds = [], submittedPlayerIds = [], voteResults = [],
+    round = 0, totalRounds = 5, leaderboard = [],
+  } = photoVoteData || {};
+  const activePlayers = players.filter(p => p.isPlaying !== false && p.isConnected !== false);
+  const label = subType === 'photoassoc' ? '🏆 Photo Traits' : '🎯 Who Fits?';
+  const color = subType === 'photoassoc' ? '#A29BFE' : '#FDCB6E';
+
+  if (phase === 'photo') {
+    return (
+      <div className="flex flex-col items-center gap-6 w-full max-w-2xl">
+        <h1 className="text-3xl font-['Fredoka_One']" style={{ color }}>{label}</h1>
+        <p className="text-gray-400 font-['Nunito']">Players are submitting their selfies...</p>
+        <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
+          <ProgressBar value={submittedPlayerIds.length} total={activePlayers.length} color={color} label="Photos submitted" sublabel />
+          <div className="flex flex-wrap gap-3 justify-center mt-4">
+            {activePlayers.map(p => (
+              <PlayerAvatar key={p.id} player={p} size="sm" status={submittedPlayerIds.includes(p.id) ? 'answered' : 'waiting'} />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === 'voting') {
+    return (
+      <div className="flex flex-col items-center gap-6 w-full max-w-2xl">
+        <h1 className="text-3xl font-['Fredoka_One']" style={{ color }}>{label} — Round {round}/{totalRounds}</h1>
+        {prompt && (
+          <div className="w-full bg-[#1A1A2E] border-2 rounded-2xl p-5 text-center" style={{ borderColor: color }}>
+            <p className="text-2xl font-['Fredoka_One'] text-white">{prompt}</p>
+          </div>
+        )}
+        <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">Votes in</p>
+            <p className="text-2xl font-['Fredoka_One'] text-white">{votedPlayerIds.length}/{activePlayers.length}</p>
+          </div>
+          <ProgressBar value={votedPlayerIds.length} total={activePlayers.length} color={color} />
+          <div className="flex flex-wrap gap-3 justify-center mt-4">
+            {activePlayers.map(p => (
+              <PlayerAvatar key={p.id} player={p} size="sm" status={votedPlayerIds.includes(p.id) ? 'voted' : 'waiting'} />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === 'results') {
+    return (
+      <div className="flex flex-col items-center gap-6 w-full max-w-2xl">
+        <h1 className="text-3xl font-['Fredoka_One']" style={{ color }}>{label} — Round {round} Results</h1>
+        {prompt && (
+          <div className="w-full bg-[#1A1A2E] rounded-2xl px-4 py-2 text-center mb-1">
+            <p className="font-['Nunito'] text-sm font-semibold" style={{ color: '#FFE66D' }}>{prompt}</p>
+          </div>
+        )}
+        <div className="flex flex-col gap-3 w-full">
+          {voteResults.map((r, i) => (
+            <motion.div key={r.playerId} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }}
+              className={`flex items-center gap-4 rounded-2xl p-4 border ${r.isWinner ? 'border-yellow-400 bg-yellow-400/10' : 'border-[#2D2D44] bg-[#1A1A2E]'}`}>
+              <span className="text-2xl w-8 text-center">{r.isWinner ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}</span>
+              {r.photoData ? (
+                <img src={r.photoData} className="w-14 h-14 rounded-xl object-cover flex-shrink-0" alt="" />
+              ) : (
+                <div className="w-14 h-14 rounded-xl bg-[#2D2D44] flex items-center justify-center text-2xl flex-shrink-0">🤷</div>
+              )}
+              <p className="flex-1 font-['Fredoka_One'] text-white text-lg">{r.playerName}</p>
+              <span className="font-['Fredoka_One'] text-xl" style={{ color }}>{r.voteCount} vote{r.voteCount !== 1 ? 's' : ''}</span>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === 'ended') {
+    return (
+      <div className="flex flex-col items-center gap-6 w-full max-w-2xl">
+        <h1 className="text-3xl font-['Fredoka_One']" style={{ color }}>🏆 {label} — Final Results!</h1>
+        <div className="flex flex-col gap-3 w-full">
+          {leaderboard.map((entry, i) => (
+            <motion.div key={entry.id} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }}
+              className="flex items-center gap-4 rounded-2xl px-5 py-4"
+              style={i === 0 ? { background: 'linear-gradient(135deg, #FFE66D20, #FDCB6E20)', border: `2px solid ${color}` } : { background: '#1A1A2E', border: '1px solid #2D2D44' }}>
+              <span className="text-2xl w-10 text-center">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}</span>
+              <span className="flex-1 text-white font-['Fredoka_One'] text-xl">{entry.name}</span>
+              <span className="font-['Fredoka_One'] text-2xl" style={{ color }}>{entry.pts} pts</span>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-center gap-6 w-full max-w-xl">
+      <p className="text-6xl">{subType === 'photoassoc' ? '🏆' : '🎯'}</p>
+      <h1 className="text-3xl font-['Fredoka_One']" style={{ color }}>{label}</h1>
+      <p className="text-gray-400 font-['Nunito']">Starting game...</p>
+    </div>
+  );
+}
+
 function SimplePhotoHostPanel({ label, phase, players, onSkipToResults, onNextRound }) {
   const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
   return (
@@ -1588,7 +1696,7 @@ function CreateRoomForm({ onSubmit, onBack }) {
 // ─── Host control bar (creator only) ─────────────────────────────────────────
 // QUEUE_GAME_LABELS imported from '../config/hostControls'
 
-function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbData, isMixedMode, onStart, onMltPauseResume, onMltChangeQuestion, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, onNewGame, onPlayAgain, onNewPartyPack, gameQueue, queueIndex, onSelfieNextRound, onSelfieSkipQuestion, onShowSelfieResults, onFitbChangeQuestion, onFitbSkipToVote, onFitbShowResults, onFitbNextRound }) {
+function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbData, photoVoteData, isMixedMode, onStart, onMltPauseResume, onMltChangeQuestion, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, onNewGame, onPlayAgain, onNewPartyPack, gameQueue, queueIndex, onSelfieNextRound, onSelfieSkipQuestion, onShowSelfieResults, onFitbChangeQuestion, onFitbSkipToVote, onFitbShowResults, onFitbNextRound, onPhotoVoteChangeQuestion, onPhotoVoteSkipToResults, onPhotoVoteNextRound }) {
   if (!isRoomCreator) return null;
 
   const playingCount = players.filter(p => p.isPlaying && p.isConnected).length;
@@ -1780,7 +1888,7 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
         </div>
       );
     }
-  } else if (status === 'caption' || status === 'photovote') {
+  } else if (status === 'caption') {
     controls = (
       <div className="flex gap-3">
         <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
@@ -1788,6 +1896,53 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
         </button>
       </div>
     );
+  } else if (status === 'photovote') {
+    const pvPhase = photoVoteData?.phase;
+    if (pvPhase === 'voting') {
+      controls = (
+        <div className="flex gap-3">
+          <button onClick={onPhotoVoteChangeQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FDCB6E] hover:text-[#FDCB6E] active:scale-95 transition">
+            🔄 Change Question
+          </button>
+          <button onClick={onPhotoVoteSkipToResults} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FDCB6E] text-[#FDCB6E] hover:bg-[#FDCB6E]/10 active:scale-95 transition">
+            ⏭ Skip to Results
+          </button>
+          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+            🔀 Skip Mini Game
+          </button>
+        </div>
+      );
+    } else if (pvPhase === 'results') {
+      controls = (
+        <div className="flex gap-3">
+          <button onClick={onPhotoVoteNextRound} className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#FDCB6E] text-black hover:opacity-90 active:scale-95 transition" style={{ boxShadow: '0 0 20px #FDCB6E40' }}>
+            Next Round →
+          </button>
+          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+            🔀 Skip Mini Game
+          </button>
+        </div>
+      );
+    } else if (pvPhase === 'ended') {
+      controls = (
+        <div className="flex gap-3 flex-wrap justify-center">
+          <button onClick={onPlayAgain} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#4ECDC4] text-[#4ECDC4] hover:bg-[#4ECDC4]/10 active:scale-95 transition">
+            🔄 Play Again
+          </button>
+          <button onClick={onNewPartyPack} className="px-8 py-2.5 rounded-xl font-['Fredoka_One'] text-base bg-[#FFE66D] text-black hover:bg-[#ffdd33] active:scale-95 transition" style={{ boxShadow: '0 0 16px #FFE66D40' }}>
+            🎮 New Party Pack
+          </button>
+        </div>
+      );
+    } else {
+      controls = (
+        <div className="flex gap-3">
+          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+            🔀 Skip Mini Game
+          </button>
+        </div>
+      );
+    }
   } else if (status === 'selfie') {
     controls = (
       <div className="flex gap-3">
@@ -1919,7 +2074,11 @@ export default function HostPage() {
   });
 
   const [captionData, setCaptionData] = useState({ phase: 'waiting', round: 0, totalRounds: 3 });
-  const [photoVoteData, setPhotoVoteData] = useState({ subType: 'pmatch', phase: 'waiting', round: 0, totalRounds: 5 });
+  const [photoVoteData, setPhotoVoteData] = useState({
+    subType: 'pmatch', phase: 'waiting', round: 0, totalRounds: 5,
+    prompt: '', photos: [], votedPlayerIds: [], submittedPlayerIds: [],
+    voteResults: [], voteCount: 0, totalVoters: 0, leaderboard: [],
+  });
 
   // Queue state for "Game Playlist" mode
   const [gameQueue, setGameQueue] = useState([]); // [{type, rounds, mode?}]
@@ -2189,21 +2348,59 @@ export default function HostPage() {
     });
 
     sock.on('photovote:photo_phase', (data) => {
-      setPhotoVoteData({ subType: data.subType || 'pmatch', phase: 'photo', round: data.round, totalRounds: data.totalRounds });
+      setPhotoVoteData({
+        subType: data.subType || 'pmatch', phase: 'photo',
+        round: data.round, totalRounds: data.totalRounds,
+        prompt: '', photos: [], votedPlayerIds: [], submittedPlayerIds: [],
+        voteResults: [], voteCount: 0, totalVoters: (data.players || []).length, leaderboard: [],
+      });
+      if (data.players && data.players.length > 0) setPlayers(data.players);
       setStatus('photovote');
     });
+    sock.on('photovote:photo_submitted', (data) => {
+      setPhotoVoteData(prev => ({
+        ...prev,
+        submittedPlayerIds: [...(prev.submittedPlayerIds || []).filter(id => id !== data.playerId), data.playerId],
+      }));
+    });
     sock.on('photovote:voting_phase', (data) => {
-      setPhotoVoteData(prev => ({ ...prev, phase: 'voting', round: data.round }));
+      setPhotoVoteData(prev => ({
+        ...prev, phase: 'voting', round: data.round,
+        prompt: data.prompt || '', photos: data.photos || [],
+        totalRounds: data.totalRounds || prev.totalRounds,
+        votedPlayerIds: [], voteCount: 0,
+        totalVoters: (data.photos || []).length || prev.totalVoters,
+      }));
+      setStatus('photovote'); // also set status here in case photo phase was skipped
+    });
+    sock.on('photovote:vote_received', (data) => {
+      setPhotoVoteData(prev => ({
+        ...prev, voteCount: data.voteCount, totalVoters: data.totalVoters,
+        votedPlayerIds: data.votedPlayerIds || prev.votedPlayerIds,
+      }));
     });
     sock.on('photovote:round_results', (data) => {
-      setPhotoVoteData(prev => ({ ...prev, phase: 'results', round: data.round }));
+      setPhotoVoteData(prev => ({
+        ...prev, phase: 'results', round: data.round,
+        voteResults: data.voteResults || [],
+        prompt: data.prompt || prev.prompt,
+        roundScores: data.roundScores || {},
+      }));
     });
-    sock.on('photovote:game_over', () => {
-      setPhotoVoteData(prev => ({ ...prev, phase: 'ended' }));
+    sock.on('photovote:game_over', (data) => {
+      setPhotoVoteData(prev => ({
+        ...prev, phase: 'ended',
+        leaderboard: data?.leaderboard || [],
+        scores: data?.scores || {},
+      }));
     });
     sock.on('photovote:restarted', ({ players: p }) => {
       setPlayers(p || []);
-      setPhotoVoteData({ subType: 'pmatch', phase: 'waiting', round: 0, totalRounds: 5 });
+      setPhotoVoteData({
+        subType: 'pmatch', phase: 'waiting', round: 0, totalRounds: 5,
+        prompt: '', photos: [], votedPlayerIds: [], submittedPlayerIds: [],
+        voteResults: [], voteCount: 0, totalVoters: 0, leaderboard: [],
+      });
       setStatus('lobby');
     });
 
@@ -2525,7 +2722,7 @@ export default function HostPage() {
       case 'caption':
         return <SimplePhotoHostPanel label="💬 Selfie Captions" phase={captionData?.phase} players={players} onSkipToResults={() => socketRef.current?.emit('caption:skip_to_results', { code: gameInfo.code })} onNextRound={() => socketRef.current?.emit('caption:next_round', { code: gameInfo.code })} />;
       case 'photovote':
-        return <SimplePhotoHostPanel label={photoVoteData?.subType === 'photoassoc' ? '🏆 Photo Traits' : '🎯 Who Fits?'} phase={photoVoteData?.phase} players={players} onSkipToResults={() => socketRef.current?.emit('photovote:skip_to_results', { code: gameInfo.code })} onNextRound={() => socketRef.current?.emit('photovote:next_round', { code: gameInfo.code })} />
+        return <PhotoVoteHostPanel photoVoteData={photoVoteData} players={players} />
       default:
         return null;
     }
@@ -2732,6 +2929,10 @@ export default function HostPage() {
         onFitbSkipToVote={() => socketRef.current?.emit('fitb:skip_to_vote', { code: gameInfo.code })}
         onFitbShowResults={() => socketRef.current?.emit('fitb:show_results', { code: gameInfo.code })}
         onFitbNextRound={() => socketRef.current?.emit('fitb:next_round', { code: gameInfo.code })}
+        photoVoteData={photoVoteData}
+        onPhotoVoteChangeQuestion={() => socketRef.current?.emit('photovote:change_question', { code: gameInfo.code })}
+        onPhotoVoteSkipToResults={() => socketRef.current?.emit('photovote:skip_to_results', { code: gameInfo.code })}
+        onPhotoVoteNextRound={() => socketRef.current?.emit('photovote:next_round', { code: gameInfo.code })}
       />
     </div>
   );
