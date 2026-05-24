@@ -1470,6 +1470,7 @@ function CreateRoomForm({ onSubmit, onBack }) {
   const [gameName, setGameName] = React.useState('');
   const [rounds, setRounds] = React.useState(5);
   const [selectedSubGames, setSelectedSubGames] = React.useState(DEFAULT_SUB_GAMES);
+  const [roundsPerSubGame, setRoundsPerSubGame] = React.useState(3);
   const [drawMode, setDrawMode] = React.useState('classic');
   const [roundDurationSecs, setRoundDurationSecs] = React.useState(60);
   const [queueItems, setQueueItems] = React.useState([
@@ -1510,7 +1511,7 @@ function CreateRoomForm({ onSubmit, onBack }) {
       const firstGame = queueItems[0];
       onSubmit({ gameType: firstGame.type, gameName: gameName.trim(), rounds: firstGame.rounds, drawMode, roomConfig, gameQueue: queueItems });
     } else if (gameType === 'mixed') {
-      onSubmit({ gameType, gameName: gameName.trim(), rounds, selectedSubGames, roomConfig });
+      onSubmit({ gameType, gameName: gameName.trim(), rounds, selectedSubGames, roundsPerSubGame, roomConfig });
     } else if (gameType === 'drawing') {
       onSubmit({ gameType, gameName: gameName.trim(), rounds, drawMode, roomConfig });
     } else {
@@ -1565,7 +1566,7 @@ function CreateRoomForm({ onSubmit, onBack }) {
         {gameType === 'mixed' && (
           <div className="mb-6">
             <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-3">Mini Games to Include</p>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-2 mb-4">
               {MIXED_SUB_GAMES.map(sg => {
                 const active = selectedSubGames.includes(sg.id);
                 return (
@@ -1581,6 +1582,21 @@ function CreateRoomForm({ onSubmit, onBack }) {
                   </button>
                 );
               })}
+            </div>
+            <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-2">Rounds per Game</p>
+            <div className="flex gap-2">
+              {[3, 4, 5].map(r => (
+                <button
+                  key={r}
+                  onClick={() => setRoundsPerSubGame(r)}
+                  className="px-5 py-2 rounded-xl font-['Fredoka_One'] text-sm border-2 transition active:scale-95"
+                  style={roundsPerSubGame === r
+                    ? { borderColor: '#FDCB6E', color: '#FDCB6E', backgroundColor: '#FDCB6E18' }
+                    : { borderColor: '#2D2D44', color: '#666', backgroundColor: 'transparent' }}
+                >
+                  {r}
+                </button>
+              ))}
             </div>
           </div>
         )}
@@ -2499,7 +2515,7 @@ export default function HostPage() {
   }, [roomCodeParam, attachGameHandlers]);
 
   // ─── Creator flow ─────────────────────────────────────────────────────────
-  const handleCreateRoom = useCallback(({ gameType, gameName, rounds, selectedSubGames, drawMode, roomConfig, gameQueue: queue }) => {
+  const handleCreateRoom = useCallback(({ gameType, gameName, rounds, selectedSubGames, roundsPerSubGame, drawMode, roomConfig, gameQueue: queue }) => {
     setCreatorSettings({ gameType, rounds, drawMode: drawMode || 'classic' });
     if (queue && queue.length > 1) {
       setGameQueue(queue);
@@ -2516,6 +2532,7 @@ export default function HostPage() {
     sock.on('connect', () => {
       const payload = { playerName: 'Screen Cast', gameType, gameName, hostIsPlaying: false };
       if (gameType === 'mixed' && selectedSubGames) payload.selectedSubGames = selectedSubGames;
+      if (gameType === 'mixed' && roundsPerSubGame) payload.roundsPerSubGame = roundsPerSubGame;
       if (roomConfig) payload.roomConfig = roomConfig;
       sock.emit('create_room', payload);
     });

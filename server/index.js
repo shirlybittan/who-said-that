@@ -579,6 +579,9 @@ io.on('connection', (socket) => {
       const validSubs = ['who-said-that', 'situational', 'this-or-that', 'drawing'];
       room.selectedSubGames = data.selectedSubGames.filter(s => validSubs.includes(s));
     }
+    if (room.gameType === 'mixed' && data.roundsPerSubGame) {
+      room.mixedRoundsPerGame = Math.min(5, Math.max(1, parseInt(data.roundsPerSubGame, 10) || 1));
+    }
     socket.join(room.code);
     socket.emit('room_created', { code: room.code, playerId: player.id, players: room.players, gameType: room.gameType, gameName: room.gameName, selectedSubGames: room.selectedSubGames, isPlaying: player.isPlaying, roomConfig: room.roomConfig, globalScores: room.globalScores });
   });
@@ -659,11 +662,11 @@ io.on('connection', (socket) => {
       room.tot.totalRounds = count;
       room.phase = 'tot';
     } else if (room.gameType === 'mixed') {
-      // Use one question per selected type so players experience each mini-game exactly once
       const mixedTypes = (room.selectedSubGames && room.selectedSubGames.length > 0)
         ? room.selectedSubGames
         : ['who-said-that', 'situational', 'this-or-that'];
-      const mixedCount = mixedTypes.length;
+      const roundsPerGame = room.mixedRoundsPerGame || 1;
+      const mixedCount = mixedTypes.length * roundsPerGame;
       room.totalRounds = mixedCount;
       room.questions = selectMixedQuestions(mixedCount, room.mode, room.customQuestions, mixedTypes);
       room.miniGameSelectedTypes = mixedTypes;
@@ -2726,10 +2729,23 @@ io.on('connection', (socket) => {
     }
   });
 
+  function resolvePhotoVotePrompt(promptObj, playingPlayers) {
+    if (typeof promptObj === 'string') return promptObj;
+    if (!promptObj) return 'Strike your best pose!';
+    const { template, requiresPlayerTarget } = promptObj;
+    if (requiresPlayerTarget && playingPlayers.length > 0) {
+      const target = playingPlayers[Math.floor(Math.random() * playingPlayers.length)];
+      return template.replace(/\[Name\]/g, target.name);
+    }
+    return template;
+  }
+
   function startPhotoVoteRound(io, room, code) {
     room.photoVote.phase = 'voting';
     room.photoVote.votes = {};
-    const prompt = room.photoVote.prompts[room.photoVote.currentPromptIndex] || 'Who fits best?';
+    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const rawPrompt = room.photoVote.prompts[room.photoVote.currentPromptIndex] || 'Strike your best pose!';
+    const prompt = resolvePhotoVotePrompt(rawPrompt, playingPlayers);
     room.photoVote.currentPrompt = prompt;
     room.photoVote.currentPromptIndex++;
 
@@ -2781,8 +2797,10 @@ io.on('connection', (socket) => {
 
     // Reset votes and pick the next prompt
     room.photoVote.votes = {};
+    const playingPlayersForPrompt = room.players.filter(p => p.isConnected && p.isPlaying);
     const nextIndex = room.photoVote.currentPromptIndex % room.photoVote.prompts.length;
-    const prompt = room.photoVote.prompts[nextIndex];
+    const rawNextPrompt = room.photoVote.prompts[nextIndex];
+    const prompt = resolvePhotoVotePrompt(rawNextPrompt, playingPlayersForPrompt);
     room.photoVote.currentPrompt = prompt;
     room.photoVote.currentPromptIndex++;
 

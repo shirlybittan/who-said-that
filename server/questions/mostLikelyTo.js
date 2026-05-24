@@ -194,4 +194,17 @@ module.exports = [
   "Who would get lost in another country?",
   "Who would do something illegal by mistake?",
   "Who would survive with no phone for a month?",
+  // From Who Fits? — character reads
+  "Who looks most suspicious right now?",
+  "Who is definitely hiding something from the group?",
+  "Who just got away with something and hasn't told anyone?",
+  "Who is pretending to be fine right now?",
+  "Who is about to make a terrible decision?",
+  "Who could convincingly play a villain in a movie?",
+  "Who looks like they haven't slept in three days?",
+  "Who is carrying the most secrets?",
+  "Who looks like they have a plan no one knows about?",
+  "Who looks like they have a fake alibi ready?",
+  "Who could win a staring contest against anyone?",
+  "Who would last the longest without their phone?",
 ];
