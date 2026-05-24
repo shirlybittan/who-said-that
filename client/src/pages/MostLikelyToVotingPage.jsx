@@ -4,36 +4,7 @@ import { socket } from '../socket';
 import { translations } from '../locales/translations';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
-
-const TimerRing = ({ secondsLeft, total = 30, paused }) => {
-  const radius = 40;
-  const circumference = 2 * Math.PI * radius;
-  const progress = Math.max(0, secondsLeft / total);
-  const offset = circumference * (1 - progress);
-  const color = paused ? '#6C5CE7' : secondsLeft <= 8 ? '#FF6B6B' : secondsLeft <= 15 ? '#FFE66D' : '#4ECDC4';
-
-  return (
-    <svg className="w-28 h-28" viewBox="0 0 100 100">
-      <circle cx="50" cy="50" r={radius} fill="none" stroke="#2D2D44" strokeWidth="8" />
-      <circle
-        cx="50"
-        cy="50"
-        r={radius}
-        fill="none"
-        stroke={color}
-        strokeWidth="8"
-        strokeDasharray={circumference}
-        strokeDashoffset={offset}
-        strokeLinecap="round"
-        transform="rotate(-90 50 50)"
-        style={{ transition: 'stroke-dashoffset 1s linear, stroke 0.3s' }}
-      />
-      <text x="50" y="57" textAnchor="middle" fill="white" fontSize="26" fontWeight="bold" fontFamily="Nunito">
-        {paused ? '⏸' : secondsLeft}
-      </text>
-    </svg>
-  );
-};
+import TimerRing from '../components/game/TimerRing';
 
 export default function MostLikelyToVotingPage() {
   const { state, dispatch } = useGame();
@@ -104,7 +75,7 @@ export default function MostLikelyToVotingPage() {
       {/* ── Host controls (visible to any host, playing or not) ── */}
       {isHost && (
         <div className="flex flex-col items-center gap-5 w-full max-w-lg">
-          <TimerRing secondsLeft={mlt.secondsLeft} paused={mlt.paused} />
+          <TimerRing secondsLeft={mlt.secondsLeft} paused={mlt.paused} size={112} />
 
           {/* Vote progress */}
           <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5 text-center">

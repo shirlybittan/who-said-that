@@ -4,6 +4,10 @@ import { io } from 'socket.io-client';
 import { QRCodeSVG } from 'qrcode.react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Confetti from 'react-confetti';
+import TimerRing from '../components/game/TimerRing';
+import VoteCoin from '../components/game/VoteCoin';
+import ReplayCanvas from '../components/game/ReplayCanvas';
+import { QUEUE_GAME_LABELS } from '../config/hostControls';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
 const CLIENT_URL = (import.meta.env.VITE_CLIENT_URL || '').replace(/\/$/, '') || null;
@@ -27,34 +31,6 @@ const GAME_TYPE_LABELS = {
 };
 
 // ─── Shared sub-components ───────────────────────────────────────────────────
-
-const TimerRing = ({ secondsLeft, total = 30, paused, size = 100 }) => {
-  const radius = 40;
-  const circumference = 2 * Math.PI * radius;
-  const progress = Math.max(0, secondsLeft / total);
-  const offset = circumference * (1 - progress);
-  const color = paused ? '#6C5CE7' : secondsLeft <= 8 ? '#FF6B6B' : secondsLeft <= 15 ? '#FFE66D' : '#4ECDC4';
-  const isUrgent = !paused && secondsLeft <= 8 && secondsLeft > 0;
-  return (
-    <motion.svg
-      style={{ width: size, height: size }}
-      viewBox="0 0 100 100"
-      animate={isUrgent ? { scale: [1, 1.07, 1] } : { scale: 1 }}
-      transition={isUrgent ? { duration: 0.5, repeat: Infinity, ease: 'easeInOut' } : {}}
-    >
-      <circle cx="50" cy="50" r={radius} fill="none" stroke="#2D2D44" strokeWidth="8" />
-      <circle
-        cx="50" cy="50" r={radius} fill="none" stroke={color} strokeWidth="8"
-        strokeDasharray={circumference} strokeDashoffset={offset}
-        strokeLinecap="round" transform="rotate(-90 50 50)"
-        style={{ transition: 'stroke-dashoffset 1s linear, stroke 0.3s' }}
-      />
-      <text x="50" y="57" textAnchor="middle" fill="white" fontSize="26" fontWeight="bold" fontFamily="Nunito">
-        {paused ? '⏸' : secondsLeft}
-      </text>
-    </motion.svg>
-  );
-};
 
 const PlayerAvatar = ({ player, size = 'md', status, subtitle }) => {
   const sizes = { sm: 'w-10 h-10 text-base', md: 'w-14 h-14 text-xl', lg: 'w-20 h-20 text-3xl' };
@@ -102,76 +78,7 @@ const ProgressBar = ({ value, total, color = '#4ECDC4', label, sublabel }) => {
 };
 
 // ─── Drawing canvas helpers (for Sketch It! TV panel) ────────────────────────
-const HOST_CANVAS_W = 400;
-const HOST_CANVAS_H = 300;
-
-const drawHostStroke = (ctx, stroke) => {
-  if (!stroke.points || stroke.points.length === 0) return;
-  ctx.beginPath();
-  ctx.strokeStyle = stroke.type === 'eraser' ? '#FFFFFF' : stroke.color;
-  ctx.fillStyle  = stroke.type === 'eraser' ? '#FFFFFF' : stroke.color;
-  ctx.lineWidth  = stroke.width;
-  ctx.lineCap    = 'round';
-  ctx.lineJoin   = 'round';
-  if (stroke.points.length === 1) {
-    ctx.arc(stroke.points[0].x, stroke.points[0].y, stroke.width / 2, 0, Math.PI * 2);
-    ctx.fill();
-    return;
-  }
-  ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
-  for (let i = 1; i < stroke.points.length; i++) ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
-  ctx.stroke();
-};
-
-const HostReplayCanvas = ({ strokes = [], cssWidth = 200, cssHeight = 150, className = '' }) => {
-  const ref = useRef(null);
-  useEffect(() => {
-    const canvas = ref.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(0, 0, HOST_CANVAS_W, HOST_CANVAS_H);
-    (strokes || []).forEach(s => drawHostStroke(ctx, s));
-  }, [strokes]);
-  return (
-    <canvas
-      ref={ref}
-      width={HOST_CANVAS_W}
-      height={HOST_CANVAS_H}
-      style={{ width: cssWidth, height: cssHeight }}
-      className={`block ${className}`}
-    />
-  );
-};
-
-
-const VoteCoin = ({ coinIndex, cardIndex, isJoker = false }) => (
-  <motion.div
-    className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold select-none flex-shrink-0"
-    style={isJoker ? {
-      background: 'radial-gradient(circle at 35% 35%, #e879f9, #7c3aed)',
-      border: '2px solid #d946ef',
-      boxShadow: '0 0 12px rgba(217,70,239,0.6)',
-      color: '#fff',
-    } : {
-      background: 'radial-gradient(circle at 35% 35%, #fef08a, #ca8a04)',
-      border: '2px solid #facc15',
-      boxShadow: '0 3px 8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.25)',
-      color: '#713f12',
-    }}
-    initial={{ y: -80, opacity: 0, scale: 0.3, rotate: -40 }}
-    animate={{ y: 0, opacity: 1, scale: 1, rotate: 0 }}
-    transition={{
-      delay: 0.5 + cardIndex * 0.3 + coinIndex * 0.1,
-      type: 'spring',
-      stiffness: 460,
-      damping: 14,
-      mass: 0.6,
-    }}
-  >
-    {isJoker ? '🃏' : '★'}
-  </motion.div>
-);
+// (drawStroke, CANVAS_W/H, HostReplayCanvas replaced by shared ReplayCanvas)
 
 const ScoreList = ({ players, scores, prevScores }) => {
   const sorted = [...players].sort((a, b) => (scores[b.id] || 0) - (scores[a.id] || 0));
@@ -1016,7 +923,7 @@ function DrawingHostPanel({ drawData, players, status }) {
                 className="bg-[#1A1A2E] border-2 border-[#C39BD3]/30 rounded-2xl overflow-hidden"
               >
                 <div className="bg-white">
-                  <HostReplayCanvas strokes={sub.strokes} cssWidth="100%" cssHeight={150} className="w-full" />
+                  <ReplayCanvas strokes={sub.strokes} cssWidth="100%" cssHeight={150} className="w-full" />
                 </div>
                 <div className="p-3 text-center">
                   {isSecretMode && (
@@ -1081,7 +988,7 @@ function DrawingHostPanel({ drawData, players, status }) {
                 <p className="text-3xl mb-1">{medals[idx === 1 ? 0 : idx === 0 ? 1 : 2]}</p>
                 {r.strokes && (
                   <div className="rounded-xl overflow-hidden border-2 border-[#C39BD3]/40 bg-white w-full">
-                    <HostReplayCanvas strokes={r.strokes} cssWidth="100%" cssHeight={120} className="w-full" />
+                    <ReplayCanvas strokes={r.strokes} cssWidth="100%" cssHeight={120} className="w-full" />
                   </div>
                 )}
                 {isSecretMode && r.word && (
@@ -1661,15 +1568,7 @@ function CreateRoomForm({ onSubmit, onBack }) {
 }
 
 // ─── Host control bar (creator only) ─────────────────────────────────────────
-
-const QUEUE_GAME_LABELS = {
-  'most-likely-to': 'Most Likely To',
-  'whos-most-likely': 'Most Likely To',
-  'this-or-that': 'This or That',
-  'situational': 'Situational',
-  'drawing': 'Sketch It',
-  'mixed': 'Mixed',
-};
+// QUEUE_GAME_LABELS imported from '../config/hostControls'
 
 function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbData, isMixedMode, onStart, onMltPauseResume, onMltChangeQuestion, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, onNewGame, onPlayAgain, onNewPartyPack, gameQueue, queueIndex, onSelfieNextRound, onSelfieSkipQuestion, onShowSelfieResults, onFitbChangeQuestion, onFitbSkipToVote, onFitbShowResults, onFitbNextRound }) {
   if (!isRoomCreator) return null;

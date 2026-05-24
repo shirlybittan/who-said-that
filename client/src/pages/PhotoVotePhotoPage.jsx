@@ -3,31 +3,7 @@ import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
-
-const MAX_SIZE = 640;
-const JPEG_QUALITY = 0.4;
-
-function compressPhoto(file) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      let { width, height } = img;
-      if (width > MAX_SIZE || height > MAX_SIZE) {
-        if (width > height) { height = Math.round((height / width) * MAX_SIZE); width = MAX_SIZE; }
-        else { width = Math.round((width / height) * MAX_SIZE); height = MAX_SIZE; }
-      }
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL('image/jpeg', JPEG_QUALITY));
-    };
-    img.onerror = reject;
-    img.src = url;
-  });
-}
+import { compressPhoto } from '../utils/imageUtils';
 
 export default function PhotoVotePhotoPage() {
   const { state, dispatch } = useGame();

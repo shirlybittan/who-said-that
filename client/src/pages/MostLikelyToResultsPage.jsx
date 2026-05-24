@@ -4,34 +4,7 @@ import { socket } from '../socket';
 import { translations } from '../locales/translations';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
-
-const VoteCoin = ({ coinIndex, cardIndex, isJoker = false }) => (
-  <motion.div
-    className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold select-none flex-shrink-0"
-    style={isJoker ? {
-      background: 'radial-gradient(circle at 35% 35%, #e879f9, #7c3aed)',
-      border: '2px solid #d946ef',
-      boxShadow: '0 0 10px rgba(217,70,239,0.6)',
-      color: '#fff',
-    } : {
-      background: 'radial-gradient(circle at 35% 35%, #fef08a, #ca8a04)',
-      border: '2px solid #facc15',
-      boxShadow: '0 3px 6px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.25)',
-      color: '#713f12',
-    }}
-    initial={{ y: -64, opacity: 0, scale: 0.3, rotate: -40 }}
-    animate={{ y: 0, opacity: 1, scale: 1, rotate: 0 }}
-    transition={{
-      delay: 1.1 + cardIndex * 0.25 + coinIndex * 0.12,
-      type: 'spring',
-      stiffness: 460,
-      damping: 14,
-      mass: 0.6,
-    }}
-  >
-    {isJoker ? '🃏' : '★'}
-  </motion.div>
-);
+import VoteCoin from '../components/game/VoteCoin';
 
 export default function MostLikelyToResultsPage() {
   const { state } = useGame();
@@ -127,7 +100,7 @@ export default function MostLikelyToResultsPage() {
               {player.count > 0 && (
                 <div className="flex flex-wrap gap-1.5 mb-2 mt-1">
                   {Array.from({ length: Math.min(player.count, 12) }).map((_, j) => (
-                    <VoteCoin key={j} coinIndex={j} cardIndex={idx} isJoker={j === 0 && usedJoker} />
+                    <VoteCoin key={j} coinIndex={j} cardIndex={idx} isJoker={j === 0 && usedJoker} baseDelay={1.1} />
                   ))}
                   {player.count > 12 && (
                     <span className="text-xs text-gray-500 font-['Nunito'] self-center">+{player.count - 12}</span>

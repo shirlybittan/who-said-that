@@ -1,67 +1,9 @@
-import React, { useRef, useEffect } from 'react';
+import React from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
-
-const CANVAS_W = 400;
-const CANVAS_H = 300;
-
-const drawStroke = (ctx, stroke) => {
-  if (!stroke.points || stroke.points.length === 0) return;
-  ctx.beginPath();
-  ctx.strokeStyle = stroke.type === 'eraser' ? 'rgba(0,0,0,0)' : stroke.color;
-  ctx.fillStyle = stroke.type === 'eraser' ? 'rgba(0,0,0,0)' : stroke.color;
-  ctx.lineWidth = stroke.width;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  if (stroke.type === 'eraser') {
-    ctx.globalCompositeOperation = 'destination-out';
-  } else {
-    ctx.globalCompositeOperation = 'source-over';
-  }
-  if (stroke.points.length === 1) {
-    ctx.arc(stroke.points[0].x, stroke.points[0].y, stroke.width / 2, 0, Math.PI * 2);
-    ctx.fill();
-  } else {
-    ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
-    for (let i = 1; i < stroke.points.length; i++) ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
-    ctx.stroke();
-  }
-  ctx.globalCompositeOperation = 'source-over';
-};
-
-const SubmissionCanvas = ({ photoData, strokes }) => {
-  const canvasRef = useRef(null);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
-    (strokes || []).forEach(s => drawStroke(ctx, s));
-  }, [strokes]);
-
-  return (
-    <div
-      className="relative rounded-xl overflow-hidden border border-[#2D2D44]"
-      style={{ width: '100%', aspectRatio: `${CANVAS_W}/${CANVAS_H}` }}
-    >
-      <img
-        src={photoData}
-        alt="selfie"
-        className="absolute inset-0 w-full h-full object-cover"
-        draggable={false}
-      />
-      <canvas
-        ref={canvasRef}
-        width={CANVAS_W}
-        height={CANVAS_H}
-        className="absolute inset-0 w-full h-full pointer-events-none"
-      />
-    </div>
-  );
-};
+import ReplayCanvas from '../components/game/ReplayCanvas';
 
 export default function SelfieVotePage() {
   const { state, dispatch } = useGame();
@@ -115,7 +57,7 @@ export default function SelfieVotePage() {
                 ${isOwn ? 'opacity-60' : ''}`}
               onClick={() => !selfie.hasVoted && !isOwn && handleVote(sub.drawerId)}
             >
-              <SubmissionCanvas photoData={sub.photoData} strokes={sub.strokes} />
+              <ReplayCanvas photoData={sub.photoData} strokes={sub.strokes} cssWidth="100%" className="rounded-xl overflow-hidden" />
               {sub.prompt && (
                 <p className="mt-2 text-xs font-['Nunito'] text-[#FFE66D] italic">{sub.prompt}</p>
               )}

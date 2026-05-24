@@ -3,9 +3,7 @@ import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
-
-const CANVAS_W = 400;
-const CANVAS_H = 300;
+import { CANVAS_W, CANVAS_H, drawStroke, redrawOverlay } from '../utils/canvasUtils';
 
 const COLORS = [
   '#000000', '#FFFFFF', '#EF4444', '#F97316', '#EAB308',
@@ -20,36 +18,6 @@ const getPos = (canvas, clientX, clientY) => {
     x: Math.round((clientX - rect.left) * (CANVAS_W / rect.width)),
     y: Math.round((clientY - rect.top) * (CANVAS_H / rect.height)),
   };
-};
-
-const drawStroke = (ctx, stroke) => {
-  if (!stroke.points || stroke.points.length === 0) return;
-  ctx.beginPath();
-  ctx.strokeStyle = stroke.type === 'eraser' ? 'rgba(0,0,0,0)' : stroke.color;
-  ctx.fillStyle = stroke.type === 'eraser' ? 'rgba(0,0,0,0)' : stroke.color;
-  ctx.lineWidth = stroke.width;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  if (stroke.type === 'eraser') {
-    ctx.globalCompositeOperation = 'destination-out';
-  } else {
-    ctx.globalCompositeOperation = 'source-over';
-  }
-  if (stroke.points.length === 1) {
-    ctx.arc(stroke.points[0].x, stroke.points[0].y, stroke.width / 2, 0, Math.PI * 2);
-    ctx.fill();
-  } else {
-    ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
-    for (let i = 1; i < stroke.points.length; i++) ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
-    ctx.stroke();
-  }
-  ctx.globalCompositeOperation = 'source-over';
-};
-
-const redrawOverlay = (canvas, strokes) => {
-  const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
-  strokes.forEach(s => drawStroke(ctx, s));
 };
 
 export default function SelfieDrawPage() {
