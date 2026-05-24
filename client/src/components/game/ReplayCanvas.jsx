@@ -9,14 +9,15 @@ import { drawStroke, redrawCanvas, redrawOverlay, CANVAS_W, CANVAS_H } from '../
  *  photoData  – optional base64 image URL; when provided the canvas is
  *               transparent and overlaid on top of the photo (selfie mode)
  *  cssWidth   – rendered CSS width (default 180)
- *  cssHeight  – rendered CSS height (default 135)
+ *  cssHeight  – rendered CSS height; if omitted the container uses the canvas
+ *               aspect ratio (CANVAS_W:CANVAS_H = 4:3) to avoid cropping photos
  *  className  – extra CSS classes for the wrapper
  */
 export default function ReplayCanvas({
   strokes = [],
   photoData = null,
   cssWidth = 180,
-  cssHeight = 135,
+  cssHeight = undefined,
   className = '',
 }) {
   const canvasRef = useRef(null);
@@ -31,11 +32,17 @@ export default function ReplayCanvas({
     }
   }, [strokes, photoData]);
 
+  // When cssHeight is not provided, maintain the canvas 4:3 aspect ratio.
+  // When cssHeight is explicit, honour it (may crop but keeps existing thumbnail layouts).
+  const sizeStyle = cssHeight !== undefined
+    ? { width: cssWidth, height: cssHeight }
+    : { width: cssWidth, aspectRatio: `${CANVAS_W}/${CANVAS_H}` };
+
   if (photoData) {
     return (
       <div
         className={`relative overflow-hidden ${className}`}
-        style={{ width: cssWidth, height: cssHeight }}
+        style={sizeStyle}
       >
         <img
           src={photoData}
@@ -58,7 +65,7 @@ export default function ReplayCanvas({
       ref={canvasRef}
       width={CANVAS_W}
       height={CANVAS_H}
-      style={{ width: cssWidth, height: cssHeight }}
+      style={sizeStyle}
       className={`block ${className}`}
     />
   );

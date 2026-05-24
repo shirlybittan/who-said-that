@@ -442,6 +442,9 @@ export const useSocket = () => {
       dispatch({ type: 'CAPTION_VOTING_PHASE', payload: data });
       navigate('/caption-vote');
     };
+    const onCaptionYourCaptionId = (data) => {
+      dispatch({ type: 'CAPTION_SET_OWN_ID', payload: data });
+    };
     const onCaptionVoteReceived = (data) => {
       dispatch({ type: 'CAPTION_VOTE_RECEIVED', payload: data });
     };
@@ -562,6 +565,7 @@ export const useSocket = () => {
     socket.on('caption:writing_phase', onCaptionWritingPhase);
     socket.on('caption:caption_submitted', onCaptionCaptionSubmitted);
     socket.on('caption:voting_phase', onCaptionVotingPhase);
+    socket.on('caption:your_caption_id', onCaptionYourCaptionId);
     socket.on('caption:vote_received', onCaptionVoteReceived);
     socket.on('caption:round_results', onCaptionRoundResults);
     socket.on('caption:game_over', onCaptionGameOver);
@@ -662,6 +666,7 @@ export const useSocket = () => {
       socket.off('caption:writing_phase', onCaptionWritingPhase);
       socket.off('caption:caption_submitted', onCaptionCaptionSubmitted);
       socket.off('caption:voting_phase', onCaptionVotingPhase);
+      socket.off('caption:your_caption_id', onCaptionYourCaptionId);
       socket.off('caption:vote_received', onCaptionVoteReceived);
       socket.off('caption:round_results', onCaptionRoundResults);
       socket.off('caption:game_over', onCaptionGameOver);

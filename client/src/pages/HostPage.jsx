@@ -1327,6 +1327,131 @@ function SimplePhotoHostPanel({ label, phase, players, onSkipToResults, onNextRo
   );
 }
 
+function CaptionHostPanel({ captionData, players }) {
+  const phase = captionData?.phase;
+  const roundLabel = captionData?.totalRounds > 1 ? ` — Round ${captionData.round || 1}/${captionData.totalRounds}` : '';
+
+  const photoBlock = captionData?.featuredPhotoData ? (
+    <div className="w-full rounded-2xl overflow-hidden border border-[#2D2D44]" style={{ aspectRatio: '4/3' }}>
+      <img src={captionData.featuredPhotoData} alt="featured" className="w-full h-full object-cover" />
+    </div>
+  ) : null;
+
+  if (phase === 'photo') {
+    const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
+    return (
+      <div className="flex flex-col items-center gap-6 w-full max-w-xl">
+        <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">💬 Selfie Captions{roundLabel}</h1>
+        <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5 text-center">
+          <p className="text-lg font-['Fredoka_One'] text-white mb-1">📸 Taking selfies…</p>
+          <p className="text-sm font-['Nunito'] text-gray-400">{activePlayers.length} players</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === 'writing') {
+    const written = captionData.captionCount || 0;
+    const total = captionData.totalWriters || players.filter(p => p.isPlaying && p.isConnected).length;
+    return (
+      <div className="flex flex-col items-center gap-6 w-full max-w-xl">
+        <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">💬 Selfie Captions{roundLabel}</h1>
+        {photoBlock}
+        {captionData.featuredOwnerName && (
+          <p className="text-sm font-['Nunito'] text-gray-400">📸 {captionData.featuredOwnerName}'s photo</p>
+        )}
+        {captionData.prompt && (
+          <div className="w-full bg-[#1A1A2E] border border-[#FD79A8]/40 rounded-2xl p-4 text-center">
+            <p className="text-lg font-['Fredoka_One'] text-[#FD79A8]">✏️ {captionData.prompt}</p>
+          </div>
+        )}
+        <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-4">
+          <div className="flex justify-between mb-2">
+            <span className="text-sm font-['Nunito'] text-gray-400">Captions written</span>
+            <span className="text-sm font-['Fredoka_One'] text-white">{written}/{total}</span>
+          </div>
+          <div className="w-full bg-[#2D2D44] rounded-full h-2">
+            <div className="bg-[#FD79A8] h-2 rounded-full transition-all" style={{ width: total ? `${(written / total) * 100}%` : '0%' }} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === 'voting') {
+    const voted = captionData.voteCount || 0;
+    const total = captionData.totalVoters || players.filter(p => p.isPlaying && p.isConnected).length;
+    return (
+      <div className="flex flex-col items-center gap-6 w-full max-w-xl">
+        <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">💬 Selfie Captions{roundLabel}</h1>
+        {photoBlock}
+        {captionData.prompt && (
+          <div className="w-full bg-[#1A1A2E] border border-[#FD79A8]/40 rounded-2xl p-4 text-center">
+            <p className="text-base font-['Nunito'] text-[#FD79A8]">✏️ {captionData.prompt}</p>
+          </div>
+        )}
+        <div className="w-full flex flex-col gap-2">
+          {(captionData.captions || []).map((c, i) => (
+            <div key={c.id} className="flex items-center gap-3 bg-[#1A1A2E] border border-[#2D2D44] rounded-xl px-4 py-2">
+              <span className="text-xs font-['Fredoka_One'] text-gray-500 w-5">{i + 1}</span>
+              <span className="flex-1 text-sm font-['Nunito'] text-white">{c.text}</span>
+            </div>
+          ))}
+        </div>
+        <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-4">
+          <div className="flex justify-between mb-2">
+            <span className="text-sm font-['Nunito'] text-gray-400">Votes in</span>
+            <span className="text-sm font-['Fredoka_One'] text-white">{voted}/{total}</span>
+          </div>
+          <div className="w-full bg-[#2D2D44] rounded-full h-2">
+            <div className="bg-[#FFE66D] h-2 rounded-full transition-all" style={{ width: total ? `${(voted / total) * 100}%` : '0%' }} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === 'results') {
+    return (
+      <div className="flex flex-col items-center gap-6 w-full max-w-xl">
+        <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">💬 Results{roundLabel}</h1>
+        {photoBlock}
+        {captionData.featuredOwnerName && (
+          <p className="text-sm font-['Nunito'] text-gray-400">📸 {captionData.featuredOwnerName}'s photo</p>
+        )}
+        {captionData.prompt && (
+          <div className="w-full bg-[#1A1A2E] border border-[#FD79A8]/40 rounded-2xl p-4 text-center">
+            <p className="text-base font-['Nunito'] text-[#FD79A8]">✏️ {captionData.prompt}</p>
+          </div>
+        )}
+        <div className="w-full flex flex-col gap-2">
+          {(captionData.captionResults || []).map((c, i) => (
+            <div key={c.id} className={`flex items-center gap-3 rounded-xl px-4 py-3 border ${i === 0 ? 'bg-[#FFE66D]/10 border-[#FFE66D]/60' : 'bg-[#1A1A2E] border-[#2D2D44]'}`}>
+              <span className="text-lg w-8 text-center">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-['Nunito'] text-white leading-tight">{c.text}</p>
+                <p className="text-xs font-['Nunito'] text-gray-400 mt-0.5">— {c.playerName}</p>
+              </div>
+              <span className="text-base font-['Fredoka_One'] text-[#FFE66D] shrink-0">{c.voteCount} 🗳️</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Fallback
+  const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
+  return (
+    <div className="flex flex-col items-center gap-6 w-full max-w-xl">
+      <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">💬 Selfie Captions{roundLabel}</h1>
+      <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5 text-center">
+        <p className="text-sm font-['Nunito'] text-gray-400">{activePlayers.length} active players</p>
+      </div>
+    </div>
+  );
+}
+
 function SelfieHostPanel({ selfieData, players, onSkipToVote, onShowResults }) {
   const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
   const roundLabel = selfieData.totalRounds > 1 ? ` — Round ${selfieData.round}/${selfieData.totalRounds}` : '';
@@ -1366,6 +1491,11 @@ function SelfieHostPanel({ selfieData, players, onSkipToVote, onShowResults }) {
     return (
       <div className="flex flex-col items-center gap-6 w-full max-w-xl">
         <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">📸 Roasting in Progress...</h1>
+        {selfieData.promptTemplate && (
+          <div className="w-full bg-[#1A1A2E] border border-[#FD79A8]/40 rounded-2xl p-4 text-center">
+            <p className="text-lg font-['Fredoka_One'] text-[#FD79A8]">🎨 {selfieData.promptTemplate}</p>
+          </div>
+        )}
         <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
           <div className="flex items-center justify-between mb-3">
             <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">Drawings submitted</p>
@@ -1719,7 +1849,7 @@ function CreateRoomForm({ onSubmit, onBack }) {
 // ─── Host control bar (creator only) ─────────────────────────────────────────
 // QUEUE_GAME_LABELS imported from '../config/hostControls'
 
-function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbData, photoVoteData, captionData, isMixedMode, onStart, onMltPauseResume, onMltChangeQuestion, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, onNewGame, onPlayAgain, onNewPartyPack, gameQueue, queueIndex, onSelfieNextRound, onSelfieSkipQuestion, onShowSelfieResults, onFitbChangeQuestion, onFitbSkipToVote, onFitbShowResults, onFitbNextRound, onPhotoVoteChangeQuestion, onPhotoVoteSkipToResults, onPhotoVoteNextRound, onCaptionSkipToVoting, onCaptionSkipToResults, onCaptionNextRound }) {
+function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbData, photoVoteData, captionData, isMixedMode, onStart, onMltPauseResume, onMltChangeQuestion, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, onNewGame, onPlayAgain, onNewPartyPack, gameQueue, queueIndex, onSelfieNextRound, onSelfieSkipQuestion, onShowSelfieResults, onFitbChangeQuestion, onFitbSkipToVote, onFitbShowResults, onFitbNextRound, onPhotoVoteChangeQuestion, onPhotoVoteSkipToResults, onPhotoVoteNextRound, onCaptionChangeQuestion, onCaptionSkipToVoting, onCaptionSkipToResults, onCaptionNextRound }) {
   if (!isRoomCreator) return null;
 
   const playingCount = players.filter(p => p.isPlaying && p.isConnected).length;
@@ -1916,8 +2046,11 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
     if (capPhase === 'writing') {
       controls = (
         <div className="flex gap-3">
+          <button onClick={onCaptionChangeQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FD79A8] hover:text-[#FD79A8] active:scale-95 transition">
+            🔄 Change Question
+          </button>
           <button onClick={onCaptionSkipToVoting} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FD79A8] hover:text-[#FD79A8] active:scale-95 transition">
-            🗳️ Show Captions
+            🗳️ Start Voting
           </button>
           <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
             🔀 Skip Mini Game
@@ -2365,7 +2498,7 @@ export default function HostPage() {
       setSelfieData(prev => ({ ...prev, photoCount, totalPhotographers }));
     });
     sock.on('selfie:drawing_phase', (data) => {
-      setSelfieData(prev => ({ ...prev, phase: 'drawing', drawingCount: 0, totalDrawers: data.totalDrawers || 0 }));
+      setSelfieData(prev => ({ ...prev, phase: 'drawing', drawingCount: 0, totalDrawers: data.totalDrawers || 0, promptTemplate: data.promptTemplate || '' }));
       setStatus('selfie'); // Ensure host shows selfie panel even when photo phase was skipped
     });
     sock.on('selfie:drawing_received', ({ drawingCount, totalDrawers }) => {
@@ -2384,17 +2517,23 @@ export default function HostPage() {
     });
 
     sock.on('caption:photo_phase', (data) => {
-      setCaptionData({ phase: 'photo', round: data.round, totalRounds: data.totalRounds });
+      setCaptionData({ phase: 'photo', round: data.round, totalRounds: data.totalRounds, prompt: '', featuredPhotoData: null, featuredOwnerName: '', captions: [], captionCount: 0, totalWriters: 0, voteCount: 0, totalVoters: 0, captionResults: [] });
       setStatus('caption');
     });
     sock.on('caption:writing_phase', (data) => {
-      setCaptionData(prev => ({ ...prev, phase: 'writing', round: data.round }));
+      setCaptionData(prev => ({ ...prev, phase: 'writing', round: data.round, totalRounds: data.totalRounds || prev.totalRounds, prompt: data.prompt || '', featuredOwnerId: data.featuredOwnerId, featuredOwnerName: data.featuredOwnerName || '', featuredPhotoData: data.featuredPhotoData || null, totalWriters: (data.writers || []).length, captionCount: 0 }));
     });
-    sock.on('caption:voting_phase', () => {
-      setCaptionData(prev => ({ ...prev, phase: 'voting' }));
+    sock.on('caption:caption_submitted', (data) => {
+      setCaptionData(prev => ({ ...prev, captionCount: data.submittedCount, totalWriters: data.totalCount }));
+    });
+    sock.on('caption:voting_phase', (data) => {
+      setCaptionData(prev => ({ ...prev, phase: 'voting', captions: data.captions || [], featuredPhotoData: data.featuredPhotoData || prev.featuredPhotoData, featuredOwnerName: data.featuredOwnerName || prev.featuredOwnerName, voteCount: 0, totalVoters: 0 }));
+    });
+    sock.on('caption:vote_received', (data) => {
+      setCaptionData(prev => ({ ...prev, voteCount: data.voteCount, totalVoters: data.totalVoters }));
     });
     sock.on('caption:round_results', (data) => {
-      setCaptionData(prev => ({ ...prev, phase: 'results', round: data.round }));
+      setCaptionData(prev => ({ ...prev, phase: 'results', round: data.round, featuredPhotoData: data.featuredPhotoData || prev.featuredPhotoData, featuredOwnerName: data.featuredOwnerName || prev.featuredOwnerName, prompt: data.prompt || prev.prompt, captionResults: data.captionResults || [] }));
     });
     sock.on('caption:game_over', () => {
       setCaptionData(prev => ({ ...prev, phase: 'ended' }));
@@ -2779,7 +2918,7 @@ export default function HostPage() {
       case 'selfie-results':
         return <SelfieHostPanel selfieData={selfieData} players={players} onSkipToVote={() => socketRef.current?.emit('selfie:skip_to_vote', { code: gameInfo.code })} onShowResults={() => socketRef.current?.emit('selfie:show_results', { code: gameInfo.code })} />;
       case 'caption':
-        return <SimplePhotoHostPanel label="💬 Selfie Captions" phase={captionData?.phase} players={players} onSkipToResults={() => socketRef.current?.emit('caption:skip_to_results', { code: gameInfo.code })} onNextRound={() => socketRef.current?.emit('caption:next_round', { code: gameInfo.code })} />;
+        return <CaptionHostPanel captionData={captionData} players={players} />;
       case 'photovote':
         return <PhotoVoteHostPanel photoVoteData={photoVoteData} players={players} />
       default:
@@ -3017,6 +3156,7 @@ export default function HostPage() {
         onPhotoVoteSkipToResults={() => socketRef.current?.emit('photovote:skip_to_results', { code: gameInfo.code })}
         onPhotoVoteNextRound={() => socketRef.current?.emit('photovote:next_round', { code: gameInfo.code })}
         captionData={captionData}
+        onCaptionChangeQuestion={() => socketRef.current?.emit('caption:change_question', { code: gameInfo.code })}
         onCaptionSkipToVoting={() => socketRef.current?.emit('caption:skip_to_voting', { code: gameInfo.code })}
         onCaptionSkipToResults={() => socketRef.current?.emit('caption:skip_to_results', { code: gameInfo.code })}
         onCaptionNextRound={() => socketRef.current?.emit('caption:next_round', { code: gameInfo.code })}

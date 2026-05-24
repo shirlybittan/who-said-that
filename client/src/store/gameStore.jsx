@@ -892,11 +892,14 @@ export const gameReducer = (state, action) => {
           featuredOwnerId: action.payload.featuredOwnerId,
           hasVoted: false,
           myVote: null,
+          myOwnCaptionId: null,
           voteCount: 0,
         },
       };
     case 'CAPTION_VOTE_RECEIVED':
       return { ...state, caption: { ...state.caption, voteCount: action.payload.voteCount, totalVoters: action.payload.totalVoters } };
+    case 'CAPTION_SET_OWN_ID':
+      return { ...state, caption: { ...state.caption, myOwnCaptionId: action.payload.captionId } };
     case 'CAPTION_MARK_VOTED':
       return { ...state, caption: { ...state.caption, hasVoted: true, myVote: action.payload.captionId } };
     case 'CAPTION_ROUND_RESULTS':

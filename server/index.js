@@ -2536,6 +2536,14 @@ io.on('connection', (socket) => {
       featuredOwnerName: owner?.name || '?',
       featuredPhotoData: room.caption.photos[room.caption.featuredOwnerId],
     });
+    // Tell each player their own caption ID so the client can disable it
+    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    playingPlayers.forEach(p => {
+      const myCap = room.caption.captions[p.id];
+      if (myCap && p.socketId) {
+        io.to(p.socketId).emit('caption:your_caption_id', { captionId: myCap.id });
+      }
+    });
   }
 
   socket.on('caption:vote', ({ code, captionId }) => {
@@ -2569,6 +2577,17 @@ io.on('connection', (socket) => {
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isHost) return;
     startCaptionVotingPhase(io, room, code);
+  });
+
+  socket.on('caption:change_question', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'caption' || room.caption.phase !== 'writing') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+    // Reset captions and votes for current round, then start writing phase again with next prompt
+    room.caption.captions = {};
+    room.caption.votes = {};
+    startCaptionWritingPhase(io, room, code);
   });
 
   socket.on('caption:skip_to_results', ({ code }) => {
