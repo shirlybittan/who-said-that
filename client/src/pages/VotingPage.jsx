@@ -4,6 +4,7 @@ import { socket } from '../socket';
 import { translations } from '../locales/translations';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
+import VoteLocked from '../components/game/VoteLocked';
 
 export default function VotingPage() {
   const { state, dispatch } = useGame();
@@ -131,10 +132,12 @@ export default function VotingPage() {
       )}
 
       {state.hasVoted && !isRevealed && !state.allVotesIn && (
-         <div className="mt-8 text-center animate-bounce">
-           <h3 className="text-2xl font-['Fredoka_One'] text-[#FFE66D] mb-2">{t.voteLocked}</h3>
-           <p className="text-gray-300 font-['Nunito']">{t.waitingVotes.replace('{current}', state.votedCount).replace('{total}', state.totalPlayers || state.players.length - 1)}</p>
-         </div>
+        <VoteLocked
+          label={t.voteLocked}
+          voteCount={state.votedCount}
+          totalVoters={state.totalPlayers || state.players.length - 1}
+          accentColor="#FFE66D"
+        />
       )}
 
       {state.allVotesIn && !isRevealed && (

@@ -333,6 +333,27 @@ export const gameReducer = (state, action) => {
       };
     case 'SET_GAME_ENDED':
       return { ...state, gameEnded: true, phase: 'game_end', stats: action.payload.stats, players: action.payload.players || state.players, scores: action.payload.finalScores || state.scores };
+    case 'GAME_SWITCHED':
+      return {
+        ...state,
+        gameType: action.payload.gameType,
+        players: action.payload.players || state.players,
+        gameName: action.payload.gameName !== undefined ? action.payload.gameName : state.gameName,
+        phase: 'lobby',
+        hasAnswered: false,
+        hasVoted: false,
+        answers: [],
+        currentQuestion: null,
+        gameEnded: false,
+        mlt:       { ...initialState.mlt,      totalRounds: state.mlt.totalRounds, allowSelfVote: state.mlt.allowSelfVote },
+        draw:      { ...initialState.draw },
+        fitb:      { ...initialState.fitb },
+        selfie:    { ...initialState.selfie },
+        caption:   { ...initialState.caption },
+        photoVote: { ...initialState.photoVote },
+        sit:       { ...initialState.sit },
+        tot:       { ...initialState.tot },
+      };
     case 'SET_ERROR':
       return { ...state, error: action.payload };
     // ─── This or That actions ────────────────────────────────────────────────
@@ -424,6 +445,14 @@ export const gameReducer = (state, action) => {
           jokersLeft: action.payload.jokersLeft !== undefined ? action.payload.jokersLeft : state.mlt.jokersLeft,
           paused: false,
           gameName: action.payload.gameName !== undefined ? action.payload.gameName : state.mlt.gameName,
+        },
+      };
+    case 'MLT_QUESTION_CHANGED':
+      return {
+        ...state,
+        mlt: {
+          ...state.mlt,
+          prompt: action.payload.currentPrompt,
         },
       };
     case 'MLT_SET_TIMER':
@@ -871,11 +900,14 @@ export const gameReducer = (state, action) => {
           featuredOwnerId: action.payload.featuredOwnerId,
           hasVoted: false,
           myVote: null,
+          myOwnCaptionId: null,
           voteCount: 0,
         },
       };
     case 'CAPTION_VOTE_RECEIVED':
       return { ...state, caption: { ...state.caption, voteCount: action.payload.voteCount, totalVoters: action.payload.totalVoters } };
+    case 'CAPTION_SET_OWN_ID':
+      return { ...state, caption: { ...state.caption, myOwnCaptionId: action.payload.captionId } };
     case 'CAPTION_MARK_VOTED':
       return { ...state, caption: { ...state.caption, hasVoted: true, myVote: action.payload.captionId } };
     case 'CAPTION_ROUND_RESULTS':
@@ -916,6 +948,7 @@ export const gameReducer = (state, action) => {
           totalPhotographers: (action.payload.players || []).length,
           hasSubmittedPhoto: false,
           photoSubmittedCount: 0,
+          prompt: action.payload.prompt || null,
         },
       };
     case 'PHOTOVOTE_PHOTO_SUBMITTED':

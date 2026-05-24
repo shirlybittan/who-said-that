@@ -3,24 +3,7 @@ import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
-
-const VoteCoin = ({ coinIndex, cardIndex }) => (
-  <motion.div
-    className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold select-none flex-shrink-0"
-    style={{
-      background: 'radial-gradient(circle at 35% 35%, #fef08a, #ca8a04)',
-      border: '2px solid #facc15',
-      boxShadow: '0 3px 6px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.25)',
-      color: '#713f12',
-    }}
-    initial={{ y: -64, opacity: 0, scale: 0.3, rotate: -40 }}
-    animate={{ y: 0, opacity: 1, scale: 1, rotate: 0 }}
-    transition={{
-      delay: 0.4 + cardIndex * 0.22 + coinIndex * 0.12,
-      type: 'spring', stiffness: 460, damping: 14, mass: 0.6,
-    }}
-  >★</motion.div>
-);
+import VoteCoin from '../components/game/VoteCoin';
 
 export default function FillBlankPage() {
   const { state, dispatch } = useGame();

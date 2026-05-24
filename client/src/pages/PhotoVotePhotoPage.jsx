@@ -3,31 +3,7 @@ import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
-
-const MAX_SIZE = 640;
-const JPEG_QUALITY = 0.4;
-
-function compressPhoto(file) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      let { width, height } = img;
-      if (width > MAX_SIZE || height > MAX_SIZE) {
-        if (width > height) { height = Math.round((height / width) * MAX_SIZE); width = MAX_SIZE; }
-        else { width = Math.round((width / height) * MAX_SIZE); height = MAX_SIZE; }
-      }
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      canvas.getContext('2d').drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL('image/jpeg', JPEG_QUALITY));
-    };
-    img.onerror = reject;
-    img.src = url;
-  });
-}
+import { compressPhoto } from '../utils/imageUtils';
 
 export default function PhotoVotePhotoPage() {
   const { state, dispatch } = useGame();
@@ -39,7 +15,7 @@ export default function PhotoVotePhotoPage() {
   const [processing, setProcessing] = useState(false);
   const [usingSaved, setUsingSaved] = useState(false);
 
-  const modeLabel = pv.subType === 'photoassoc' ? 'Photo Traits 🏆' : 'Who Fits? 🎯';
+  const modeLabel = pv.subType === 'photoassoc' ? 'Prompt Match 🎯' : 'Selfie Challenge 🎭';
   const modeColor = pv.subType === 'photoassoc' ? '#A29BFE' : '#FDCB6E';
 
   // Pre-fill with saved selfie if available
@@ -91,9 +67,19 @@ export default function PhotoVotePhotoPage() {
       <p className="text-gray-400 font-['Nunito'] text-sm text-center mb-2">
         Round {pv.round} of {pv.totalRounds}
       </p>
-      <p className="text-gray-400 font-['Nunito'] text-sm text-center mb-6">
-        Take a selfie — everyone will vote on who fits each prompt best!
-      </p>
+      {pv.prompt ? (
+        <div
+          className="w-full max-w-sm rounded-2xl p-4 mb-5 text-center"
+          style={{ backgroundColor: modeColor + '22', border: `2px solid ${modeColor}66` }}
+        >
+          <p className="text-xs font-['Nunito'] text-gray-400 uppercase tracking-widest mb-1">Your Challenge</p>
+          <p style={{ color: modeColor }} className="font-['Fredoka_One'] text-lg leading-snug">{pv.prompt}</p>
+        </div>
+      ) : (
+        <p className="text-gray-400 font-['Nunito'] text-sm text-center mb-6">
+          Take a selfie — everyone will vote on who fits each prompt best!
+        </p>
+      )}
 
       {!pv.hasSubmittedPhoto ? (
         <div className="w-full max-w-sm flex flex-col items-center gap-4">

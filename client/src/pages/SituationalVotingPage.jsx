@@ -4,29 +4,8 @@ import { socket } from '../socket';
 import { translations } from '../locales/translations';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
-
-const VoteCoin = ({ coinIndex, cardIndex }) => (
-  <motion.div
-    className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold select-none flex-shrink-0"
-    style={{
-      background: 'radial-gradient(circle at 35% 35%, #fef08a, #ca8a04)',
-      border: '2px solid #facc15',
-      boxShadow: '0 3px 6px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.25)',
-      color: '#713f12',
-    }}
-    initial={{ y: -64, opacity: 0, scale: 0.3, rotate: -40 }}
-    animate={{ y: 0, opacity: 1, scale: 1, rotate: 0 }}
-    transition={{
-      delay: 0.4 + cardIndex * 0.22 + coinIndex * 0.12,
-      type: 'spring',
-      stiffness: 460,
-      damping: 14,
-      mass: 0.6,
-    }}
-  >
-    ★
-  </motion.div>
-);
+import VoteCoin from '../components/game/VoteCoin';
+import VoteLocked from '../components/game/VoteLocked';
 
 export default function SituationalVotingPage() {
   const { state, dispatch } = useGame();
@@ -99,22 +78,6 @@ export default function SituationalVotingPage() {
             );
           })}
         </motion.div>
-
-        {/* Scoreboard */}
-        <div className="w-full max-w-md bg-[#1A1A2E] rounded-2xl border border-[#2D2D44] p-4 mb-6">
-          <h3 className="text-lg font-['Fredoka_One'] text-[#FFE66D] mb-3">Scores</h3>
-          {[...sit.scorePlayers]
-            .sort((a, b) => (sit.scores[b.id] || 0) - (sit.scores[a.id] || 0))
-            .map((p) => (
-              <div key={p.id} className="flex items-center justify-between py-1">
-                <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full" style={{ backgroundColor: p.color }} />
-                  <span className="font-['Nunito']">{p.name}</span>
-                </div>
-                <span className="font-['Fredoka_One'] text-[#FF6B6B]">{sit.scores[p.id] || 0} pts</span>
-              </div>
-            ))}
-        </div>
 
         {state.isHost ? (
           <button
@@ -189,8 +152,13 @@ export default function SituationalVotingPage() {
           </div>
 
           {sit.hasVoted && (
-            <div className="mt-6 text-center">
-              <p className="text-[#4ECDC4] font-['Fredoka_One'] text-lg">{t.voteLockedMsg}</p>
+            <div className="mt-6">
+              <VoteLocked
+                label={t.voteLockedMsg}
+                voteCount={sit.voteCount}
+                totalVoters={sit.totalVoters}
+                accentColor="#4ECDC4"
+              />
             </div>
           )}
         </>

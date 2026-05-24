@@ -11,6 +11,7 @@ export default function CaptionVotePage() {
 
   const handleVote = (captionId) => {
     if (caption.hasVoted) return;
+    if (captionId === caption.myOwnCaptionId) return; // can't vote for own caption
     sounds.vote?.();
     socket.emit('caption:vote', { code: state.roomCode, captionId });
     dispatch({ type: 'CAPTION_MARK_VOTED', payload: { captionId } });
@@ -36,15 +37,24 @@ export default function CaptionVotePage() {
 
       {!caption.hasVoted ? (
         <div className="w-full max-w-sm flex flex-col gap-3">
-          {(caption.captions || []).map((c) => (
-            <button
-              key={c.id}
-              onClick={() => handleVote(c.id)}
-              className="w-full py-4 px-5 rounded-2xl bg-[#1A1A2E] border border-gray-600 text-white font-['Nunito'] text-base text-left hover:border-[#FD79A8] hover:bg-[#FD79A8]/10 transition-colors"
-            >
-              {c.text}
-            </button>
-          ))}
+          {(caption.captions || []).map((c) => {
+            const isOwn = c.id === caption.myOwnCaptionId;
+            return (
+              <button
+                key={c.id}
+                onClick={() => handleVote(c.id)}
+                disabled={isOwn}
+                className={`w-full py-4 px-5 rounded-2xl border font-['Nunito'] text-base text-left transition-colors ${
+                  isOwn
+                    ? 'border-gray-700 bg-[#1A1A2E]/50 text-gray-500 cursor-not-allowed'
+                    : 'bg-[#1A1A2E] border-gray-600 text-white hover:border-[#FD79A8] hover:bg-[#FD79A8]/10'
+                }`}
+              >
+                {isOwn ? <span className="mr-2 text-xs text-gray-500">(yours)</span> : null}
+                {c.text}
+              </button>
+            );
+          })}
         </div>
       ) : (
         <div className="w-full max-w-sm flex flex-col gap-3">

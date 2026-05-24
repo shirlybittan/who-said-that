@@ -19,6 +19,8 @@ export const useSocket = () => {
 
     const onRoomCreated = ({ code, playerId, players, gameType, gameName, selectedSubGames, isPlaying, roomConfig, globalScores }) => {
       localStorage.setItem('wst_roomCode', code);
+      const myPlayer = players?.find(p => p.id === playerId);
+      if (myPlayer?.name) localStorage.setItem('wst_playerName', myPlayer.name);
       dispatch({ type: 'SET_ROOM', payload: { roomCode: code, phase: 'lobby', isHost: true, isPlaying: !!isPlaying, players, gameType, gameName: gameName || '', selectedSubGames, roomConfig: roomConfig || {}, globalScores: globalScores || {} } });
       dispatch({ type: 'SET_PLAYER_ID', payload: playerId });
       navigate('/lobby');
@@ -27,6 +29,7 @@ export const useSocket = () => {
     const onJoinSuccess = ({ room, playerId, isRejoin }) => {
       localStorage.setItem('wst_roomCode', room.code);
       const myPlayer = room.players.find(p => p.id === playerId);
+      if (myPlayer?.name) localStorage.setItem('wst_playerName', myPlayer.name);
       const isPlaying = myPlayer?.isPlaying ?? true;
       const isHost = room.host === playerId;
       const phase = room.phase;
@@ -226,6 +229,10 @@ export const useSocket = () => {
       dispatch({ type: 'SET_ROOM', payload: { joinedMidRound: false } });
       dispatch({ type: 'MLT_SET_PROMPT', payload: data });
       navigate('/mlt-vote');
+    };
+
+    const onMltQuestionChanged = (data) => {
+      dispatch({ type: 'MLT_QUESTION_CHANGED', payload: data });
     };
 
     const onMltTimer = (data) => {
@@ -439,6 +446,9 @@ export const useSocket = () => {
       dispatch({ type: 'CAPTION_VOTING_PHASE', payload: data });
       navigate('/caption-vote');
     };
+    const onCaptionYourCaptionId = (data) => {
+      dispatch({ type: 'CAPTION_SET_OWN_ID', payload: data });
+    };
     const onCaptionVoteReceived = (data) => {
       dispatch({ type: 'CAPTION_VOTE_RECEIVED', payload: data });
     };
@@ -484,7 +494,7 @@ export const useSocket = () => {
     };
 
     const onGameChanged = ({ code, gameType, players, gameName }) => {
-      dispatch({ type: 'SET_ROOM', payload: { gameType, players, gameName, phase: 'lobby' } });
+      dispatch({ type: 'GAME_SWITCHED', payload: { gameType, players, gameName } });
       navigate('/lobby');
     };
     // ────────────────────────────────────────────────────────────────────────
@@ -512,6 +522,7 @@ export const useSocket = () => {
     socket.on('error', onError);
     socket.on('kicked', onKicked);
     socket.on('mlt:prompt', onMltPrompt);
+    socket.on('mlt:question_changed', onMltQuestionChanged);
     socket.on('mlt:timer', onMltTimer);
     socket.on('mlt:vote_received', onMltVoteReceived);
     socket.on('mlt:results', onMltResults);
@@ -559,6 +570,7 @@ export const useSocket = () => {
     socket.on('caption:writing_phase', onCaptionWritingPhase);
     socket.on('caption:caption_submitted', onCaptionCaptionSubmitted);
     socket.on('caption:voting_phase', onCaptionVotingPhase);
+    socket.on('caption:your_caption_id', onCaptionYourCaptionId);
     socket.on('caption:vote_received', onCaptionVoteReceived);
     socket.on('caption:round_results', onCaptionRoundResults);
     socket.on('caption:game_over', onCaptionGameOver);
@@ -612,6 +624,7 @@ export const useSocket = () => {
       socket.off('error', onError);
       socket.off('kicked', onKicked);
       socket.off('mlt:prompt', onMltPrompt);
+      socket.off('mlt:question_changed', onMltQuestionChanged);
       socket.off('mlt:timer', onMltTimer);
       socket.off('mlt:vote_received', onMltVoteReceived);
       socket.off('mlt:results', onMltResults);
@@ -659,6 +672,7 @@ export const useSocket = () => {
       socket.off('caption:writing_phase', onCaptionWritingPhase);
       socket.off('caption:caption_submitted', onCaptionCaptionSubmitted);
       socket.off('caption:voting_phase', onCaptionVotingPhase);
+      socket.off('caption:your_caption_id', onCaptionYourCaptionId);
       socket.off('caption:vote_received', onCaptionVoteReceived);
       socket.off('caption:round_results', onCaptionRoundResults);
       socket.off('caption:game_over', onCaptionGameOver);

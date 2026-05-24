@@ -6,63 +6,15 @@ import Confetti from 'react-confetti';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
 import GameSwitcher from '../components/GameSwitcher.jsx';
-
-const CANVAS_W = 400;
-const CANVAS_H = 300;
-
-const drawStroke = (ctx, stroke) => {
-  if (!stroke.points || stroke.points.length === 0) return;
-  ctx.beginPath();
-  ctx.lineWidth = stroke.width;
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  if (stroke.type === 'eraser') {
-    ctx.strokeStyle = 'rgba(0,0,0,0)';
-    ctx.fillStyle = 'rgba(0,0,0,0)';
-    ctx.globalCompositeOperation = 'destination-out';
-  } else {
-    ctx.strokeStyle = stroke.color;
-    ctx.fillStyle = stroke.color;
-    ctx.globalCompositeOperation = 'source-over';
-  }
-  if (stroke.points.length === 1) {
-    ctx.arc(stroke.points[0].x, stroke.points[0].y, stroke.width / 2, 0, Math.PI * 2);
-    ctx.fill();
-  } else {
-    ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
-    for (let i = 1; i < stroke.points.length; i++) ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
-    ctx.stroke();
-  }
-  ctx.globalCompositeOperation = 'source-over';
-};
+import ReplayCanvas from '../components/game/ReplayCanvas';
 
 const SubmissionCard = ({ sub, rank }) => {
-  const canvasRef = useRef(null);
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
-    (sub.strokes || []).forEach(s => drawStroke(ctx, s));
-  }, [sub.strokes]);
-
   const medals = ['🥇', '🥈', '🥉'];
   const isWinner = rank === 0 && sub.votes > 0;
 
   return (
     <div className={`rounded-2xl p-4 border-2 ${isWinner ? 'border-[#FFE66D] bg-[#FFE66D]/10' : 'border-[#2D2D44] bg-[#1A1A2E]'}`}>
-      <div
-        className="relative rounded-xl overflow-hidden mb-3"
-        style={{ width: '100%', aspectRatio: `${CANVAS_W}/${CANVAS_H}` }}
-      >
-        <img src={sub.photoData} alt="selfie" className="absolute inset-0 w-full h-full object-cover" draggable={false} />
-        <canvas
-          ref={canvasRef}
-          width={CANVAS_W}
-          height={CANVAS_H}
-          className="absolute inset-0 w-full h-full pointer-events-none"
-        />
-      </div>
+      <ReplayCanvas strokes={sub.strokes} photoData={sub.photoData} cssWidth="100%" className="rounded-xl overflow-hidden mb-3" />
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="text-lg">{medals[rank] || `${rank + 1}.`}</span>

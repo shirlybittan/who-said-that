@@ -4,6 +4,10 @@ import { io } from 'socket.io-client';
 import { QRCodeSVG } from 'qrcode.react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Confetti from 'react-confetti';
+import TimerRing from '../components/game/TimerRing';
+import VoteCoin from '../components/game/VoteCoin';
+import ReplayCanvas from '../components/game/ReplayCanvas';
+import { QUEUE_GAME_LABELS } from '../config/hostControls';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
 const CLIENT_URL = (import.meta.env.VITE_CLIENT_URL || '').replace(/\/$/, '') || null;
@@ -14,47 +18,19 @@ const COLORS = ['#FF6B6B', '#4ECDC4', '#FFE66D', '#A8E6CF', '#FF8B94', '#6C5CE7'
 
 const GAME_TYPE_LABELS = {
   'who-said-that': '🤔 Who Said That?',
-  'situational': '🎭 Situational',
+  'situational': ' Situational',
   'this-or-that': '⚡ This or That',
   'most-likely-to': '👑 Most Likely To',
   'mixed': '🎲 Mixed',
-  'drawing': '🎨 Sketch It!',
+  'drawing': '🎨 Pictionary Battle',
   'fill-in-the-blank': '✏️ Fill in the Blank',
-  'selfie-roast': '🎨 Selfie Artist',
+  'selfie-roast': '📸 Draw on Friends',
   'caption': '💬 Selfie Captions',
-  'pmatch': '🎯 Who Fits?',
-  'photoassoc': '🏆 Photo Traits',
+  'pmatch': '🎭 Selfie Challenge',
+  'photoassoc': '🎯 Prompt Match',
 };
 
 // ─── Shared sub-components ───────────────────────────────────────────────────
-
-const TimerRing = ({ secondsLeft, total = 30, paused, size = 100 }) => {
-  const radius = 40;
-  const circumference = 2 * Math.PI * radius;
-  const progress = Math.max(0, secondsLeft / total);
-  const offset = circumference * (1 - progress);
-  const color = paused ? '#6C5CE7' : secondsLeft <= 8 ? '#FF6B6B' : secondsLeft <= 15 ? '#FFE66D' : '#4ECDC4';
-  const isUrgent = !paused && secondsLeft <= 8 && secondsLeft > 0;
-  return (
-    <motion.svg
-      style={{ width: size, height: size }}
-      viewBox="0 0 100 100"
-      animate={isUrgent ? { scale: [1, 1.07, 1] } : { scale: 1 }}
-      transition={isUrgent ? { duration: 0.5, repeat: Infinity, ease: 'easeInOut' } : {}}
-    >
-      <circle cx="50" cy="50" r={radius} fill="none" stroke="#2D2D44" strokeWidth="8" />
-      <circle
-        cx="50" cy="50" r={radius} fill="none" stroke={color} strokeWidth="8"
-        strokeDasharray={circumference} strokeDashoffset={offset}
-        strokeLinecap="round" transform="rotate(-90 50 50)"
-        style={{ transition: 'stroke-dashoffset 1s linear, stroke 0.3s' }}
-      />
-      <text x="50" y="57" textAnchor="middle" fill="white" fontSize="26" fontWeight="bold" fontFamily="Nunito">
-        {paused ? '⏸' : secondsLeft}
-      </text>
-    </motion.svg>
-  );
-};
 
 const PlayerAvatar = ({ player, size = 'md', status, subtitle }) => {
   const sizes = { sm: 'w-10 h-10 text-base', md: 'w-14 h-14 text-xl', lg: 'w-20 h-20 text-3xl' };
@@ -102,76 +78,7 @@ const ProgressBar = ({ value, total, color = '#4ECDC4', label, sublabel }) => {
 };
 
 // ─── Drawing canvas helpers (for Sketch It! TV panel) ────────────────────────
-const HOST_CANVAS_W = 400;
-const HOST_CANVAS_H = 300;
-
-const drawHostStroke = (ctx, stroke) => {
-  if (!stroke.points || stroke.points.length === 0) return;
-  ctx.beginPath();
-  ctx.strokeStyle = stroke.type === 'eraser' ? '#FFFFFF' : stroke.color;
-  ctx.fillStyle  = stroke.type === 'eraser' ? '#FFFFFF' : stroke.color;
-  ctx.lineWidth  = stroke.width;
-  ctx.lineCap    = 'round';
-  ctx.lineJoin   = 'round';
-  if (stroke.points.length === 1) {
-    ctx.arc(stroke.points[0].x, stroke.points[0].y, stroke.width / 2, 0, Math.PI * 2);
-    ctx.fill();
-    return;
-  }
-  ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
-  for (let i = 1; i < stroke.points.length; i++) ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
-  ctx.stroke();
-};
-
-const HostReplayCanvas = ({ strokes = [], cssWidth = 200, cssHeight = 150, className = '' }) => {
-  const ref = useRef(null);
-  useEffect(() => {
-    const canvas = ref.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(0, 0, HOST_CANVAS_W, HOST_CANVAS_H);
-    (strokes || []).forEach(s => drawHostStroke(ctx, s));
-  }, [strokes]);
-  return (
-    <canvas
-      ref={ref}
-      width={HOST_CANVAS_W}
-      height={HOST_CANVAS_H}
-      style={{ width: cssWidth, height: cssHeight }}
-      className={`block ${className}`}
-    />
-  );
-};
-
-
-const VoteCoin = ({ coinIndex, cardIndex, isJoker = false }) => (
-  <motion.div
-    className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold select-none flex-shrink-0"
-    style={isJoker ? {
-      background: 'radial-gradient(circle at 35% 35%, #e879f9, #7c3aed)',
-      border: '2px solid #d946ef',
-      boxShadow: '0 0 12px rgba(217,70,239,0.6)',
-      color: '#fff',
-    } : {
-      background: 'radial-gradient(circle at 35% 35%, #fef08a, #ca8a04)',
-      border: '2px solid #facc15',
-      boxShadow: '0 3px 8px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.25)',
-      color: '#713f12',
-    }}
-    initial={{ y: -80, opacity: 0, scale: 0.3, rotate: -40 }}
-    animate={{ y: 0, opacity: 1, scale: 1, rotate: 0 }}
-    transition={{
-      delay: 0.5 + cardIndex * 0.3 + coinIndex * 0.1,
-      type: 'spring',
-      stiffness: 460,
-      damping: 14,
-      mass: 0.6,
-    }}
-  >
-    {isJoker ? '🃏' : '★'}
-  </motion.div>
-);
+// (drawStroke, CANVAS_W/H, HostReplayCanvas replaced by shared ReplayCanvas)
 
 const ScoreList = ({ players, scores, prevScores }) => {
   const sorted = [...players].sort((a, b) => (scores[b.id] || 0) - (scores[a.id] || 0));
@@ -521,6 +428,23 @@ function MltEndPanel({ mlt }) {
 
 function QuestionPanel({ questionData, players }) {
   const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
+  const computeSecondsLeft = () => {
+    const elapsed = questionData.startedAt ? Math.floor((Date.now() - questionData.startedAt) / 1000) : 0;
+    return Math.max(0, (questionData.roundDuration || 60) - elapsed);
+  };
+  const [secondsLeft, setSecondsLeft] = useState(computeSecondsLeft);
+
+  useEffect(() => {
+    const elapsed = questionData.startedAt ? Math.floor((Date.now() - questionData.startedAt) / 1000) : 0;
+    setSecondsLeft(Math.max(0, (questionData.roundDuration || 60) - elapsed));
+  }, [questionData.text]); // Reset timer when question changes
+
+  useEffect(() => {
+    if (secondsLeft <= 0) return;
+    const id = setTimeout(() => setSecondsLeft(s => Math.max(0, s - 1)), 1000);
+    return () => clearTimeout(id);
+  }, [secondsLeft]);
+
   return (
     <div className="flex flex-col items-center gap-8 w-full max-w-5xl">
       <div className="flex items-center gap-4">
@@ -528,9 +452,10 @@ function QuestionPanel({ questionData, players }) {
           Round {questionData.round} of {questionData.totalRounds}
         </span>
         <span className="text-sm font-['Nunito'] text-gray-500 capitalize">
-          {questionData.type === 'situational' ? '🎭 Situational' : '🤔 Who Said That?'}
+          {questionData.type === 'situational' ? ' Situational' : '🤔 Who Said That?'}
         </span>
       </div>
+      <TimerRing secondsLeft={secondsLeft} total={questionData.roundDuration || 60} paused={false} size={100} />
 
       {questionData.type === 'situational' && questionData.target && (
         <div className="flex items-center gap-3 bg-[#A8E6CF]/10 border border-[#A8E6CF]/30 rounded-2xl px-5 py-3">
@@ -570,7 +495,10 @@ function QuestionPanel({ questionData, players }) {
 
       {/* Players row */}
       <div className="flex flex-wrap gap-4 justify-center">
-        {activePlayers.map(p => <PlayerAvatar key={p.id} player={p} size="sm" />)}
+        {activePlayers.map(p => (
+          <PlayerAvatar key={p.id} player={p} size="sm"
+            status={questionData.answeredPlayerIds?.includes(p.id) ? 'answered' : 'waiting'} />
+        ))}
       </div>
     </div>
   );
@@ -610,7 +538,10 @@ function VotingPanel({ votingData, players }) {
       </div>
 
       <div className="flex flex-wrap gap-4 justify-center">
-        {activePlayers.map(p => <PlayerAvatar key={p.id} player={p} size="sm" />)}
+        {activePlayers.map(p => (
+          <PlayerAvatar key={p.id} player={p} size="sm"
+            status={votingData.votedPlayerIds?.includes(p.id) ? 'voted' : 'waiting'} />
+        ))}
       </div>
     </div>
   );
@@ -801,7 +732,7 @@ function SitPanel({ sitData, players }) {
     return (
       <div className="flex flex-col items-center gap-6 w-full max-w-4xl">
         <div className="text-center">
-          <p className="text-xs font-['Nunito'] text-gray-400 uppercase tracking-widest mb-2">🎭 Situational · Results</p>
+          <p className="text-xs font-['Nunito'] text-gray-400 uppercase tracking-widest mb-2"> Situational · Results</p>
           <h2 className="text-2xl font-['Fredoka_One'] text-[#A8E6CF] leading-snug">{sitData.question}</h2>
         </div>
         <motion.div
@@ -847,7 +778,7 @@ function SitPanel({ sitData, players }) {
   return (
     <div className="flex flex-col items-center gap-8 w-full max-w-5xl">
       <div className="text-center">
-        <span className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">🎭 Situational</span>
+        <span className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest"> Situational</span>
       </div>
       <div className="w-full bg-[#1A1A2E] border-2 border-[#A8E6CF]/50 rounded-3xl p-10 text-center"
         style={{ boxShadow: '0 0 40px #A8E6CF10' }}>
@@ -871,7 +802,10 @@ function SitPanel({ sitData, players }) {
         />
       </div>
       <div className="flex flex-wrap gap-4 justify-center">
-        {activePlayers.map(p => <PlayerAvatar key={p.id} player={p} size="sm" />)}
+        {activePlayers.map(p => (
+          <PlayerAvatar key={p.id} player={p} size="sm"
+            status={sitData.votedPlayerIds?.includes(p.id) ? 'voted' : 'waiting'} />
+        ))}
       </div>
     </div>
   );
@@ -980,12 +914,14 @@ function DrawingHostPanel({ drawData, players, status }) {
           <ProgressBar value={drawData.submittedCount} total={total} color="#C39BD3" />
         </div>
 
+        <TimerRing secondsLeft={drawData.secondsLeft ?? drawData.timeLimit ?? 90} total={drawData.timeLimit ?? 90} paused={false} size={100} />
+
         <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-4">
           <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-3 text-center">
             Round {drawData.round}/{drawData.totalRounds}
           </p>
           <div className="flex flex-wrap gap-3 justify-center">
-            {activePlayers.map(p => <PlayerAvatar key={p.id} player={p} size="sm" />)}
+            {activePlayers.map(p => <PlayerAvatar key={p.id} player={p} size="sm" status={drawData.submittedPlayerIds?.includes(p.id) ? 'answered' : 'waiting'} />)}
           </div>
         </div>
       </div>
@@ -1016,7 +952,7 @@ function DrawingHostPanel({ drawData, players, status }) {
                 className="bg-[#1A1A2E] border-2 border-[#C39BD3]/30 rounded-2xl overflow-hidden"
               >
                 <div className="bg-white">
-                  <HostReplayCanvas strokes={sub.strokes} cssWidth="100%" cssHeight={150} className="w-full" />
+                  <ReplayCanvas strokes={sub.strokes} cssWidth="100%" cssHeight={150} className="w-full" />
                 </div>
                 <div className="p-3 text-center">
                   {isSecretMode && (
@@ -1050,49 +986,85 @@ function DrawingHostPanel({ drawData, players, status }) {
   if (isResultsPhase) {
     const results = drawData.results || [];
     const medals = ['🥇', '🥈', '🥉'];
-    const podiumOrder = results.length >= 3
-      ? [results[1], results[0], results[2]]
-      : results.length === 2
-        ? [null, results[0], results[1]]
-        : [null, results[0], null];
-    const podiumHeights = ['h-28', 'h-36', 'h-20'];
-
     return (
-      <div className="flex flex-col items-center gap-8 w-full max-w-5xl">
+      <div className="flex flex-col items-center gap-6 w-full max-w-3xl">
         <motion.div className="text-center" initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }}>
-          <h1 className="text-4xl font-['Fredoka_One'] text-[#FFE66D]">🏆 Round Results</h1>
+          <h1 className="text-4xl font-['Fredoka_One'] text-[#FFE66D]">Round Results</h1>
           {isSecretMode
             ? <span className="mt-1 inline-block px-3 py-1 rounded-full bg-[#C39BD3]/20 text-[#C39BD3] text-sm font-['Nunito']">✦ Secret Words Mode</span>
             : <p className="text-gray-400 font-['Nunito'] mt-1">Word: <span className="text-[#FFE66D] font-bold">{drawData.word}</span></p>
           }
         </motion.div>
 
+        {/* Flat ranked list with drawing thumbnails */}
+        <div className="w-full flex flex-col gap-3">
+          {results.map((r, i) => (
+            <motion.div
+              key={r.playerId}
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: i * 0.1 }}
+              className="flex items-center gap-4 bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-3"
+            >
+              <span className="text-2xl w-10 text-center flex-shrink-0">{medals[i] || `${i + 1}.`}</span>
+              {r.strokes && (
+                <div className="rounded-xl overflow-hidden border border-[#C39BD3]/30 bg-white flex-shrink-0" style={{ width: 80 }}>
+                  <ReplayCanvas strokes={r.strokes} cssWidth="80px" cssHeight={60} className="w-full" />
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <p className="text-white font-['Fredoka_One'] text-lg truncate">{r.name}</p>
+                {isSecretMode && r.word && <p className="text-[#FFE66D] font-['Nunito'] text-sm italic">"{r.word}"</p>}
+              </div>
+              <span className="text-[#4ECDC4] font-['Fredoka_One'] text-xl flex-shrink-0">
+                {r.votes} vote{r.votes !== 1 ? 's' : ''}
+              </span>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // ── END PHASE (final leaderboard with podium) ─────────────────────────────
+  if (isEndPhase) {
+    const leaderboard = drawData.leaderboard || [];
+    const medals = ['🥇', '🥈', '🥉'];
+    const top3 = leaderboard.slice(0, 3);
+    const rest = leaderboard.slice(3);
+    // Podium order: 2nd (left), 1st (centre), 3rd (right)
+    const podiumOrder = top3.length >= 3
+      ? [top3[1], top3[0], top3[2]]
+      : top3.length === 2
+        ? [null, top3[0], top3[1]]
+        : [null, top3[0], null];
+    const podiumHeights = ['h-24', 'h-36', 'h-16'];
+    const podiumColors = ['#C0C0C033', '#FFE66D33', '#CD7F3233'];
+
+    return (
+      <div className="flex flex-col items-center gap-8 w-full max-w-3xl">
+        <motion.div className="text-center" initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }}>
+          <p className="text-6xl mb-3">🎨</p>
+          <h1 className="text-5xl font-['Fredoka_One'] text-[#C39BD3] mb-2">Sketch It!</h1>
+          <p className="text-2xl font-['Fredoka_One'] text-[#FFE66D]">Game Over!</p>
+        </motion.div>
+
         {/* Podium */}
-        {results.length > 0 && (
+        {top3.length > 0 && (
           <div className="w-full flex items-end justify-center gap-4">
-            {podiumOrder.map((r, idx) => r ? (
+            {podiumOrder.map((entry, idx) => entry ? (
               <motion.div
-                key={r.playerId}
+                key={entry.id}
                 initial={{ opacity: 0, y: 40 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: idx * 0.15 }}
                 className="flex flex-col items-center gap-2 flex-1 max-w-xs"
               >
                 <p className="text-3xl mb-1">{medals[idx === 1 ? 0 : idx === 0 ? 1 : 2]}</p>
-                {r.strokes && (
-                  <div className="rounded-xl overflow-hidden border-2 border-[#C39BD3]/40 bg-white w-full">
-                    <HostReplayCanvas strokes={r.strokes} cssWidth="100%" cssHeight={120} className="w-full" />
-                  </div>
-                )}
-                {isSecretMode && r.word && (
-                  <p className="text-[#FFE66D] font-['Fredoka_One'] text-base">"{r.word}"</p>
-                )}
-                <p className="text-white font-['Fredoka_One'] text-lg">{r.name}</p>
-                <p className="text-[#4ECDC4] font-['Fredoka_One'] text-xl">
-                  {r.votes} vote{r.votes !== 1 ? 's' : ''}
-                </p>
+                <p className="text-white font-['Fredoka_One'] text-xl text-center">{entry.name}</p>
+                <p className={`font-['Fredoka_One'] text-2xl ${idx === 1 ? 'text-[#FFE66D]' : 'text-[#4ECDC4]'}`}>{entry.score}</p>
                 <div className={`w-full rounded-t-xl ${podiumHeights[idx]} flex items-end justify-center pb-2`}
-                  style={{ backgroundColor: idx === 1 ? '#FFE66D33' : idx === 0 ? '#C0C0C033' : '#CD7F3233' }}>
+                  style={{ backgroundColor: podiumColors[idx] }}>
                   <span className="font-['Fredoka_One'] text-2xl text-white">
                     {idx === 1 ? '1st' : idx === 0 ? '2nd' : '3rd'}
                   </span>
@@ -1104,66 +1076,24 @@ function DrawingHostPanel({ drawData, players, status }) {
           </div>
         )}
 
-        {/* Full ranked list if more than 3 */}
-        {results.length > 3 && (
-          <div className="w-full max-w-lg flex flex-col gap-2">
-            {results.slice(3).map((r, i) => (
-              <div key={r.playerId} className="flex items-center gap-3 bg-[#1A1A2E] border border-[#2D2D44] rounded-xl px-4 py-3">
-                <span className="text-gray-400 font-['Fredoka_One'] w-8 text-right">{i + 4}.</span>
-                <span className="flex-1 text-white font-['Fredoka_One']">{r.name}</span>
-                {isSecretMode && r.word && <span className="text-[#FFE66D] font-['Nunito'] text-sm italic">"{r.word}"</span>}
-                <span className="text-gray-300 font-['Nunito']">{r.votes} votes</span>
-              </div>
+        {/* Remaining players */}
+        {rest.length > 0 && (
+          <div className="w-full flex flex-col gap-2">
+            {rest.map((entry, i) => (
+              <motion.div
+                key={entry.id}
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: 0.45 + i * 0.07 }}
+                className="flex items-center gap-4 rounded-2xl px-5 py-3 bg-[#1A1A2E] border border-[#2D2D44]"
+              >
+                <span className="text-xl w-8 text-center text-gray-400 font-['Fredoka_One']">{i + 4}.</span>
+                <span className="flex-1 text-white font-['Fredoka_One'] text-xl">{entry.name}</span>
+                <span className="font-['Fredoka_One'] text-xl text-[#4ECDC4]">{entry.score}</span>
+              </motion.div>
             ))}
           </div>
         )}
-
-        {/* Leaderboard */}
-        {(drawData.leaderboard || []).length > 0 && (
-          <div className="w-full max-w-lg">
-            <h3 className="text-lg font-['Fredoka_One'] text-[#4ECDC4] mb-3 text-center">📊 Overall Scores</h3>
-            <div className="flex flex-col gap-2">
-              {drawData.leaderboard.map((entry, i) => (
-                <div key={entry.id} className="flex items-center gap-3 bg-[#1A1A2E] border border-[#2D2D44] rounded-xl px-4 py-3">
-                  <span className="text-gray-400 font-['Fredoka_One'] w-6">{i + 1}</span>
-                  <span className="flex-1 text-white font-['Fredoka_One']">{entry.name}</span>
-                  <span className="text-[#FFE66D] font-['Fredoka_One'] text-xl">{entry.score}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // ── END PHASE (final leaderboard) ────────────────────────────────────────
-  if (isEndPhase) {
-    const leaderboard = drawData.leaderboard || [];
-    const medalEmojis = ['🥇', '🥈', '🥉'];
-    return (
-      <div className="flex flex-col items-center gap-8 w-full max-w-lg">
-        <motion.div className="text-center" initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }}>
-          <p className="text-6xl mb-3">🎨</p>
-          <h1 className="text-5xl font-['Fredoka_One'] text-[#C39BD3] mb-2">Sketch It!</h1>
-          <p className="text-2xl font-['Fredoka_One'] text-[#FFE66D]">Game Over!</p>
-        </motion.div>
-
-        <div className="w-full flex flex-col gap-3">
-          {leaderboard.map((entry, i) => (
-            <motion.div
-              key={entry.id}
-              initial={{ opacity: 0, x: -30 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: i * 0.08 }}
-              className={`flex items-center gap-4 rounded-2xl px-5 py-4 border-2 ${i === 0 ? 'bg-[#FFE66D]/10 border-[#FFE66D]/60' : i === 1 ? 'bg-[#C0C0C0]/10 border-[#C0C0C0]/40' : i === 2 ? 'bg-[#CD7F32]/10 border-[#CD7F32]/40' : 'bg-[#1A1A2E] border-[#2D2D44]'}`}
-            >
-              <span className="text-2xl w-10 text-center">{medalEmojis[i] || `${i + 1}.`}</span>
-              <span className="flex-1 text-white font-['Fredoka_One'] text-2xl">{entry.name}</span>
-              <span className={`font-['Fredoka_One'] text-2xl ${i === 0 ? 'text-[#FFE66D]' : 'text-[#4ECDC4]'}`}>{entry.score}</span>
-            </motion.div>
-          ))}
-        </div>
       </div>
     );
   }
@@ -1264,6 +1194,114 @@ function FitbHostPanel({ fitbData, players, onSkipToVote, onShowResults, onNextR
   );
 }
 
+function PhotoVoteHostPanel({ photoVoteData, players }) {
+  const {
+    subType = 'pmatch', phase = 'waiting', prompt = '', photos = [],
+    votedPlayerIds = [], submittedPlayerIds = [], voteResults = [],
+    round = 0, totalRounds = 5, leaderboard = [],
+  } = photoVoteData || {};
+  const activePlayers = players.filter(p => p.isPlaying !== false && p.isConnected !== false);
+  const label = subType === 'photoassoc' ? '🎯 Prompt Match' : '🎭 Selfie Challenge';
+  const color = subType === 'photoassoc' ? '#A29BFE' : '#FDCB6E';
+
+  if (phase === 'photo') {
+    return (
+      <div className="flex flex-col items-center gap-6 w-full max-w-2xl">
+        <h1 className="text-3xl font-['Fredoka_One']" style={{ color }}>{label}</h1>
+        <p className="text-gray-400 font-['Nunito']">Players are submitting their selfies...</p>
+        <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
+          <ProgressBar value={submittedPlayerIds.length} total={activePlayers.length} color={color} label="Photos submitted" sublabel />
+          <div className="flex flex-wrap gap-3 justify-center mt-4">
+            {activePlayers.map(p => (
+              <PlayerAvatar key={p.id} player={p} size="sm" status={submittedPlayerIds.includes(p.id) ? 'answered' : 'waiting'} />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === 'voting') {
+    return (
+      <div className="flex flex-col items-center gap-6 w-full max-w-2xl">
+        <h1 className="text-3xl font-['Fredoka_One']" style={{ color }}>{label} — Round {round}/{totalRounds}</h1>
+        {prompt && (
+          <div className="w-full bg-[#1A1A2E] border-2 rounded-2xl p-5 text-center" style={{ borderColor: color }}>
+            <p className="text-2xl font-['Fredoka_One'] text-white">{prompt}</p>
+          </div>
+        )}
+        <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">Votes in</p>
+            <p className="text-2xl font-['Fredoka_One'] text-white">{votedPlayerIds.length}/{activePlayers.length}</p>
+          </div>
+          <ProgressBar value={votedPlayerIds.length} total={activePlayers.length} color={color} />
+          <div className="flex flex-wrap gap-3 justify-center mt-4">
+            {activePlayers.map(p => (
+              <PlayerAvatar key={p.id} player={p} size="sm" status={votedPlayerIds.includes(p.id) ? 'voted' : 'waiting'} />
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === 'results') {
+    return (
+      <div className="flex flex-col items-center gap-6 w-full max-w-2xl">
+        <h1 className="text-3xl font-['Fredoka_One']" style={{ color }}>{label} — Round {round} Results</h1>
+        {prompt && (
+          <div className="w-full bg-[#1A1A2E] rounded-2xl px-4 py-2 text-center mb-1">
+            <p className="font-['Nunito'] text-sm font-semibold" style={{ color: '#FFE66D' }}>{prompt}</p>
+          </div>
+        )}
+        <div className="flex flex-col gap-3 w-full">
+          {voteResults.map((r, i) => (
+            <motion.div key={r.playerId} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }}
+              className={`flex items-center gap-4 rounded-2xl p-4 border ${r.isWinner ? 'border-yellow-400 bg-yellow-400/10' : 'border-[#2D2D44] bg-[#1A1A2E]'}`}>
+              <span className="text-2xl w-8 text-center">{r.isWinner ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}</span>
+              {r.photoData ? (
+                <img src={r.photoData} className="w-14 h-14 rounded-xl object-cover flex-shrink-0" alt="" />
+              ) : (
+                <div className="w-14 h-14 rounded-xl bg-[#2D2D44] flex items-center justify-center text-2xl flex-shrink-0">🤷</div>
+              )}
+              <p className="flex-1 font-['Fredoka_One'] text-white text-lg">{r.playerName}</p>
+              <span className="font-['Fredoka_One'] text-xl" style={{ color }}>{r.voteCount} vote{r.voteCount !== 1 ? 's' : ''}</span>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === 'ended') {
+    return (
+      <div className="flex flex-col items-center gap-6 w-full max-w-2xl">
+        <h1 className="text-3xl font-['Fredoka_One']" style={{ color }}>🏆 {label} — Final Results!</h1>
+        <div className="flex flex-col gap-3 w-full">
+          {leaderboard.map((entry, i) => (
+            <motion.div key={entry.id} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }}
+              className="flex items-center gap-4 rounded-2xl px-5 py-4"
+              style={i === 0 ? { background: 'linear-gradient(135deg, #FFE66D20, #FDCB6E20)', border: `2px solid ${color}` } : { background: '#1A1A2E', border: '1px solid #2D2D44' }}>
+              <span className="text-2xl w-10 text-center">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}</span>
+              <span className="flex-1 text-white font-['Fredoka_One'] text-xl">{entry.name}</span>
+              <span className="font-['Fredoka_One'] text-2xl" style={{ color }}>{entry.pts} pts</span>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-center gap-6 w-full max-w-xl">
+      <p className="text-6xl">{subType === 'photoassoc' ? '🏆' : '🎯'}</p>
+      <h1 className="text-3xl font-['Fredoka_One']" style={{ color }}>{label}</h1>
+      <p className="text-gray-400 font-['Nunito']">Starting game...</p>
+    </div>
+  );
+}
+
 function SimplePhotoHostPanel({ label, phase, players, onSkipToResults, onNextRound }) {
   const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
   return (
@@ -1273,16 +1311,143 @@ function SimplePhotoHostPanel({ label, phase, players, onSkipToResults, onNextRo
         <p className="text-lg font-['Fredoka_One'] text-white mb-2 capitalize">Phase: {phase || '—'}</p>
         <p className="text-sm font-['Nunito'] text-gray-400">{activePlayers.length} active players</p>
       </div>
+
       {(phase === 'voting') && (
         <button onClick={onSkipToResults} className="w-full py-3 rounded-2xl bg-[#FFE66D] text-black font-['Fredoka_One'] text-lg">
-          Skip to Results ⏭️
+          🏆 Show Results
         </button>
       )}
+
       {(phase === 'results') && (
         <button onClick={onNextRound} className="w-full py-3 rounded-2xl bg-[#4ECDC4] text-black font-['Fredoka_One'] text-lg">
           Next Round ▶️
         </button>
       )}
+    </div>
+  );
+}
+
+function CaptionHostPanel({ captionData, players }) {
+  const phase = captionData?.phase;
+  const roundLabel = captionData?.totalRounds > 1 ? ` — Round ${captionData.round || 1}/${captionData.totalRounds}` : '';
+
+  const photoBlock = captionData?.featuredPhotoData ? (
+    <div className="w-full rounded-2xl overflow-hidden border border-[#2D2D44]" style={{ aspectRatio: '4/3' }}>
+      <img src={captionData.featuredPhotoData} alt="featured" className="w-full h-full object-cover" />
+    </div>
+  ) : null;
+
+  if (phase === 'photo') {
+    const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
+    return (
+      <div className="flex flex-col items-center gap-6 w-full max-w-xl">
+        <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">💬 Selfie Captions{roundLabel}</h1>
+        <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5 text-center">
+          <p className="text-lg font-['Fredoka_One'] text-white mb-1">📸 Taking selfies…</p>
+          <p className="text-sm font-['Nunito'] text-gray-400">{activePlayers.length} players</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === 'writing') {
+    const written = captionData.captionCount || 0;
+    const total = captionData.totalWriters || players.filter(p => p.isPlaying && p.isConnected).length;
+    return (
+      <div className="flex flex-col items-center gap-6 w-full max-w-xl">
+        <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">💬 Selfie Captions{roundLabel}</h1>
+        {photoBlock}
+        {captionData.featuredOwnerName && (
+          <p className="text-sm font-['Nunito'] text-gray-400">📸 {captionData.featuredOwnerName}'s photo</p>
+        )}
+        {captionData.prompt && (
+          <div className="w-full bg-[#1A1A2E] border border-[#FD79A8]/40 rounded-2xl p-4 text-center">
+            <p className="text-lg font-['Fredoka_One'] text-[#FD79A8]">✏️ {captionData.prompt}</p>
+          </div>
+        )}
+        <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-4">
+          <div className="flex justify-between mb-2">
+            <span className="text-sm font-['Nunito'] text-gray-400">Captions written</span>
+            <span className="text-sm font-['Fredoka_One'] text-white">{written}/{total}</span>
+          </div>
+          <div className="w-full bg-[#2D2D44] rounded-full h-2">
+            <div className="bg-[#FD79A8] h-2 rounded-full transition-all" style={{ width: total ? `${(written / total) * 100}%` : '0%' }} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === 'voting') {
+    const voted = captionData.voteCount || 0;
+    const total = captionData.totalVoters || players.filter(p => p.isPlaying && p.isConnected).length;
+    return (
+      <div className="flex flex-col items-center gap-6 w-full max-w-xl">
+        <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">💬 Selfie Captions{roundLabel}</h1>
+        {photoBlock}
+        {captionData.prompt && (
+          <div className="w-full bg-[#1A1A2E] border border-[#FD79A8]/40 rounded-2xl p-4 text-center">
+            <p className="text-base font-['Nunito'] text-[#FD79A8]">✏️ {captionData.prompt}</p>
+          </div>
+        )}
+        <div className="w-full flex flex-col gap-2">
+          {(captionData.captions || []).map((c, i) => (
+            <div key={c.id} className="flex items-center gap-3 bg-[#1A1A2E] border border-[#2D2D44] rounded-xl px-4 py-2">
+              <span className="text-xs font-['Fredoka_One'] text-gray-500 w-5">{i + 1}</span>
+              <span className="flex-1 text-sm font-['Nunito'] text-white">{c.text}</span>
+            </div>
+          ))}
+        </div>
+        <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-4">
+          <div className="flex justify-between mb-2">
+            <span className="text-sm font-['Nunito'] text-gray-400">Votes in</span>
+            <span className="text-sm font-['Fredoka_One'] text-white">{voted}/{total}</span>
+          </div>
+          <div className="w-full bg-[#2D2D44] rounded-full h-2">
+            <div className="bg-[#FFE66D] h-2 rounded-full transition-all" style={{ width: total ? `${(voted / total) * 100}%` : '0%' }} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (phase === 'results') {
+    return (
+      <div className="flex flex-col items-center gap-6 w-full max-w-xl">
+        <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">💬 Results{roundLabel}</h1>
+        {photoBlock}
+        {captionData.featuredOwnerName && (
+          <p className="text-sm font-['Nunito'] text-gray-400">📸 {captionData.featuredOwnerName}'s photo</p>
+        )}
+        {captionData.prompt && (
+          <div className="w-full bg-[#1A1A2E] border border-[#FD79A8]/40 rounded-2xl p-4 text-center">
+            <p className="text-base font-['Nunito'] text-[#FD79A8]">✏️ {captionData.prompt}</p>
+          </div>
+        )}
+        <div className="w-full flex flex-col gap-2">
+          {(captionData.captionResults || []).map((c, i) => (
+            <div key={c.id} className={`flex items-center gap-3 rounded-xl px-4 py-3 border ${i === 0 ? 'bg-[#FFE66D]/10 border-[#FFE66D]/60' : 'bg-[#1A1A2E] border-[#2D2D44]'}`}>
+              <span className="text-lg w-8 text-center">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-['Nunito'] text-white leading-tight">{c.text}</p>
+                <p className="text-xs font-['Nunito'] text-gray-400 mt-0.5">— {c.playerName}</p>
+              </div>
+              <span className="text-base font-['Fredoka_One'] text-[#FFE66D] shrink-0">{c.voteCount} 🗳️</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Fallback
+  const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
+  return (
+    <div className="flex flex-col items-center gap-6 w-full max-w-xl">
+      <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">💬 Selfie Captions{roundLabel}</h1>
+      <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5 text-center">
+        <p className="text-sm font-['Nunito'] text-gray-400">{activePlayers.length} active players</p>
+      </div>
     </div>
   );
 }
@@ -1326,6 +1491,11 @@ function SelfieHostPanel({ selfieData, players, onSkipToVote, onShowResults }) {
     return (
       <div className="flex flex-col items-center gap-6 w-full max-w-xl">
         <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">📸 Roasting in Progress...</h1>
+        {selfieData.promptTemplate && (
+          <div className="w-full bg-[#1A1A2E] border border-[#FD79A8]/40 rounded-2xl p-4 text-center">
+            <p className="text-lg font-['Fredoka_One'] text-[#FD79A8]">🎨 {selfieData.promptTemplate}</p>
+          </div>
+        )}
         <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
           <div className="flex items-center justify-between mb-3">
             <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">Drawings submitted</p>
@@ -1355,14 +1525,14 @@ function SelfieHostPanel({ selfieData, players, onSkipToVote, onShowResults }) {
 const GAME_TYPES_FOR_CREATE = [
   { id: 'most-likely-to',    label: '👑 Most Likely To',      desc: 'Who fits the prompt?',           accent: '#4ECDC4' },
   { id: 'who-said-that',     label: '🤔 Who Said That?',      desc: 'Guess who wrote it!',            accent: '#FFE66D' },
-  { id: 'situational',       label: '🎭 Situational',         desc: 'Answer for someone!',            accent: '#A8E6CF' },
+  { id: 'situational',       label: ' Situational',         desc: 'Answer for someone!',            accent: '#A8E6CF' },
   { id: 'this-or-that',      label: '⚡ This or That',        desc: 'Pick a side!',                   accent: '#6C5CE7' },
-  { id: 'drawing',           label: '🎨 Sketch It!',          desc: 'Draw and guess!',                accent: '#C39BD3' },
+  { id: 'drawing',           label: '🎨 Pictionary Battle',    desc: 'Draw and guess!',                accent: '#C39BD3' },
   { id: 'fill-in-the-blank', label: '✏️ Fill in the Blank',  desc: 'Finish the sentence!',           accent: '#F9CA24' },
   { id: 'selfie-roast',      label: '📸 Selfie Artist',       desc: "Draw on someone's selfie!",     accent: '#FD79A8' },
   { id: 'caption',           label: '💬 Selfie Captions',     desc: 'Write funny captions!',          accent: '#FD79A8' },
-  { id: 'pmatch',            label: '🎯 Who Fits?',           desc: 'Match people to prompts!',       accent: '#FDCB6E' },
-  { id: 'photoassoc',        label: '🏆 Photo Traits',        desc: 'Vote who matches the vibe!',     accent: '#A29BFE' },
+  { id: 'pmatch',            label: '🎭 Selfie Challenge',    desc: 'Act out a prompt — best selfie wins!', accent: '#FDCB6E' },
+  { id: 'photoassoc',        label: '🎯 Prompt Match',        desc: 'Vote who matches the vibe!',     accent: '#A29BFE' },
   { id: 'mixed',             label: '🎲 Mixed',               desc: 'All modes shuffled!',            accent: '#FF8B94' },
   { id: 'playlist',          label: '📋 Playlist',            desc: 'Play multiple games in order!',  accent: '#FDCB6E', colSpan: 2 },
 ];
@@ -1425,9 +1595,9 @@ function SetupScreen({ onCreateRoom, onSpectate }) {
 
 const MIXED_SUB_GAMES = [
   { id: 'who-said-that', label: '🤔 Who Said That?', accent: '#FFE66D' },
-  { id: 'situational',   label: '🎭 Situational',   accent: '#A8E6CF' },
+  { id: 'situational',   label: ' Situational',   accent: '#A8E6CF' },
   { id: 'this-or-that',  label: '⚡ This or That',  accent: '#6C5CE7' },
-  { id: 'drawing',       label: '🎨 Sketch It!',    accent: '#C39BD3' },
+  { id: 'drawing',       label: '🎨 Pictionary Battle',  accent: '#C39BD3' },
 ];
 
 const DEFAULT_SUB_GAMES = ['who-said-that', 'situational', 'this-or-that', 'drawing'];
@@ -1437,6 +1607,7 @@ function CreateRoomForm({ onSubmit, onBack }) {
   const [gameName, setGameName] = React.useState('');
   const [rounds, setRounds] = React.useState(5);
   const [selectedSubGames, setSelectedSubGames] = React.useState(DEFAULT_SUB_GAMES);
+  const [roundsPerSubGame, setRoundsPerSubGame] = React.useState(3);
   const [drawMode, setDrawMode] = React.useState('classic');
   const [roundDurationSecs, setRoundDurationSecs] = React.useState(60);
   const [queueItems, setQueueItems] = React.useState([
@@ -1477,7 +1648,7 @@ function CreateRoomForm({ onSubmit, onBack }) {
       const firstGame = queueItems[0];
       onSubmit({ gameType: firstGame.type, gameName: gameName.trim(), rounds: firstGame.rounds, drawMode, roomConfig, gameQueue: queueItems });
     } else if (gameType === 'mixed') {
-      onSubmit({ gameType, gameName: gameName.trim(), rounds, selectedSubGames, roomConfig });
+      onSubmit({ gameType, gameName: gameName.trim(), rounds, selectedSubGames, roundsPerSubGame, roomConfig });
     } else if (gameType === 'drawing') {
       onSubmit({ gameType, gameName: gameName.trim(), rounds, drawMode, roomConfig });
     } else {
@@ -1488,14 +1659,14 @@ function CreateRoomForm({ onSubmit, onBack }) {
   const PLAYLIST_GAME_OPTIONS = [
     { id: 'most-likely-to', label: '👑 Most Likely To', accent: '#4ECDC4' },
     { id: 'who-said-that',  label: '🤔 Who Said That?', accent: '#FFE66D' },
-    { id: 'situational',   label: '🎭 Situational',   accent: '#A8E6CF' },
+    { id: 'situational',   label: ' Situational',   accent: '#A8E6CF' },
     { id: 'this-or-that',  label: '⚡ This or That',  accent: '#6C5CE7' },
-    { id: 'drawing',       label: '🎨 Sketch It!',    accent: '#C39BD3' },
+    { id: 'drawing',       label: '🎨 Pictionary Battle',  accent: '#C39BD3' },
     { id: 'fill-in-the-blank', label: '✏️ Fill in the Blank', accent: '#F9CA24' },
-    { id: 'selfie-roast',  label: '📸 Selfie Artist', accent: '#FD79A8' },
+    { id: 'selfie-roast',  label: '📸 Draw on Friends', accent: '#FD79A8' },
     { id: 'caption',       label: '💬 Selfie Captions', accent: '#FD79A8' },
-    { id: 'pmatch',        label: '🎯 Who Fits?',       accent: '#FDCB6E' },
-    { id: 'photoassoc',    label: '🏆 Photo Traits',    accent: '#A29BFE' },
+    { id: 'pmatch',        label: '🎭 Selfie Challenge', accent: '#FDCB6E' },
+    { id: 'photoassoc',    label: '🎯 Prompt Match',     accent: '#A29BFE' },
   ];
 
   return (
@@ -1532,7 +1703,7 @@ function CreateRoomForm({ onSubmit, onBack }) {
         {gameType === 'mixed' && (
           <div className="mb-6">
             <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-3">Mini Games to Include</p>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-2 mb-4">
               {MIXED_SUB_GAMES.map(sg => {
                 const active = selectedSubGames.includes(sg.id);
                 return (
@@ -1548,6 +1719,21 @@ function CreateRoomForm({ onSubmit, onBack }) {
                   </button>
                 );
               })}
+            </div>
+            <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-2">Rounds per Game</p>
+            <div className="flex gap-2">
+              {[3, 4, 5].map(r => (
+                <button
+                  key={r}
+                  onClick={() => setRoundsPerSubGame(r)}
+                  className="px-5 py-2 rounded-xl font-['Fredoka_One'] text-sm border-2 transition active:scale-95"
+                  style={roundsPerSubGame === r
+                    ? { borderColor: '#FDCB6E', color: '#FDCB6E', backgroundColor: '#FDCB6E18' }
+                    : { borderColor: '#2D2D44', color: '#666', backgroundColor: 'transparent' }}
+                >
+                  {r}
+                </button>
+              ))}
             </div>
           </div>
         )}
@@ -1661,17 +1847,9 @@ function CreateRoomForm({ onSubmit, onBack }) {
 }
 
 // ─── Host control bar (creator only) ─────────────────────────────────────────
+// QUEUE_GAME_LABELS imported from '../config/hostControls'
 
-const QUEUE_GAME_LABELS = {
-  'most-likely-to': 'Most Likely To',
-  'whos-most-likely': 'Most Likely To',
-  'this-or-that': 'This or That',
-  'situational': 'Situational',
-  'drawing': 'Sketch It',
-  'mixed': 'Mixed',
-};
-
-function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbData, isMixedMode, onStart, onMltPauseResume, onMltChangeQuestion, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, onNewGame, onPlayAgain, onNewPartyPack, gameQueue, queueIndex, onSelfieNextRound, onSelfieSkipQuestion, onShowSelfieResults, onFitbChangeQuestion, onFitbSkipToVote, onFitbShowResults, onFitbNextRound }) {
+function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbData, photoVoteData, captionData, isMixedMode, onStart, onMltPauseResume, onMltChangeQuestion, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, onNewGame, onPlayAgain, onNewPartyPack, gameQueue, queueIndex, onSelfieNextRound, onSelfieSkipQuestion, onShowSelfieResults, onFitbChangeQuestion, onFitbSkipToVote, onFitbShowResults, onFitbNextRound, onPhotoVoteChangeQuestion, onPhotoVoteSkipToResults, onPhotoVoteNextRound, onCaptionChangeQuestion, onCaptionSkipToVoting, onCaptionSkipToResults, onCaptionNextRound }) {
   if (!isRoomCreator) return null;
 
   const playingCount = players.filter(p => p.isPlaying && p.isConnected).length;
@@ -1863,14 +2041,97 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
         </div>
       );
     }
-  } else if (status === 'caption' || status === 'photovote') {
-    controls = (
-      <div className="flex gap-3">
-        <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-          🔀 Skip Mini Game
-        </button>
-      </div>
-    );
+  } else if (status === 'caption') {
+    const capPhase = captionData?.phase;
+    if (capPhase === 'writing') {
+      controls = (
+        <div className="flex gap-3">
+          <button onClick={onCaptionChangeQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FD79A8] hover:text-[#FD79A8] active:scale-95 transition">
+            🔄 Change Question
+          </button>
+          <button onClick={onCaptionSkipToVoting} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FD79A8] hover:text-[#FD79A8] active:scale-95 transition">
+            🗳️ Start Voting
+          </button>
+          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+            🔀 Skip Mini Game
+          </button>
+        </div>
+      );
+    } else if (capPhase === 'voting') {
+      controls = (
+        <div className="flex gap-3">
+          <button onClick={onCaptionSkipToResults} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FFE66D] hover:text-[#FFE66D] active:scale-95 transition">
+            🏆 Show Results
+          </button>
+          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+            🔀 Skip Mini Game
+          </button>
+        </div>
+      );
+    } else if (capPhase === 'results') {
+      controls = (
+        <div className="flex gap-3">
+          <button onClick={onCaptionNextRound} className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#FD79A8] text-black hover:opacity-90 active:scale-95 transition" style={{ boxShadow: '0 0 20px #FD79A840' }}>
+            Next Round →
+          </button>
+          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+            🔀 Skip Mini Game
+          </button>
+        </div>
+      );
+    } else {
+      controls = (
+        <div className="flex gap-3">
+          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+            🔀 Skip Mini Game
+          </button>
+        </div>
+      );
+    }
+  } else if (status === 'photovote') {
+    const pvPhase = photoVoteData?.phase;
+    if (pvPhase === 'voting') {
+      controls = (
+        <div className="flex gap-3">
+          <button onClick={onPhotoVoteChangeQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FDCB6E] hover:text-[#FDCB6E] active:scale-95 transition">
+            🔄 Change Question
+          </button>
+          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+            🔀 Skip Mini Game
+          </button>
+        </div>
+      );
+    } else if (pvPhase === 'results') {
+      controls = (
+        <div className="flex gap-3">
+          <button onClick={onPhotoVoteNextRound} className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#FDCB6E] text-black hover:opacity-90 active:scale-95 transition" style={{ boxShadow: '0 0 20px #FDCB6E40' }}>
+            Next Round →
+          </button>
+          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+            🔀 Skip Mini Game
+          </button>
+        </div>
+      );
+    } else if (pvPhase === 'ended') {
+      controls = (
+        <div className="flex gap-3 flex-wrap justify-center">
+          <button onClick={onPlayAgain} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#4ECDC4] text-[#4ECDC4] hover:bg-[#4ECDC4]/10 active:scale-95 transition">
+            🔄 Play Again
+          </button>
+          <button onClick={onNewPartyPack} className="px-8 py-2.5 rounded-xl font-['Fredoka_One'] text-base bg-[#FFE66D] text-black hover:bg-[#ffdd33] active:scale-95 transition" style={{ boxShadow: '0 0 16px #FFE66D40' }}>
+            🎮 New Party Pack
+          </button>
+        </div>
+      );
+    } else {
+      controls = (
+        <div className="flex gap-3">
+          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+            🔀 Skip Mini Game
+          </button>
+        </div>
+      );
+    }
   } else if (status === 'selfie') {
     controls = (
       <div className="flex gap-3">
@@ -1961,11 +2222,11 @@ export default function HostPage() {
 
   const [questionData, setQuestionData] = useState({
     text: '', round: 0, totalRounds: 0, type: 'wst', target: null,
-    answeredCount: 0, totalAnswerers: 0,
+    answeredCount: 0, totalAnswerers: 0, answeredPlayerIds: [], roundDuration: 60,
   });
 
   const [votingData, setVotingData] = useState({
-    answers: [], currentIndex: 0, voteCount: 0, totalPlayers: 0, allVotesIn: false,
+    answers: [], currentIndex: 0, voteCount: 0, totalPlayers: 0, allVotesIn: false, votedPlayerIds: [],
   });
 
   const [roundEndData, setRoundEndData] = useState({ scores: {}, prevScores: {}, players: [], answers: [] });
@@ -1979,13 +2240,13 @@ export default function HostPage() {
 
   const [sitData, setSitData] = useState({
     question: '', target: null, answers: [],
-    voteCount: 0, totalVoters: 0, hasResults: false, votingStarted: false, winners: [], scores: {},
+    voteCount: 0, totalVoters: 0, hasResults: false, votingStarted: false, winners: [], scores: {}, votedPlayerIds: [],
   });
 
   const [drawData, setDrawData] = useState({
     word: '', round: 0, totalRounds: 0, phase: 'drawing', mode: 'classic',
-    submittedCount: 0, totalDrawers: 0, voteCount: 0, totalVoters: 0,
-    submissions: [], results: [], scores: {}, leaderboard: [],
+    submittedCount: 0, submittedPlayerIds: [], totalDrawers: 0, voteCount: 0, totalVoters: 0,
+    submissions: [], results: [], scores: {}, leaderboard: [], secondsLeft: 90, timeLimit: 90,
   });
 
   const [fitbData, setFitbData] = useState({
@@ -2002,7 +2263,11 @@ export default function HostPage() {
   });
 
   const [captionData, setCaptionData] = useState({ phase: 'waiting', round: 0, totalRounds: 3 });
-  const [photoVoteData, setPhotoVoteData] = useState({ subType: 'pmatch', phase: 'waiting', round: 0, totalRounds: 5 });
+  const [photoVoteData, setPhotoVoteData] = useState({
+    subType: 'pmatch', phase: 'waiting', round: 0, totalRounds: 5,
+    prompt: '', photos: [], votedPlayerIds: [], submittedPlayerIds: [],
+    voteResults: [], voteCount: 0, totalVoters: 0, leaderboard: [],
+  });
 
   // Queue state for "Game Playlist" mode
   const [gameQueue, setGameQueue] = useState([]); // [{type, rounds, mode?}]
@@ -2010,6 +2275,9 @@ export default function HostPage() {
 
   // Change Game picker overlay
   const [showGamePicker, setShowGamePicker] = useState(false);
+  // Main menu overlay
+  const [showMainMenu, setShowMainMenu] = useState(false);
+  const [mainMenuKeepPoints, setMainMenuKeepPoints] = useState(true);
 
   const socketRef = useRef(null);
 
@@ -2029,6 +2297,7 @@ export default function HostPage() {
     });
 
     sock.on('mlt:timer', ({ secondsLeft }) => setMlt(prev => ({ ...prev, secondsLeft })));
+    sock.on('mlt:question_changed', (data) => setMlt(prev => ({ ...prev, currentPrompt: data.currentPrompt })));
     sock.on('mlt:paused', () => setMlt(prev => ({ ...prev, paused: true })));
     sock.on('mlt:resumed', ({ secondsLeft }) => setMlt(prev => ({ ...prev, paused: false, secondsLeft })));
     sock.on('mlt:vote_received', ({ voteCount, totalVoters }) => setMlt(prev => ({ ...prev, voteCount, totalVoters })));
@@ -2070,23 +2339,24 @@ export default function HostPage() {
         setQuestionData({
           text: data.question || '', round: data.round, totalRounds: data.totalRounds,
           type: data.roundType || 'wst', target: data.target || null,
-          answeredCount: 0, totalAnswerers: 0,
+          answeredCount: 0, totalAnswerers: 0, answeredPlayerIds: [], roundDuration: data.roundDuration || 60,
+          startedAt: data.startedAt || Date.now(),
         });
         setStatus('question');
       }
     });
 
-    sock.on('answer_received', ({ answeredCount, totalPlayers }) => {
-      setQuestionData(prev => ({ ...prev, answeredCount, totalAnswerers: totalPlayers }));
+    sock.on('answer_received', ({ answeredCount, totalPlayers, answeredPlayerIds }) => {
+      setQuestionData(prev => ({ ...prev, answeredCount, totalAnswerers: totalPlayers, answeredPlayerIds: answeredPlayerIds || [] }));
     });
 
     sock.on('voting_started', ({ answers, currentIndex, totalPlayers }) => {
-      setVotingData({ answers, currentIndex, voteCount: 0, totalPlayers: totalPlayers || 0 });
+      setVotingData({ answers, currentIndex, voteCount: 0, totalPlayers: totalPlayers || 0, votedPlayerIds: [] });
       setStatus('voting');
     });
 
-    sock.on('vote_received', ({ votedCount, totalPlayers }) => {
-      setVotingData(prev => ({ ...prev, voteCount: votedCount, totalPlayers }));
+    sock.on('vote_received', ({ votedCount, totalPlayers, votedPlayerIds }) => {
+      setVotingData(prev => ({ ...prev, voteCount: votedCount, totalPlayers, votedPlayerIds: votedPlayerIds || [] }));
     });
 
     sock.on('all_votes_in', () => {
@@ -2094,7 +2364,7 @@ export default function HostPage() {
     });
 
     sock.on('next_answer', ({ currentIndex }) => {
-      setVotingData(prev => ({ ...prev, currentIndex, voteCount: 0, allVotesIn: false }));
+      setVotingData(prev => ({ ...prev, currentIndex, voteCount: 0, allVotesIn: false, votedPlayerIds: [] }));
     });
 
     sock.on('round_ended', (data) => {
@@ -2129,12 +2399,12 @@ export default function HostPage() {
         ...prev,
         question: data.question || '', answers: data.answers || [],
         totalVoters: data.totalVoters, voteCount: 0,
-        hasResults: false, votingStarted: true, winners: [],
+        hasResults: false, votingStarted: true, winners: [], votedPlayerIds: [],
       }));
       setStatus('sit-voting');
     });
 
-    sock.on('sit:vote_received', ({ voteCount, totalVoters }) => setSitData(prev => ({ ...prev, voteCount, totalVoters })));
+    sock.on('sit:vote_received', ({ voteCount, totalVoters, votedPlayerIds }) => setSitData(prev => ({ ...prev, voteCount, totalVoters, votedPlayerIds: votedPlayerIds || [] })));
 
     sock.on('sit:results', (data) => {
       setSitData(prev => ({ ...prev, answers: data.answers || [], scores: data.scores || {}, winners: data.winners || [], hasResults: true }));
@@ -2149,6 +2419,7 @@ export default function HostPage() {
         phase: 'drawing',
         mode: data.mode || 'classic',
         submittedCount: 0,
+        submittedPlayerIds: [],
         totalDrawers: data.players?.length || 0,
         voteCount: 0,
         totalVoters: 0,
@@ -2156,17 +2427,27 @@ export default function HostPage() {
         results: [],
         scores: {},
         leaderboard: [],
+        timeLimit: data.timeLimit || 90,
+        secondsLeft: data.timeLimit || 90,
       });
       setStatus('drawing');
     });
 
-    sock.on('draw:submission_received', ({ submittedCount, totalDrawers }) => {
-      setDrawData(prev => ({ ...prev, submittedCount, totalDrawers }));
+    sock.on('draw:timer', ({ secondsLeft }) => {
+      setDrawData(prev => ({ ...prev, secondsLeft }));
+    });
+
+    sock.on('draw:submission_received', ({ submittedCount, totalDrawers, submittedPlayerIds }) => {
+      setDrawData(prev => ({ ...prev, submittedCount, totalDrawers, submittedPlayerIds: submittedPlayerIds || [] }));
+    });
+
+    sock.on('draw:word_changed', (data) => {
+      setDrawData(prev => ({ ...prev, word: data.word, submittedCount: 0, submittedPlayerIds: [] }));
     });
 
     sock.on('draw:voting_started', (data) => {
       setDrawData(prev => ({ ...prev, phase: 'voting', voteCount: 0, totalVoters: data.totalVoters || 0, submissions: data.submissions || [], mode: data.mode || prev.mode }));
-      setStatus('draw-voting');
+      setStatus(prev => prev === 'drawing' ? 'draw-voting' : prev);
     });
 
     sock.on('draw:vote_received', ({ voteCount, totalVoters }) => {
@@ -2175,12 +2456,12 @@ export default function HostPage() {
 
     sock.on('draw:results', (data) => {
       setDrawData(prev => ({ ...prev, phase: 'results', results: data.results || [], scores: data.scores || {}, leaderboard: data.leaderboard || [], mode: data.mode || prev.mode }));
-      setStatus('draw-results');
+      setStatus(prev => (prev === 'draw-voting' || prev === 'drawing') ? 'draw-results' : prev);
     });
 
     sock.on('draw:end', (data) => {
       setDrawData(prev => ({ ...prev, leaderboard: data.leaderboard || [] }));
-      setStatus('draw-end');
+      setStatus(prev => (prev === 'draw-results' || prev === 'draw-voting' || prev === 'drawing') ? 'draw-end' : prev);
     });
 
     // FITB handlers
@@ -2218,7 +2499,8 @@ export default function HostPage() {
       setSelfieData(prev => ({ ...prev, photoCount, totalPhotographers }));
     });
     sock.on('selfie:drawing_phase', (data) => {
-      setSelfieData(prev => ({ ...prev, phase: 'drawing', drawingCount: 0, totalDrawers: data.totalDrawers || 0 }));
+      setSelfieData(prev => ({ ...prev, phase: 'drawing', drawingCount: 0, totalDrawers: data.totalDrawers || 0, promptTemplate: data.promptTemplate || '' }));
+      setStatus('selfie'); // Ensure host shows selfie panel even when photo phase was skipped
     });
     sock.on('selfie:drawing_received', ({ drawingCount, totalDrawers }) => {
       setSelfieData(prev => ({ ...prev, drawingCount, totalDrawers }));
@@ -2236,17 +2518,23 @@ export default function HostPage() {
     });
 
     sock.on('caption:photo_phase', (data) => {
-      setCaptionData({ phase: 'photo', round: data.round, totalRounds: data.totalRounds });
+      setCaptionData({ phase: 'photo', round: data.round, totalRounds: data.totalRounds, prompt: '', featuredPhotoData: null, featuredOwnerName: '', captions: [], captionCount: 0, totalWriters: 0, voteCount: 0, totalVoters: 0, captionResults: [] });
       setStatus('caption');
     });
     sock.on('caption:writing_phase', (data) => {
-      setCaptionData(prev => ({ ...prev, phase: 'writing', round: data.round }));
+      setCaptionData(prev => ({ ...prev, phase: 'writing', round: data.round, totalRounds: data.totalRounds || prev.totalRounds, prompt: data.prompt || '', featuredOwnerId: data.featuredOwnerId, featuredOwnerName: data.featuredOwnerName || '', featuredPhotoData: data.featuredPhotoData || null, totalWriters: (data.writers || []).length, captionCount: 0 }));
     });
-    sock.on('caption:voting_phase', () => {
-      setCaptionData(prev => ({ ...prev, phase: 'voting' }));
+    sock.on('caption:caption_submitted', (data) => {
+      setCaptionData(prev => ({ ...prev, captionCount: data.submittedCount, totalWriters: data.totalCount }));
+    });
+    sock.on('caption:voting_phase', (data) => {
+      setCaptionData(prev => ({ ...prev, phase: 'voting', captions: data.captions || [], featuredPhotoData: data.featuredPhotoData || prev.featuredPhotoData, featuredOwnerName: data.featuredOwnerName || prev.featuredOwnerName, voteCount: 0, totalVoters: 0 }));
+    });
+    sock.on('caption:vote_received', (data) => {
+      setCaptionData(prev => ({ ...prev, voteCount: data.voteCount, totalVoters: data.totalVoters }));
     });
     sock.on('caption:round_results', (data) => {
-      setCaptionData(prev => ({ ...prev, phase: 'results', round: data.round }));
+      setCaptionData(prev => ({ ...prev, phase: 'results', round: data.round, featuredPhotoData: data.featuredPhotoData || prev.featuredPhotoData, featuredOwnerName: data.featuredOwnerName || prev.featuredOwnerName, prompt: data.prompt || prev.prompt, captionResults: data.captionResults || [] }));
     });
     sock.on('caption:game_over', () => {
       setCaptionData(prev => ({ ...prev, phase: 'ended' }));
@@ -2258,27 +2546,65 @@ export default function HostPage() {
     });
 
     sock.on('photovote:photo_phase', (data) => {
-      setPhotoVoteData({ subType: data.subType || 'pmatch', phase: 'photo', round: data.round, totalRounds: data.totalRounds });
+      setPhotoVoteData({
+        subType: data.subType || 'pmatch', phase: 'photo',
+        round: data.round, totalRounds: data.totalRounds,
+        prompt: '', photos: [], votedPlayerIds: [], submittedPlayerIds: [],
+        voteResults: [], voteCount: 0, totalVoters: (data.players || []).length, leaderboard: [],
+      });
+      if (data.players && data.players.length > 0) setPlayers(data.players);
       setStatus('photovote');
     });
+    sock.on('photovote:photo_submitted', (data) => {
+      setPhotoVoteData(prev => ({
+        ...prev,
+        submittedPlayerIds: [...(prev.submittedPlayerIds || []).filter(id => id !== data.playerId), data.playerId],
+      }));
+    });
     sock.on('photovote:voting_phase', (data) => {
-      setPhotoVoteData(prev => ({ ...prev, phase: 'voting', round: data.round }));
+      setPhotoVoteData(prev => ({
+        ...prev, phase: 'voting', round: data.round,
+        prompt: data.prompt || '', photos: data.photos || [],
+        totalRounds: data.totalRounds || prev.totalRounds,
+        votedPlayerIds: [], voteCount: 0,
+        totalVoters: (data.photos || []).length || prev.totalVoters,
+      }));
+      setStatus('photovote'); // also set status here in case photo phase was skipped
+    });
+    sock.on('photovote:vote_received', (data) => {
+      setPhotoVoteData(prev => ({
+        ...prev, voteCount: data.voteCount, totalVoters: data.totalVoters,
+        votedPlayerIds: data.votedPlayerIds || prev.votedPlayerIds,
+      }));
     });
     sock.on('photovote:round_results', (data) => {
-      setPhotoVoteData(prev => ({ ...prev, phase: 'results', round: data.round }));
+      setPhotoVoteData(prev => ({
+        ...prev, phase: 'results', round: data.round,
+        voteResults: data.voteResults || [],
+        prompt: data.prompt || prev.prompt,
+        roundScores: data.roundScores || {},
+      }));
     });
-    sock.on('photovote:game_over', () => {
-      setPhotoVoteData(prev => ({ ...prev, phase: 'ended' }));
+    sock.on('photovote:game_over', (data) => {
+      setPhotoVoteData(prev => ({
+        ...prev, phase: 'ended',
+        leaderboard: data?.leaderboard || [],
+        scores: data?.scores || {},
+      }));
     });
     sock.on('photovote:restarted', ({ players: p }) => {
       setPlayers(p || []);
-      setPhotoVoteData({ subType: 'pmatch', phase: 'waiting', round: 0, totalRounds: 5 });
+      setPhotoVoteData({
+        subType: 'pmatch', phase: 'waiting', round: 0, totalRounds: 5,
+        prompt: '', photos: [], votedPlayerIds: [], submittedPlayerIds: [],
+        voteResults: [], voteCount: 0, totalVoters: 0, leaderboard: [],
+      });
       setStatus('lobby');
     });
 
     sock.on('draw:restarted', ({ players: p }) => {
       setPlayers(p || []);
-      setDrawData({ word: '', round: 0, totalRounds: 0, phase: 'drawing', mode: 'classic', submittedCount: 0, totalDrawers: 0, voteCount: 0, totalVoters: 0, submissions: [], results: [], scores: {}, leaderboard: [] });
+      setDrawData({ word: '', round: 0, totalRounds: 0, phase: 'drawing', mode: 'classic', submittedCount: 0, submittedPlayerIds: [], totalDrawers: 0, voteCount: 0, totalVoters: 0, submissions: [], results: [], scores: {}, leaderboard: [] });
       setStatus('lobby');
     });
 
@@ -2371,7 +2697,7 @@ export default function HostPage() {
   }, [roomCodeParam, attachGameHandlers]);
 
   // ─── Creator flow ─────────────────────────────────────────────────────────
-  const handleCreateRoom = useCallback(({ gameType, gameName, rounds, selectedSubGames, drawMode, roomConfig, gameQueue: queue }) => {
+  const handleCreateRoom = useCallback(({ gameType, gameName, rounds, selectedSubGames, roundsPerSubGame, drawMode, roomConfig, gameQueue: queue }) => {
     setCreatorSettings({ gameType, rounds, drawMode: drawMode || 'classic' });
     if (queue && queue.length > 1) {
       setGameQueue(queue);
@@ -2388,6 +2714,7 @@ export default function HostPage() {
     sock.on('connect', () => {
       const payload = { playerName: 'Screen Cast', gameType, gameName, hostIsPlaying: false };
       if (gameType === 'mixed' && selectedSubGames) payload.selectedSubGames = selectedSubGames;
+      if (gameType === 'mixed' && roundsPerSubGame) payload.roundsPerSubGame = roundsPerSubGame;
       if (roomConfig) payload.roomConfig = roomConfig;
       sock.emit('create_room', payload);
     });
@@ -2495,17 +2822,8 @@ export default function HostPage() {
     const sock = socketRef.current;
     if (!sock || !code) return;
     const gameType = creatorSettings.gameType || gameInfo.gameType;
-    const rounds = creatorSettings.rounds || 5;
-    // Reset to lobby first, then immediately start the same game type
+    // Reset everyone to lobby — they'll start again from the lobby screen
     sock.emit('change_game', { code, newGameType: gameType });
-    if (gameType === 'most-likely-to') sock.emit('mlt:start', { code, rounds, allowSelfVote: true });
-    else if (gameType === 'drawing') sock.emit('draw:start', { code, rounds, mode: creatorSettings.drawMode || 'classic' });
-    else if (gameType === 'fill-in-the-blank') sock.emit('fitb:start', { code, rounds });
-    else if (gameType === 'selfie-roast') sock.emit('selfie:start', { code, rounds });
-    else if (gameType === 'caption') sock.emit('caption:start', { code, rounds });
-    else if (gameType === 'pmatch') sock.emit('photovote:start', { code, subType: 'pmatch', rounds });
-    else if (gameType === 'photoassoc') sock.emit('photovote:start', { code, subType: 'photoassoc', rounds });
-    else sock.emit('start_game', { code });
     setGameQueue([]);
     setQueueIndex(0);
   };
@@ -2601,9 +2919,9 @@ export default function HostPage() {
       case 'selfie-results':
         return <SelfieHostPanel selfieData={selfieData} players={players} onSkipToVote={() => socketRef.current?.emit('selfie:skip_to_vote', { code: gameInfo.code })} onShowResults={() => socketRef.current?.emit('selfie:show_results', { code: gameInfo.code })} />;
       case 'caption':
-        return <SimplePhotoHostPanel label="💬 Selfie Captions" phase={captionData?.phase} players={players} onSkipToResults={() => socketRef.current?.emit('caption:skip_to_results', { code: gameInfo.code })} onNextRound={() => socketRef.current?.emit('caption:next_round', { code: gameInfo.code })} />;
+        return <CaptionHostPanel captionData={captionData} players={players} />;
       case 'photovote':
-        return <SimplePhotoHostPanel label={photoVoteData?.subType === 'photoassoc' ? '🏆 Photo Traits' : '🎯 Who Fits?'} phase={photoVoteData?.phase} players={players} onSkipToResults={() => socketRef.current?.emit('photovote:skip_to_results', { code: gameInfo.code })} onNextRound={() => socketRef.current?.emit('photovote:next_round', { code: gameInfo.code })} />
+        return <PhotoVoteHostPanel photoVoteData={photoVoteData} players={players} />
       default:
         return null;
     }
@@ -2649,11 +2967,88 @@ export default function HostPage() {
               🎮 Change Game
             </button>
           )}
+          {isRoomCreator && status !== 'setup' && status !== 'creating' && status !== 'connecting' && status !== 'error' && (
+            <button
+              onClick={() => setShowMainMenu(true)}
+              className="px-3 py-1 rounded-lg text-xs font-['Fredoka_One'] border border-[#2D2D44] text-gray-400 hover:border-[#FF6B6B] hover:text-[#FF6B6B] active:scale-95 transition"
+            >
+              🏠 Main Menu
+            </button>
+          )}
         </div>
       </div>
 
       {['game-end', 'mlt-end', 'tot-end', 'draw-end', 'fitb-end', 'selfie-results'].includes(status) && (
         <Confetti width={window.innerWidth} height={window.innerHeight} recycle={false} numberOfPieces={400} />
+      )}
+
+      {/* Main Menu overlay */}
+      {showMainMenu && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm" onClick={() => setShowMainMenu(false)}>
+          <div
+            className="relative bg-[#1A1A2E] border border-[#2D2D44] rounded-3xl p-6 w-full max-w-md mx-4 shadow-2xl max-h-[90vh] overflow-y-auto"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-['Fredoka_One'] text-[#F7F7F7]">🏠 Main Menu</h2>
+              <button onClick={() => setShowMainMenu(false)} className="text-gray-500 hover:text-white text-2xl leading-none transition">✕</button>
+            </div>
+
+            {/* Points toggle */}
+            <div className="flex gap-2 mb-5">
+              <button
+                onClick={() => setMainMenuKeepPoints(true)}
+                className={`flex-1 py-2 rounded-xl font-['Fredoka_One'] text-sm transition active:scale-95 ${mainMenuKeepPoints ? 'bg-[#4ECDC4] text-black' : 'bg-[#2D2D44] text-gray-400 hover:text-white'}`}
+              >
+                🏆 Keep Points
+              </button>
+              <button
+                onClick={() => setMainMenuKeepPoints(false)}
+                className={`flex-1 py-2 rounded-xl font-['Fredoka_One'] text-sm transition active:scale-95 ${!mainMenuKeepPoints ? 'bg-[#FF6B6B] text-white' : 'bg-[#2D2D44] text-gray-400 hover:text-white'}`}
+              >
+                🔄 Start Fresh
+              </button>
+            </div>
+
+            <p className="text-xs font-['Nunito'] text-gray-500 mb-4 text-center">Choose the next mini game — same room &amp; players</p>
+
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { id: 'most-likely-to',    label: '👑 Most Likely To',      accent: '#4ECDC4' },
+                { id: 'who-said-that',     label: '🤔 Who Said That?',      accent: '#FFE66D' },
+                { id: 'situational',       label: '💭 Situational',         accent: '#6C5CE7' },
+                { id: 'this-or-that',      label: '🆚 This or That',        accent: '#A29BFE' },
+                { id: 'drawing',           label: '🎨 Pictionary Battle',   accent: '#C39BD3' },
+                { id: 'fill-in-the-blank', label: '✏️ Fill in the Blank',  accent: '#55EFC4' },
+                { id: 'selfie-roast',      label: '📸 Draw on Friends',     accent: '#FD79A8' },
+                { id: 'caption',           label: '💬 Selfie Captions',     accent: '#FD79A8' },
+                { id: 'pmatch',            label: '🎭 Selfie Challenge',    accent: '#FDCB6E' },
+                { id: 'photoassoc',        label: '🎯 Prompt Match',        accent: '#A29BFE' },
+                { id: 'mixed',             label: '🎲 Mixed Pack',          accent: '#FDCB6E', colSpan: true },
+              ].map(g => (
+                <button
+                  key={g.id}
+                  onClick={() => {
+                    const sock = socketRef.current;
+                    const code = gameInfo.code;
+                    if (!sock || !code) return;
+                    if (!mainMenuKeepPoints) sock.emit('reset_global_scores', { code });
+                    sock.emit('change_game', { code, newGameType: g.id });
+                    setCreatorSettings(prev => ({ ...prev, gameType: g.id }));
+                    setGameQueue([]);
+                    setQueueIndex(0);
+                    setShowMainMenu(false);
+                  }}
+                  className={`py-3 px-4 rounded-2xl font-['Fredoka_One'] text-sm text-black active:scale-95 hover:opacity-90 transition text-left${g.colSpan ? ' col-span-2 text-center' : ''}`}
+                  style={{ backgroundColor: g.accent }}
+                >
+                  {g.label}
+                  {g.id === gameInfo.gameType && <span className="ml-1 text-xs opacity-60">(current)</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Change Game picker overlay */}
@@ -2674,12 +3069,12 @@ export default function HostPage() {
                 { id: 'who-said-that',     label: '🤔 Who Said That?',      accent: '#FFE66D' },
                 { id: 'situational',       label: '💭 Situational',         accent: '#6C5CE7' },
                 { id: 'this-or-that',      label: '🆚 This or That',        accent: '#A29BFE' },
-                { id: 'drawing',           label: '🎨 Sketch It!',          accent: '#C39BD3' },
+                { id: 'drawing',           label: '🎨 Pictionary Battle',   accent: '#C39BD3' },
                 { id: 'fill-in-the-blank', label: '✏️ Fill in the Blank',  accent: '#55EFC4' },
-                { id: 'selfie-roast',      label: '📸 Selfie Artist',       accent: '#FD79A8' },
+                { id: 'selfie-roast',      label: '📸 Draw on Friends',     accent: '#FD79A8' },
                 { id: 'caption',           label: '💬 Selfie Captions',     accent: '#FD79A8' },
-                { id: 'pmatch',            label: '🎯 Who Fits?',           accent: '#FDCB6E' },
-                { id: 'photoassoc',        label: '🏆 Photo Traits',        accent: '#A29BFE' },
+                { id: 'pmatch',            label: '🎭 Selfie Challenge',    accent: '#FDCB6E' },
+                { id: 'photoassoc',        label: '🎯 Prompt Match',        accent: '#A29BFE' },
                 { id: 'mixed',             label: '🎲 Mixed Pack',          accent: '#FDCB6E' },
               ].map(g => (
                 <button
@@ -2688,17 +3083,7 @@ export default function HostPage() {
                     const code = gameInfo.code;
                     const sock = socketRef.current;
                     if (!sock || !code) return;
-                    const rounds = creatorSettings.rounds || 5;
                     sock.emit('change_game', { code, newGameType: g.id });
-                    // Auto-start the selected game immediately after reset
-                    if (g.id === 'most-likely-to') sock.emit('mlt:start', { code, rounds, allowSelfVote: true });
-                    else if (g.id === 'drawing') sock.emit('draw:start', { code, rounds, mode: creatorSettings.drawMode || 'classic' });
-                    else if (g.id === 'fill-in-the-blank') sock.emit('fitb:start', { code, rounds });
-                    else if (g.id === 'selfie-roast') sock.emit('selfie:start', { code, rounds });
-                    else if (g.id === 'caption') sock.emit('caption:start', { code, rounds });
-                    else if (g.id === 'pmatch') sock.emit('photovote:start', { code, subType: 'pmatch', rounds });
-                    else if (g.id === 'photoassoc') sock.emit('photovote:start', { code, subType: 'photoassoc', rounds });
-                    else sock.emit('start_game', { code });
                     setCreatorSettings(prev => ({ ...prev, gameType: g.id }));
                     setGameQueue([]);
                     setQueueIndex(0);
@@ -2767,7 +3152,19 @@ export default function HostPage() {
         onFitbSkipToVote={() => socketRef.current?.emit('fitb:skip_to_vote', { code: gameInfo.code })}
         onFitbShowResults={() => socketRef.current?.emit('fitb:show_results', { code: gameInfo.code })}
         onFitbNextRound={() => socketRef.current?.emit('fitb:next_round', { code: gameInfo.code })}
+        photoVoteData={photoVoteData}
+        onPhotoVoteChangeQuestion={() => socketRef.current?.emit('photovote:change_question', { code: gameInfo.code })}
+        onPhotoVoteSkipToResults={() => socketRef.current?.emit('photovote:skip_to_results', { code: gameInfo.code })}
+        onPhotoVoteNextRound={() => socketRef.current?.emit('photovote:next_round', { code: gameInfo.code })}
+        captionData={captionData}
+        onCaptionChangeQuestion={() => socketRef.current?.emit('caption:change_question', { code: gameInfo.code })}
+        onCaptionSkipToVoting={() => socketRef.current?.emit('caption:skip_to_voting', { code: gameInfo.code })}
+        onCaptionSkipToResults={() => socketRef.current?.emit('caption:skip_to_results', { code: gameInfo.code })}
+        onCaptionNextRound={() => socketRef.current?.emit('caption:next_round', { code: gameInfo.code })}
       />
     </div>
   );
 }
+
+
+

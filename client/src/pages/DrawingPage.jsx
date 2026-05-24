@@ -5,10 +5,9 @@ import { translations } from '../locales/translations';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
-
-// ─── Canvas constants ────────────────────────────────────────────────────────
-const CANVAS_W = 400;
-const CANVAS_H = 300;
+import { CANVAS_W, CANVAS_H, redrawCanvas } from '../utils/canvasUtils';
+import TimerRing from '../components/game/TimerRing';
+import ReplayCanvas from '../components/game/ReplayCanvas';
 
 const COLORS = [
   '#000000', '#FFFFFF', '#EF4444', '#F97316', '#EAB308',
@@ -17,7 +16,6 @@ const COLORS = [
 
 const WIDTHS = [2, 6, 14];
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
 const getPos = (canvas, clientX, clientY) => {
   const rect = canvas.getBoundingClientRect();
   return {
@@ -26,72 +24,7 @@ const getPos = (canvas, clientX, clientY) => {
   };
 };
 
-const drawStroke = (ctx, stroke) => {
-  if (!stroke.points || stroke.points.length === 0) return;
-  ctx.beginPath();
-  ctx.strokeStyle = stroke.type === 'eraser' ? '#FFFFFF' : stroke.color;
-  ctx.fillStyle  = stroke.type === 'eraser' ? '#FFFFFF' : stroke.color;
-  ctx.lineWidth  = stroke.width;
-  ctx.lineCap    = 'round';
-  ctx.lineJoin   = 'round';
-  if (stroke.points.length === 1) {
-    ctx.arc(stroke.points[0].x, stroke.points[0].y, stroke.width / 2, 0, Math.PI * 2);
-    ctx.fill();
-    return;
-  }
-  ctx.moveTo(stroke.points[0].x, stroke.points[0].y);
-  for (let i = 1; i < stroke.points.length; i++) ctx.lineTo(stroke.points[i].x, stroke.points[i].y);
-  ctx.stroke();
-};
 
-const redrawAll = (canvas, strokes) => {
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#FFFFFF';
-  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-  strokes.forEach(s => drawStroke(ctx, s));
-};
-
-// ─── ReplayCanvas (small preview) ───────────────────────────────────────────
-const ReplayCanvas = ({ strokes = [], cssWidth = 180, cssHeight = 135, className = '' }) => {
-  const ref = useRef(null);
-  useEffect(() => {
-    const canvas = ref.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-    (strokes || []).forEach(s => drawStroke(ctx, s));
-  }, [strokes]);
-  return (
-    <canvas
-      ref={ref}
-      width={CANVAS_W}
-      height={CANVAS_H}
-      style={{ width: cssWidth, height: cssHeight }}
-      className={`block ${className}`}
-    />
-  );
-};
-
-// ─── Timer ring ──────────────────────────────────────────────────────────────
-const TimerRing = ({ secondsLeft, total }) => {
-  const r = 32;
-  const circ = 2 * Math.PI * r;
-  const progress = Math.max(0, secondsLeft / total);
-  const offset = circ * (1 - progress);
-  const color = secondsLeft <= 10 ? '#FF6B6B' : secondsLeft <= 25 ? '#FFE66D' : '#4ECDC4';
-  return (
-    <svg width="80" height="80" viewBox="0 0 80 80">
-      <circle cx="40" cy="40" r={r} fill="none" stroke="#2D2D44" strokeWidth="6" />
-      <circle cx="40" cy="40" r={r} fill="none" stroke={color} strokeWidth="6"
-        strokeDasharray={circ} strokeDashoffset={offset} strokeLinecap="round"
-        transform="rotate(-90 40 40)" style={{ transition: 'stroke-dashoffset 1s linear, stroke 0.3s' }} />
-      <text x="40" y="46" textAnchor="middle" fill="white" fontSize="20" fontWeight="bold" fontFamily="Nunito">
-        {secondsLeft}
-      </text>
-    </svg>
-  );
-};
 
 // ─── Main component ──────────────────────────────────────────────────────────
 export default function DrawingPage() {
@@ -142,10 +75,17 @@ export default function DrawingPage() {
     const canvas = canvasRef.current;
     if (canvas) {
       const ctx = canvas.getContext('2d');
+      ctx.save();
+      if (tool === 'eraser') {
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.fillStyle = 'rgba(0,0,0,1)';
+      } else {
+        ctx.fillStyle = color;
+      }
       ctx.beginPath();
-      ctx.fillStyle = tool === 'eraser' ? '#FFFFFF' : color;
       ctx.arc(x, y, width / 2, 0, Math.PI * 2);
       ctx.fill();
+      ctx.restore();
     }
   }, [color, width, tool, draw.hasSubmitted]);
 
@@ -157,13 +97,20 @@ export default function DrawingPage() {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     ctx.beginPath();
-    ctx.strokeStyle = curStroke.current.type === 'eraser' ? '#FFFFFF' : curStroke.current.color;
+    if (curStroke.current.type === 'eraser') {
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.strokeStyle = 'rgba(0,0,0,1)';
+    } else {
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.strokeStyle = curStroke.current.color;
+    }
     ctx.lineWidth   = curStroke.current.width;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.moveTo(pts[pts.length - 2].x, pts[pts.length - 2].y);
     ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
     ctx.stroke();
+    ctx.globalCompositeOperation = 'source-over';
   }, []);
 
   const endDraw = useCallback(() => {
@@ -209,7 +156,7 @@ export default function DrawingPage() {
     strokesRef.current.pop();
     setStrokeCount(c => Math.max(0, c - 1));
     const canvas = canvasRef.current;
-    if (canvas) redrawAll(canvas, strokesRef.current);
+    if (canvas) redrawCanvas(canvas, strokesRef.current);
   };
 
   const handleClear = () => {
@@ -229,6 +176,15 @@ export default function DrawingPage() {
     dispatch({ type: 'DRAW_MARK_SUBMITTED' });
   };
 
+  // Auto-submit when timer is about to expire and player hasn't submitted yet.
+  // Trigger at ≤1 second remaining so the emit reaches the server before it closes submissions.
+  useEffect(() => {
+    if (draw.phase === 'drawing' && !draw.hasSubmitted && draw.secondsLeft <= 1) {
+      socket.emit('draw:submit', { code: roomCode, strokes: strokesRef.current });
+      dispatch({ type: 'DRAW_MARK_SUBMITTED' });
+    }
+  }, [draw.secondsLeft, draw.phase, draw.hasSubmitted, roomCode, dispatch]);
+
   const handleVote = (votedForPlayerId) => {
     if (draw.hasVoted || votedForPlayerId === playerId) return;
     socket.emit('draw:vote', { code: roomCode, votedForPlayerId });
@@ -241,8 +197,6 @@ export default function DrawingPage() {
   const handleRestart = () => socket.emit('draw:restart', { code: roomCode });
 
   // Derived drawing-phase state
-  const canSkip = draw.skipsUsed < draw.maxSkips && !draw.hasSubmitted;
-  const skipsRemaining = draw.maxSkips - draw.skipsUsed;
   const displayWord = draw.yourWord || draw.word;
 
   // ── Render: Drawing phase ─────────────────────────────────────────────────
@@ -362,19 +316,6 @@ export default function DrawingPage() {
               ✓ {t.submitBtn}
             </button>
           </div>
-
-          {/* Skip word */}
-          {canSkip && (
-            <button
-              onClick={() => socket.emit('draw:skip_word', { code: roomCode })}
-              className="w-full py-2 rounded-lg text-xs font-['Nunito'] text-[#C39BD3] border border-[#C39BD3]/40 hover:border-[#C39BD3] hover:bg-[#C39BD3]/10 transition"
-            >
-              🔀 {t.skipWord || 'Skip word'} · {skipsRemaining} {t.skipsLeft || 'left'}
-            </button>
-          )}
-          {!canSkip && draw.skipsUsed >= draw.maxSkips && !draw.hasSubmitted && (
-            <p className="text-center text-xs text-gray-600 font-['Nunito']">{t.noSkipsLeft || 'No skips left'}</p>
-          )}
 
           {/* Host controls */}
           {isHost && (
