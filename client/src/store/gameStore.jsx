@@ -204,6 +204,50 @@ const initialState = {
     scores: {},
     roundScores: {},
   },
+  dt: {
+    phase: 'waiting',            // 'waiting'|'prompting'|'drawing'|'guessing'|'reveal'|'end'
+    hasSubmittedPrompt: false,
+    promptsSubmittedCount: 0,
+    totalPrompts: 0,
+    // Drawing turn (sent to you when it's your turn in a chain)
+    currentTurn: null,           // { promptId, finalText, existingStrokes, position, totalPositions, secondsLeft }
+    hasSubmittedTurn: false,
+    // Drawing phase progress
+    chainsCompletedCount: 0,
+    totalChains: 0,
+    chainProgress: {},           // { promptId: { stepsDone, totalSteps, drawerName } }
+    // Guessing phase
+    guessTurn: null,             // { promptId, finalStrokes, drawerCount }
+    hasGuessed: false,
+    guessedCount: 0,
+    totalGuessers: 0,
+    // Reveal phase
+    reveal: {
+      promptIndex: 0,
+      totalPrompts: 0,
+      step: 0,
+      promptId: null,
+      templateText: '',
+      targetPlayerId: null,
+      targetName: '',
+      targetColor: '',
+      authorPlayerId: null,
+      authorName: '',
+      finalText: '',
+      drawingSteps: [],          // [{ playerId, playerName, playerColor, strokes, stepIndex }]
+      guessText: '',
+      votes: {},
+      voteCount: 0,
+      totalVoters: 0,
+      hasVoted: false,
+      success: null,
+      correctCount: 0,
+      closeCount: 0,
+      wrongCount: 0,
+    },
+    scores: {},
+    leaderboard: [],
+  },
 };
 
 export const gameReducer = (state, action) => {
@@ -353,6 +397,7 @@ export const gameReducer = (state, action) => {
         photoVote: { ...initialState.photoVote },
         sit:       { ...initialState.sit },
         tot:       { ...initialState.tot },
+        dt:        { ...initialState.dt },
       };
     case 'SET_ERROR':
       return { ...state, error: action.payload };
@@ -1002,6 +1047,247 @@ export const gameReducer = (state, action) => {
         phase: 'lobby',
         players: action.payload.players || state.players,
         photoVote: { ...initialState.photoVote },
+      };
+    // ─── Draw Telephone actions ───────────────────────────────────────────────
+    case 'DT_SELFIE_PHASE':
+      return {
+        ...state,
+        phase: 'dt',
+        dt: {
+          ...initialState.dt,
+          phase: 'selfie',
+          selfiePhotoCount: action.payload.photoCount || 0,
+          selfieTotalPhotographers: action.payload.totalPhotographers || 0,
+        },
+        selfie: {
+          ...state.selfie,
+          hasSubmittedPhoto: false,
+          photoCount: action.payload.photoCount || 0,
+          totalPhotographers: action.payload.totalPhotographers || 0,
+        },
+      };
+    case 'DT_SELFIE_PHOTO_REUSED':
+      return {
+        ...state,
+        selfie: { ...state.selfie, hasSubmittedPhoto: true },
+      };
+    case 'DT_PHOTO_RECEIVED':
+      return {
+        ...state,
+        dt: {
+          ...state.dt,
+          selfiePhotoCount: action.payload.photoCount,
+          selfieTotalPhotographers: action.payload.totalPhotographers,
+        },
+        selfie: { ...state.selfie, photoCount: action.payload.photoCount },
+      };
+    case 'DT_PROMPT_PHASE':
+      return {
+        ...state,
+        phase: 'dt',
+        dt: {
+          ...initialState.dt,
+          phase: 'prompting',
+          totalPrompts: action.payload.totalPrompts,
+          hasSubmittedPrompt: false,
+          promptsSubmittedCount: 0,
+        },
+      };
+    case 'DT_PROMPT_RECEIVED':
+      return {
+        ...state,
+        dt: {
+          ...state.dt,
+          promptsSubmittedCount: action.payload.submittedCount,
+          totalPrompts: action.payload.totalPrompts,
+        },
+      };
+    case 'DT_DRAWING_PHASE':
+      return {
+        ...state,
+        dt: {
+          ...state.dt,
+          phase: 'drawing',
+          totalChains: action.payload.totalChains,
+          chainsCompletedCount: 0,
+          chainProgress: {},
+        },
+      };
+    case 'DT_YOUR_TURN':
+      return {
+        ...state,
+        dt: {
+          ...state.dt,
+          phase: 'drawing',
+          currentTurn: {
+            promptId: action.payload.promptId,
+            finalText: action.payload.finalText,
+            existingStrokes: action.payload.existingStrokes || [],
+            originalSelfieData: action.payload.originalSelfieData || null,
+            position: action.payload.position,
+            totalPositions: action.payload.totalPositions,
+            secondsLeft: action.payload.secondsLeft,
+          },
+          hasSubmittedTurn: false,
+        },
+      };
+    case 'DT_TURN_TIMER':
+      return {
+        ...state,
+        dt: {
+          ...state.dt,
+          currentTurn: state.dt.currentTurn
+            ? { ...state.dt.currentTurn, secondsLeft: action.payload.secondsLeft }
+            : state.dt.currentTurn,
+        },
+      };
+    case 'DT_MARK_TURN_SUBMITTED':
+      return {
+        ...state,
+        dt: { ...state.dt, hasSubmittedTurn: true, currentTurn: null },
+      };
+    case 'DT_CHAIN_PROGRESS':
+      return {
+        ...state,
+        dt: {
+          ...state.dt,
+          chainsCompletedCount: action.payload.chainsCompleted,
+          totalChains: action.payload.totalChains,
+        },
+      };
+    case 'DT_DRAWING_PROGRESS':
+      return {
+        ...state,
+        dt: {
+          ...state.dt,
+          chainProgress: {
+            ...state.dt.chainProgress,
+            [action.payload.promptId]: {
+              stepsDone: action.payload.stepsDone,
+              totalSteps: action.payload.totalSteps,
+              drawerName: action.payload.drawerName,
+            },
+          },
+        },
+      };
+    case 'DT_GUESSING_PHASE':
+      return {
+        ...state,
+        dt: {
+          ...state.dt,
+          phase: 'guessing',
+          totalGuessers: action.payload.totalGuessers,
+          guessedCount: 0,
+        },
+      };
+    case 'DT_YOUR_GUESS':
+      return {
+        ...state,
+        dt: {
+          ...state.dt,
+          phase: 'guessing',
+          guessTurn: {
+            promptId: action.payload.promptId,
+            finalStrokes: action.payload.finalStrokes || [],
+            originalSelfieData: action.payload.originalSelfieData || null,
+            drawerCount: action.payload.drawerCount,
+          },
+          hasGuessed: false,
+        },
+      };
+    case 'DT_MARK_GUESSED':
+      return {
+        ...state,
+        dt: { ...state.dt, hasGuessed: true },
+      };
+    case 'DT_GUESS_RECEIVED':
+      return {
+        ...state,
+        dt: {
+          ...state.dt,
+          guessedCount: action.payload.guessedCount,
+          totalGuessers: action.payload.totalGuessers,
+        },
+      };
+    case 'DT_REVEAL_PHASE':
+      return {
+        ...state,
+        dt: {
+          ...state.dt,
+          phase: 'reveal',
+          reveal: {
+            ...initialState.dt.reveal,
+            totalPrompts: action.payload.totalPrompts,
+          },
+        },
+      };
+    case 'DT_REVEAL_UPDATE':
+      return {
+        ...state,
+        dt: {
+          ...state.dt,
+          phase: 'reveal',
+          reveal: {
+            ...state.dt.reveal,
+            promptIndex: action.payload.promptIndex,
+            totalPrompts: action.payload.totalPrompts,
+            step: action.payload.step,
+            promptId: action.payload.promptId,
+            templateText: action.payload.templateText,
+            targetPlayerId: action.payload.targetPlayerId,
+            targetName: action.payload.targetName,
+            targetColor: action.payload.targetColor || '#fff',
+            originalSelfieData: action.payload.originalSelfieData || null,
+            authorPlayerId: action.payload.authorPlayerId,
+            authorName: action.payload.authorName,
+            finalText: action.payload.finalText,
+            drawingSteps: action.payload.drawingSteps || [],
+            guessText: action.payload.guessText,
+            votes: action.payload.votes || {},
+            voteCount: action.payload.voteCount,
+            totalVoters: action.payload.totalVoters,
+            success: action.payload.success,
+            correctCount: action.payload.correctCount || 0,
+            closeCount: action.payload.closeCount || 0,
+            wrongCount: action.payload.wrongCount || 0,
+            hasVoted: action.payload.votes?.[state.playerId] !== undefined,
+          },
+        },
+      };
+    case 'DT_MARK_VOTED':
+      return {
+        ...state,
+        dt: { ...state.dt, reveal: { ...state.dt.reveal, hasVoted: true } },
+      };
+    case 'DT_VOTE_RECEIVED':
+      return {
+        ...state,
+        dt: {
+          ...state.dt,
+          reveal: {
+            ...state.dt.reveal,
+            voteCount: action.payload.voteCount,
+            totalVoters: action.payload.totalVoters,
+          },
+        },
+      };
+    case 'DT_END':
+      return {
+        ...state,
+        phase: 'dtEnd',
+        dt: {
+          ...state.dt,
+          phase: 'end',
+          scores: action.payload.scores || {},
+          leaderboard: action.payload.leaderboard || [],
+        },
+      };
+    case 'DT_RESTARTED':
+      return {
+        ...state,
+        phase: 'lobby',
+        players: action.payload.players || state.players,
+        dt: { ...initialState.dt },
       };
     // ────────────────────────────────────────────────────────────────────────
     default:

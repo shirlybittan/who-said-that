@@ -583,10 +583,93 @@ export const useSocket = () => {
     socket.on('photovote:game_over', onPhotoVoteGameOver);
     socket.on('photovote:restarted', onPhotoVoteRestarted);
 
+    // ─── Draw Telephone handlers ──────────────────────────────────────────────
+    const onDtSelfiePhase = (data) => {
+      dispatch({ type: 'DT_SELFIE_PHASE', payload: data });
+      navigate('/selfie-photo');
+    };
+    const onDtPhotoReceived = (data) => {
+      dispatch({ type: 'DT_PHOTO_RECEIVED', payload: data });
+    };
+    const onDtPromptPhase = (data) => {
+      dispatch({ type: 'DT_PROMPT_PHASE', payload: data });
+      navigate('/draw-tel-prompt');
+    };
+    const onDtPromptReceived = (data) => {
+      dispatch({ type: 'DT_PROMPT_RECEIVED', payload: data });
+    };
+    const onDtDrawingPhase = (data) => {
+      dispatch({ type: 'DT_DRAWING_PHASE', payload: data });
+      navigate('/draw-tel-wait');
+    };
+    const onDtYourTurn = (data) => {
+      dispatch({ type: 'DT_YOUR_TURN', payload: data });
+      navigate('/draw-tel-draw');
+    };
+    const onDtTurnTimer = (data) => {
+      dispatch({ type: 'DT_TURN_TIMER', payload: data });
+    };
+    const onDtChainProgress = (data) => {
+      dispatch({ type: 'DT_CHAIN_PROGRESS', payload: data });
+    };
+    const onDtDrawingProgress = (data) => {
+      dispatch({ type: 'DT_DRAWING_PROGRESS', payload: data });
+    };
+    const onDtGuessingPhase = (data) => {
+      dispatch({ type: 'DT_GUESSING_PHASE', payload: data });
+      // Only navigate to guess page if there's a guessTurn coming (via dt:your_guess)
+      // otherwise stay on wait page
+      navigate('/draw-tel-wait');
+    };
+    const onDtYourGuess = (data) => {
+      dispatch({ type: 'DT_YOUR_GUESS', payload: data });
+      navigate('/draw-tel-guess');
+    };
+    const onDtGuessReceived = (data) => {
+      dispatch({ type: 'DT_GUESS_RECEIVED', payload: data });
+    };
+    const onDtRevealPhase = (data) => {
+      dispatch({ type: 'DT_REVEAL_PHASE', payload: data });
+      navigate('/draw-tel-reveal');
+    };
+    const onDtRevealUpdate = (data) => {
+      dispatch({ type: 'DT_REVEAL_UPDATE', payload: data });
+    };
+    const onDtVoteReceived = (data) => {
+      dispatch({ type: 'DT_VOTE_RECEIVED', payload: data });
+    };
+    const onDtEnd = (data) => {
+      dispatch({ type: 'DT_END', payload: data });
+      navigate('/draw-tel-end');
+    };
+    const onDtRestarted = (data) => {
+      dispatch({ type: 'DT_RESTARTED', payload: data });
+      navigate('/lobby');
+    };
+
+    socket.on('dt:selfie_phase', onDtSelfiePhase);
+    socket.on('dt:photo_received', onDtPhotoReceived);
+    socket.on('dt:prompt_phase', onDtPromptPhase);
+    socket.on('dt:prompt_received', onDtPromptReceived);
+    socket.on('dt:drawing_phase', onDtDrawingPhase);
+    socket.on('dt:your_turn', onDtYourTurn);
+    socket.on('dt:turn_timer', onDtTurnTimer);
+    socket.on('dt:chain_progress', onDtChainProgress);
+    socket.on('dt:drawing_progress', onDtDrawingProgress);
+    socket.on('dt:guessing_phase', onDtGuessingPhase);
+    socket.on('dt:your_guess', onDtYourGuess);
+    socket.on('dt:guess_received', onDtGuessReceived);
+    socket.on('dt:reveal_phase', onDtRevealPhase);
+    socket.on('dt:reveal_update', onDtRevealUpdate);
+    socket.on('dt:vote_received', onDtVoteReceived);
+    socket.on('dt:end', onDtEnd);
+    socket.on('dt:restarted', onDtRestarted);
+
     const onPhotoReused = ({ gameType }) => {
       if (gameType === 'selfie') dispatch({ type: 'SELFIE_MARK_PHOTO_SUBMITTED' });
       else if (gameType === 'caption') dispatch({ type: 'CAPTION_MARK_PHOTO_SUBMITTED' });
       else if (gameType === 'photovote') dispatch({ type: 'PHOTOVOTE_MARK_PHOTO_SUBMITTED' });
+      else if (gameType === 'dt') dispatch({ type: 'DT_SELFIE_PHOTO_REUSED' });
     };
     socket.on('player:photo_reused', onPhotoReused);
 
@@ -684,6 +767,23 @@ export const useSocket = () => {
       socket.off('photovote:round_results', onPhotoVoteRoundResults);
       socket.off('photovote:game_over', onPhotoVoteGameOver);
       socket.off('photovote:restarted', onPhotoVoteRestarted);
+      socket.off('dt:selfie_phase', onDtSelfiePhase);
+      socket.off('dt:photo_received', onDtPhotoReceived);
+      socket.off('dt:prompt_phase', onDtPromptPhase);
+      socket.off('dt:prompt_received', onDtPromptReceived);
+      socket.off('dt:drawing_phase', onDtDrawingPhase);
+      socket.off('dt:your_turn', onDtYourTurn);
+      socket.off('dt:turn_timer', onDtTurnTimer);
+      socket.off('dt:chain_progress', onDtChainProgress);
+      socket.off('dt:drawing_progress', onDtDrawingProgress);
+      socket.off('dt:guessing_phase', onDtGuessingPhase);
+      socket.off('dt:your_guess', onDtYourGuess);
+      socket.off('dt:guess_received', onDtGuessReceived);
+      socket.off('dt:reveal_phase', onDtRevealPhase);
+      socket.off('dt:reveal_update', onDtRevealUpdate);
+      socket.off('dt:vote_received', onDtVoteReceived);
+      socket.off('dt:end', onDtEnd);
+      socket.off('dt:restarted', onDtRestarted);
       socket.off('player:photo_reused', onPhotoReused);
       socket.off('global_scores_updated', onGlobalScoresUpdated);
       socket.off('phase_timer', onPhaseTimer);

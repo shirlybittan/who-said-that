@@ -29,8 +29,8 @@ const createRoom = (socketId, playerName = 'Host', gameType = 'most-likely-to', 
     isConnected: true
   };
 
-  const validGameTypes = ['who-said-that', 'most-likely-to', 'situational', 'this-or-that', 'mixed', 'drawing', 'fill-in-the-blank', 'selfie-roast', 'caption', 'pmatch', 'photoassoc'];
-  const standaloneTypes = new Set(['drawing', 'fill-in-the-blank', 'selfie-roast', 'caption', 'pmatch', 'photoassoc']);
+  const validGameTypes = ['who-said-that', 'most-likely-to', 'situational', 'this-or-that', 'mixed', 'drawing', 'fill-in-the-blank', 'selfie-roast', 'caption', 'pmatch', 'photoassoc', 'draw-telephone'];
+  const standaloneTypes = new Set(['drawing', 'fill-in-the-blank', 'selfie-roast', 'caption', 'pmatch', 'photoassoc', 'draw-telephone']);
   let resolvedGameType = gameType;
   let selectedSubGames = [];
 
@@ -137,6 +137,21 @@ const createRoom = (socketId, playerName = 'Host', gameType = 'most-likely-to', 
     },
     // Persistent selfie bank — survives game switches, only cleared when room is destroyed
     playerPhotos: {},      // {playerId: base64DataUrl}  — reused across all selfie-based mini games
+    dt: {
+      phase: 'waiting',        // 'waiting'|'prompting'|'drawing'|'guessing'|'reveal'|'end'
+      prompts: [],             // [{id, authorId, templateText}]
+      chains: {},              // {promptId: ChainObj}
+      activeTurns: {},         // {playerId: promptId}  — who is currently drawing for which chain
+      pendingTurns: {},        // {playerId: promptId[]} — queued future turns
+      guesses: {},             // {promptId: guessText}
+      votes: {},               // {promptId: {playerId: 'correct'|'close'|'wrong'}}
+      revealQueue: [],         // [promptId] ordered
+      revealCurrentIndex: 0,
+      revealStep: 0,
+      chainsCompletedDrawing: 0,
+      totalChains: 0,
+      scores: {},              // {playerId: pts}
+    },
   };
   
   rooms.set(code, room);
@@ -182,6 +197,7 @@ const joinRoom = (code, socketId, playerName, playerId) => {
     if (room.tot?.scores) room.tot.scores[player.id] = 0;
     if (room.fitb?.scores) room.fitb.scores[player.id] = 0;
     if (room.draw?.scores) room.draw.scores[player.id] = 0;
+    if (room.dt?.scores) room.dt.scores[player.id] = 0;
   }
 
   room.players.push(player);
@@ -242,8 +258,8 @@ const setGameOptions = (code, socketId, mode, totalRounds, gameType, mltRounds, 
   if (mode !== undefined) room.mode = mode;
   if (totalRounds !== undefined) room.totalRounds = totalRounds;
   
-  const validGameTypes = ['who-said-that', 'most-likely-to', 'situational', 'this-or-that', 'mixed', 'drawing', 'fill-in-the-blank', 'selfie-roast', 'caption', 'pmatch', 'photoassoc'];
-  const standaloneTypes = new Set(['drawing', 'fill-in-the-blank', 'selfie-roast', 'caption', 'pmatch', 'photoassoc']);
+  const validGameTypes = ['who-said-that', 'most-likely-to', 'situational', 'this-or-that', 'mixed', 'drawing', 'fill-in-the-blank', 'selfie-roast', 'caption', 'pmatch', 'photoassoc', 'draw-telephone'];
+  const standaloneTypes = new Set(['drawing', 'fill-in-the-blank', 'selfie-roast', 'caption', 'pmatch', 'photoassoc', 'draw-telephone']);
 
   if (gameType !== undefined) {
     if (Array.isArray(gameType)) {

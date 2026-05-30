@@ -562,6 +562,12 @@ function cancelAllTimers(room) {
   if (room.mlt?.timerRef) { clearTimeout(room.mlt.timerRef); room.mlt.timerRef = null; }
   if (room.draw?.timerRef) { clearInterval(room.draw.timerRef); room.draw.timerRef = null; }
   if (room.fitb?.timerRef) { clearTimeout(room.fitb.timerRef); room.fitb.timerRef = null; }
+  // Cancel all per-chain drawing timers for draw-telephone
+  if (room.dt?.chains) {
+    for (const chain of Object.values(room.dt.chains)) {
+      if (chain.timerRef) { clearInterval(chain.timerRef); chain.timerRef = null; }
+    }
+  }
   stopAnswerTimer(room);
 }
 
@@ -1041,7 +1047,7 @@ io.on('connection', (socket) => {
 
     const connectedPlayers = activePlayers(room);
     const voteCount = Object.keys(room.tot.votesA).length + Object.keys(room.tot.votesB).length;
-    io.to(code).emit('tot:vote_received', { voteCount, totalVoters: connectedPlayers.length });
+    io.to(code).emit('tot:vote_received', { voteCount, totalVoters: connectedPlayers.length, votedPlayerIds: [...Object.keys(room.tot.votesA), ...Object.keys(room.tot.votesB)] });
 
     if (voteCount >= connectedPlayers.length) {
       closeTotRound(io, room, code);
@@ -1284,7 +1290,7 @@ io.on('connection', (socket) => {
     const voteCount = Object.keys(room.mlt.votes).length;
     const totalVoters = nonHostPlayers.length;
 
-    io.to(code).emit('mlt:vote_received', { voteCount, totalVoters });
+    io.to(code).emit('mlt:vote_received', { voteCount, totalVoters, votedPlayerIds: Object.keys(room.mlt.votes) });
 
     if (voteCount >= totalVoters) {
       closeMltVoting(io, room, code);
@@ -1665,7 +1671,7 @@ io.on('connection', (socket) => {
     room.draw.votes[player.id] = votedForPlayerId;
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
     const voteCount = Object.keys(room.draw.votes).length;
-    io.to(code).emit('draw:vote_received', { voteCount, totalVoters: playingPlayers.length });
+    io.to(code).emit('draw:vote_received', { voteCount, totalVoters: playingPlayers.length, votedPlayerIds: Object.keys(room.draw.votes) });
 
     if (voteCount >= playingPlayers.length) {
       resolveDrawVoting(io, room, code);
@@ -1830,7 +1836,7 @@ io.on('connection', (socket) => {
 
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
     const answeredCount = room.fitb.answers.length;
-    io.to(code).emit('fitb:answer_received', { answeredCount, totalPlayers: playingPlayers.length });
+    io.to(code).emit('fitb:answer_received', { answeredCount, totalPlayers: playingPlayers.length, answeredPlayerIds: room.fitb.answers.map(a => a.playerId) });
 
     if (answeredCount >= playingPlayers.length) {
       startFitbVoting(io, room, code);
@@ -1897,7 +1903,7 @@ io.on('connection', (socket) => {
 
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
     const voteCount = Object.keys(room.fitb._votes).length;
-    io.to(code).emit('fitb:vote_received', { voteCount, totalVoters: playingPlayers.length });
+    io.to(code).emit('fitb:vote_received', { voteCount, totalVoters: playingPlayers.length, votedPlayerIds: Object.keys(room.fitb._votes) });
 
     if (voteCount >= playingPlayers.length) {
       resolveFitbVoting(io, room, code);
@@ -2032,7 +2038,37 @@ io.on('connection', (socket) => {
 
   socket.on('selfie:submit_photo', ({ code, photoData }) => {
     const room = getRoom(code);
-    if (!room || room.phase !== 'selfie') return;
+    if (!room) return;
+
+    // Handle DT selfie collection phase
+    if (room.phase === 'dt' && room.dt.phase === 'selfie') {
+      const player = room.players.find(p => p.socketId === socket.id);
+      if (!player || !player.isPlaying || !player.isConnected) return;
+      if (room.dt.selfiePhotos?.[player.id]) return; // already submitted
+
+      if (!photoData || typeof photoData !== 'string') return;
+      if (!photoData.startsWith('data:image/jpeg;base64,') && !photoData.startsWith('data:image/png;base64,') && !photoData.startsWith('data:image/webp;base64,')) return;
+      if (photoData.length > 2 * 1024 * 1024) return;
+
+      if (!room.playerPhotos) room.playerPhotos = {};
+      room.playerPhotos[player.id] = photoData;
+      if (!room.dt.selfiePhotos) room.dt.selfiePhotos = {};
+      room.dt.selfiePhotos[player.id] = true;
+
+      const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+      const photoCount = Object.keys(room.dt.selfiePhotos).length;
+      const submittedPlayerIds = Object.keys(room.dt.selfiePhotos);
+      io.to(code).emit('dt:photo_received', { photoCount, totalPhotographers: playingPlayers.length, submittedPlayerIds });
+
+      if (photoCount >= playingPlayers.length) {
+        room.dt.phase = 'prompting';
+        const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
+        io.to(code).emit('dt:prompt_phase', { players, totalPrompts: playingPlayers.length });
+      }
+      return;
+    }
+
+    if (room.phase !== 'selfie') return;
     // Allow normal photo phase OR drawing phase (for retakes where photo was cleared)
     if (room.selfie.phase !== 'photo' && room.selfie.phase !== 'drawing') return;
     const player = room.players.find(p => p.socketId === socket.id);
@@ -2088,7 +2124,7 @@ io.on('connection', (socket) => {
 
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
     const photoCount = Object.keys(room.selfie.photos).length;
-    io.to(code).emit('selfie:photo_received', { photoCount, totalPlayers: playingPlayers.length });
+    io.to(code).emit('selfie:photo_received', { photoCount, totalPlayers: playingPlayers.length, submittedPlayerIds: Object.keys(room.selfie.photos) });
 
     if (photoCount >= playingPlayers.length) {
       assignSelfieDrawers(io, room, code);
@@ -2185,7 +2221,7 @@ io.on('connection', (socket) => {
 
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying && room.selfie.assignments[p.id]);
     const drawingCount = Object.keys(room.selfie.strokes).length;
-    io.to(code).emit('selfie:drawing_received', { drawingCount, totalDrawers: playingPlayers.length });
+    io.to(code).emit('selfie:drawing_received', { drawingCount, totalDrawers: playingPlayers.length, drawnPlayerIds: Object.keys(room.selfie.strokes) });
 
     if (drawingCount >= playingPlayers.length) {
       startSelfieVoting(io, room, code);
@@ -2243,7 +2279,7 @@ io.on('connection', (socket) => {
     room.selfie.votes[player.id] = drawerId;
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
     const voteCount = Object.keys(room.selfie.votes).length;
-    io.to(code).emit('selfie:vote_received', { voteCount, totalVoters: playingPlayers.length });
+    io.to(code).emit('selfie:vote_received', { voteCount, totalVoters: playingPlayers.length, votedPlayerIds: Object.keys(room.selfie.votes) });
 
     if (voteCount >= playingPlayers.length) {
       resolveSelfieVoting(io, room, code);
@@ -2585,7 +2621,7 @@ io.on('connection', (socket) => {
 
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
     const voteCount = Object.keys(room.caption.votes).length;
-    io.to(code).emit('caption:vote_received', { voteCount, totalVoters: playingPlayers.length });
+    io.to(code).emit('caption:vote_received', { voteCount, totalVoters: playingPlayers.length, votedPlayerIds: Object.keys(room.caption.votes) });
 
     if (voteCount >= playingPlayers.length) {
       endCaptionRound(io, room, code);
@@ -3013,6 +3049,585 @@ io.on('connection', (socket) => {
     io.to(code).emit('photovote:restarted', { code, players: room.players });
   });
 
+  // ─── Draw Telephone ────────────────────────────────────────────────────────
+  // Phase flow: prompting → drawing (parallel chains) → guessing → reveal → end
+  // Each player writes a [name]-template prompt.  Server assigns each prompt to a
+  // target player (bijection, derangement preferred).  A drawing chain of all OTHER
+  // players passes the canvas step-by-step.  The target then guesses the original
+  // prompt from the final drawing.  All players vote correct/close/wrong.
+
+  const DT_DRAW_SECS = 45; // seconds per drawing turn
+
+  // Helper: sanitize strokes (same rules as the regular drawing game)
+  const sanitizeDtStrokes = (strokes) => {
+    if (!Array.isArray(strokes)) return [];
+    return strokes.slice(0, 500).map(s => ({
+      color: /^#[0-9A-Fa-f]{3,6}$/.test(s.color) ? s.color : '#000000',
+      width: Math.min(Math.max(Number(s.width) || 4, 1), 40),
+      type: s.type === 'eraser' ? 'eraser' : 'pen',
+      points: Array.isArray(s.points)
+        ? s.points.slice(0, 300).map(pt => ({ x: Math.round(Number(pt.x) || 0), y: Math.round(Number(pt.y) || 0) }))
+        : [],
+    }));
+  };
+
+  // Helper: build the combined strokes array from all completed drawing steps
+  const buildCombinedStrokes = (chain) =>
+    chain.drawingSteps.flatMap(step => step.strokes);
+
+  // Helper: start the drawing timer for a specific chain
+  const startDtChainTimer = (io, room, code, promptId) => {
+    const chain = room.dt.chains[promptId];
+    if (!chain) return;
+    chain.secondsLeft = DT_DRAW_SECS;
+    chain.timerRef = setInterval(() => {
+      chain.secondsLeft--;
+      // Send tick only to the active drawer for this chain
+      const drawerId = room.dt.activeTurns[Object.keys(room.dt.activeTurns).find(pid => room.dt.activeTurns[pid] === promptId)];
+      // (activeTurns maps playerId→promptId, so invert the lookup)
+      const activeDrawerEntry = Object.entries(room.dt.activeTurns).find(([, pid]) => pid === promptId);
+      if (activeDrawerEntry) {
+        const [activeDrawerId] = activeDrawerEntry;
+        const drawerPlayer = room.players.find(p => p.id === activeDrawerId);
+        if (drawerPlayer?.socketId) {
+          io.to(drawerPlayer.socketId).emit('dt:turn_timer', { promptId, secondsLeft: chain.secondsLeft });
+        }
+      }
+      if (chain.secondsLeft <= 0) {
+        clearInterval(chain.timerRef);
+        chain.timerRef = null;
+        // Notify the active drawer to submit their current strokes immediately
+        const drawerEntryAtTimeout = Object.entries(room.dt.activeTurns).find(([, pid]) => pid === promptId);
+        if (drawerEntryAtTimeout) {
+          const drawerAtTimeout = room.players.find(p => p.id === drawerEntryAtTimeout[0]);
+          if (drawerAtTimeout?.socketId) {
+            io.to(drawerAtTimeout.socketId).emit('dt:time_up', { promptId });
+          }
+        }
+        // 800ms grace window for client to submit actual strokes; then fallback to empty
+        setTimeout(() => autoSubmitDtTurn(io, room, code, promptId), 800);
+      }
+    }, 1000);
+  };
+
+  // Helper: called when a turn times out — submits empty/current strokes for that turn
+  const autoSubmitDtTurn = (io, room, code, promptId) => {
+    const chain = room.dt.chains[promptId];
+    if (!chain || chain.phase !== 'drawing') return;
+    const drawerEntry = Object.entries(room.dt.activeTurns).find(([, pid]) => pid === promptId);
+    if (!drawerEntry) return;
+    const [drawerId] = drawerEntry;
+    // Add an empty drawing step if the player never submitted
+    chain.drawingSteps.push({ playerId: drawerId, strokes: [], submittedAt: Date.now(), autoSubmitted: true });
+    // Free the player's active turn slot
+    delete room.dt.activeTurns[drawerId];
+    // Give them any pending turn
+    if (room.dt.pendingTurns[drawerId]?.length > 0) {
+      const nextId = room.dt.pendingTurns[drawerId].shift();
+      const nextChain = room.dt.chains[nextId];
+      if (nextChain && nextChain.phase === 'drawing') startDtChainTurn(io, room, code, nextId);
+    }
+    // Advance this chain
+    chain.currentParticipantIndex++;
+    if (chain.currentParticipantIndex >= chain.participants.length) {
+      chain.phase = 'done';
+      room.dt.chainsCompletedDrawing++;
+      io.to(code).emit('dt:chain_progress', {
+        chainsCompleted: room.dt.chainsCompletedDrawing,
+        totalChains: room.dt.totalChains,
+      });
+      if (room.dt.chainsCompletedDrawing >= room.dt.totalChains) {
+        startDtGuessingPhase(io, room, code);
+      }
+    } else {
+      startDtChainTurn(io, room, code, promptId);
+    }
+  };
+
+  // Helper: assign a drawing turn to the next participant in a chain
+  const startDtChainTurn = (io, room, code, promptId) => {
+    const chain = room.dt.chains[promptId];
+    if (!chain || chain.phase !== 'drawing') return;
+    const drawerId = chain.participants[chain.currentParticipantIndex];
+    if (!drawerId) return;
+
+    // If this player already has an active turn, queue this one
+    if (room.dt.activeTurns[drawerId]) {
+      if (!room.dt.pendingTurns[drawerId]) room.dt.pendingTurns[drawerId] = [];
+      room.dt.pendingTurns[drawerId].push(promptId);
+      return;
+    }
+
+    room.dt.activeTurns[drawerId] = promptId;
+    const drawerPlayer = room.players.find(p => p.id === drawerId);
+    const existingStrokes = buildCombinedStrokes(chain);
+
+    if (drawerPlayer?.socketId) {
+      io.to(drawerPlayer.socketId).emit('dt:your_turn', {
+        promptId,
+        finalText: chain.finalText,
+        existingStrokes,
+        originalSelfieData: chain.originalSelfieData,
+        position: chain.currentParticipantIndex + 1,
+        totalPositions: chain.participants.length,
+        secondsLeft: DT_DRAW_SECS,
+      });
+    }
+
+    startDtChainTimer(io, room, code, promptId);
+
+    // Broadcast progress to room so everyone can see which chains are active
+    io.to(code).emit('dt:drawing_progress', {
+      promptId,
+      stepsDone: chain.drawingSteps.length,
+      totalSteps: chain.participants.length,
+      drawerId,
+      drawerName: drawerPlayer?.name || '?',
+    });
+  };
+
+  // Helper: start guessing phase — target players see final drawing
+  const startDtGuessingPhase = (io, room, code) => {
+    room.dt.phase = 'guessing';
+    const totalGuessers = Object.keys(room.dt.chains).length;
+    io.to(code).emit('dt:guessing_phase', { totalGuessers });
+
+    for (const [promptId, chain] of Object.entries(room.dt.chains)) {
+      const targetPlayer = room.players.find(p => p.id === chain.targetPlayerId);
+      const finalStrokes = buildCombinedStrokes(chain);
+      if (targetPlayer?.socketId) {
+        io.to(targetPlayer.socketId).emit('dt:your_guess', {
+          promptId,
+          finalStrokes,
+          originalSelfieData: chain.originalSelfieData,
+          drawerCount: chain.drawingSteps.length,
+        });
+      }
+    }
+  };
+
+  // Helper: build reveal payload for current step
+  const buildDtRevealPayload = (room) => {
+    const { revealCurrentIndex, revealQueue, revealStep } = room.dt;
+    const promptId = revealQueue[revealCurrentIndex];
+    if (!promptId) return null;
+    const chain = room.dt.chains[promptId];
+    const targetPlayer = room.players.find(p => p.id === chain.targetPlayerId);
+    const authorPlayer = room.players.find(p => p.id === chain.authorId);
+    const drawingSteps = chain.drawingSteps.map((step, i) => {
+      const drawer = room.players.find(p => p.id === step.playerId);
+      // Cumulative strokes up to and including this step
+      const cumulativeStrokes = chain.drawingSteps.slice(0, i + 1).flatMap(s => s.strokes);
+      return {
+        playerId: step.playerId,
+        playerName: drawer?.name || '?',
+        playerColor: drawer?.color || '#fff',
+        strokes: cumulativeStrokes,
+        stepIndex: i,
+      };
+    });
+    // Step layout: 0=template 1=target 2=selfie 3=finalText 4..3+N=drawings 4+N=guess 5+N=vote
+    const votes = room.dt.votes[promptId] || {};
+    const correctCount = Object.values(votes).filter(v => v === 'correct').length;
+    const closeCount = Object.values(votes).filter(v => v === 'close').length;
+    const wrongCount = Object.values(votes).filter(v => v === 'wrong').length;
+    const totalVoters = room.players.filter(p => p.isConnected && p.isPlaying && p.id !== chain.targetPlayerId).length;
+    const hasVotingCompleted = Object.keys(votes).length >= totalVoters;
+    const success = hasVotingCompleted
+      ? (correctCount + closeCount) > wrongCount
+      : null;
+
+    return {
+      promptIndex: revealCurrentIndex,
+      totalPrompts: revealQueue.length,
+      step: revealStep,
+      promptId,
+      templateText: chain.templateText,
+      targetPlayerId: chain.targetPlayerId,
+      targetName: targetPlayer?.name || '?',
+      targetColor: targetPlayer?.color || '#fff',
+      originalSelfieData: chain.originalSelfieData,
+      authorPlayerId: chain.authorId,
+      authorName: authorPlayer?.name || '?',
+      finalText: chain.finalText,
+      drawingSteps,
+      guessText: room.dt.guesses[promptId] || '',
+      votes,
+      voteCount: Object.keys(votes).length,
+      totalVoters,
+      success,
+      correctCount,
+      closeCount,
+      wrongCount,
+    };
+  };
+
+  socket.on('dt:start', ({ code }) => {
+    const room = getRoom(code);
+    if (!room) return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+
+    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    if (playingPlayers.length < 3) {
+      socket.emit('dt:error', { message: 'Need at least 3 players to start Draw Telephone.' });
+      return;
+    }
+
+    cancelAllTimers(room);
+    room.phase = 'dt';
+    room.dt = {
+      phase: 'prompting',
+      prompts: [],
+      chains: {},
+      activeTurns: {},
+      pendingTurns: {},
+      guesses: {},
+      votes: {},
+      revealQueue: [],
+      revealCurrentIndex: 0,
+      revealStep: 0,
+      chainsCompletedDrawing: 0,
+      totalChains: 0,
+      scores: {},
+    };
+
+    const allPhotos = room.playerPhotos || {};
+    const missingPhotos = playingPlayers.filter(p => !allPhotos[p.id]);
+    const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
+
+    if (missingPhotos.length > 0) {
+      // Need selfies first — track which players already have photos
+      room.dt.phase = 'selfie';
+      room.dt.selfiePhotos = {};
+      playingPlayers.forEach(p => {
+        if (allPhotos[p.id]) room.dt.selfiePhotos[p.id] = true;
+      });
+      const photoCount = Object.keys(room.dt.selfiePhotos).length;
+      io.to(code).emit('dt:selfie_phase', { players, photoCount, totalPhotographers: playingPlayers.length });
+      // Notify players whose photos are already saved so they see "reusing" UI
+      playingPlayers.forEach(p => {
+        if (allPhotos[p.id] && p.socketId) {
+          io.to(p.socketId).emit('player:photo_reused', { gameType: 'dt' });
+        }
+      });
+      // If all photos already saved, skip selfie phase immediately
+      if (photoCount >= playingPlayers.length) {
+        room.dt.phase = 'prompting';
+        io.to(code).emit('dt:prompt_phase', { players, totalPrompts: playingPlayers.length });
+      }
+    } else {
+      io.to(code).emit('dt:prompt_phase', { players, totalPrompts: playingPlayers.length });
+    }
+  });
+
+  socket.on('dt:submit_prompt', ({ code, templateText }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'dt' || room.dt.phase !== 'prompting') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isPlaying || !player.isConnected) return;
+    // One prompt per player
+    if (room.dt.prompts.some(p => p.authorId === player.id)) return;
+
+    if (!templateText || typeof templateText !== 'string') return;
+    const sanitized = templateText.trim().slice(0, 200);
+    // Must contain [name] placeholder
+    if (!sanitized.toLowerCase().includes('[name]')) return;
+
+    const promptId = `dt_${player.id}_${Date.now()}`;
+    room.dt.prompts.push({ id: promptId, authorId: player.id, templateText: sanitized });
+
+    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    io.to(code).emit('dt:prompt_received', {
+      submittedCount: room.dt.prompts.length,
+      totalPrompts: playingPlayers.length,
+      submittedPlayerIds: room.dt.prompts.map(p => p.authorId),
+    });
+
+    // When all players have submitted, assign targets and start drawing chains
+    if (room.dt.prompts.length >= playingPlayers.length) {
+      startDtDrawingPhase(io, room, code, playingPlayers);
+    }
+  });
+
+  const startDtDrawingPhase = (io, room, code, playingPlayers) => {
+    room.dt.phase = 'drawing';
+    room.dt.totalChains = room.dt.prompts.length;
+
+    // Assign targets: bijection (each prompt gets one target, each player is target exactly once)
+    // Build derangement-like assignment: shuffle player IDs and pair with prompts
+    const playerIds = playingPlayers.map(p => p.id);
+    const shuffled = [...playerIds].sort(() => Math.random() - 0.5);
+
+    // Ensure no prompt is assigned to its own author (attempt derangement)
+    for (let attempt = 0; attempt < 100; attempt++) {
+      let valid = true;
+      for (let i = 0; i < room.dt.prompts.length; i++) {
+        if (shuffled[i] === room.dt.prompts[i].authorId) { valid = false; break; }
+      }
+      if (valid) break;
+      shuffled.sort(() => Math.random() - 0.5);
+    }
+
+    // Create chains
+    for (let i = 0; i < room.dt.prompts.length; i++) {
+      const prompt = room.dt.prompts[i];
+      const targetPlayerId = shuffled[i];
+      const targetPlayer = playingPlayers.find(p => p.id === targetPlayerId);
+      const finalText = prompt.templateText.replace(/\[name\]/gi, targetPlayer?.name || '?');
+
+      // Participants = all players EXCEPT the target (they will draw for this chain)
+      const participants = playerIds.filter(id => id !== targetPlayerId);
+      // Shuffle participant order
+      participants.sort(() => Math.random() - 0.5);
+
+      room.dt.chains[prompt.id] = {
+        id: prompt.id,
+        authorId: prompt.authorId,
+        templateText: prompt.templateText,
+        targetPlayerId,
+        targetName: targetPlayer?.name || '?',
+        finalText,
+        originalSelfieData: (room.playerPhotos || {})[targetPlayerId] || null,
+        participants,
+        currentParticipantIndex: 0,
+        drawingSteps: [],
+        phase: 'drawing',
+        timerRef: null,
+        secondsLeft: DT_DRAW_SECS,
+      };
+    }
+
+    const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
+    io.to(code).emit('dt:drawing_phase', {
+      totalChains: room.dt.totalChains,
+      players,
+    });
+
+    // Start the first turn of every chain simultaneously
+    for (const promptId of Object.keys(room.dt.chains)) {
+      startDtChainTurn(io, room, code, promptId);
+    }
+  };
+
+  socket.on('dt:submit_strokes', ({ code, promptId, strokes }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'dt' || room.dt.phase !== 'drawing') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isPlaying || !player.isConnected) return;
+
+    // Verify this is the player's active turn for this chain
+    if (room.dt.activeTurns[player.id] !== promptId) return;
+    const chain = room.dt.chains[promptId];
+    if (!chain || chain.phase !== 'drawing') return;
+    if (chain.participants[chain.currentParticipantIndex] !== player.id) return;
+
+    // Cancel the timer for this chain
+    if (chain.timerRef) { clearInterval(chain.timerRef); chain.timerRef = null; }
+
+    const sanitized = sanitizeDtStrokes(strokes);
+    chain.drawingSteps.push({ playerId: player.id, strokes: sanitized, submittedAt: Date.now() });
+
+    // Free the player's active turn slot
+    delete room.dt.activeTurns[player.id];
+
+    // Give the player their next pending turn if any
+    if (room.dt.pendingTurns[player.id]?.length > 0) {
+      const nextPendingId = room.dt.pendingTurns[player.id].shift();
+      const nextChain = room.dt.chains[nextPendingId];
+      if (nextChain && nextChain.phase === 'drawing') startDtChainTurn(io, room, code, nextPendingId);
+    }
+
+    // Advance this chain to the next participant
+    chain.currentParticipantIndex++;
+    if (chain.currentParticipantIndex >= chain.participants.length) {
+      chain.phase = 'done';
+      room.dt.chainsCompletedDrawing++;
+      io.to(code).emit('dt:chain_progress', {
+        chainsCompleted: room.dt.chainsCompletedDrawing,
+        totalChains: room.dt.totalChains,
+      });
+      if (room.dt.chainsCompletedDrawing >= room.dt.totalChains) {
+        startDtGuessingPhase(io, room, code);
+      }
+    } else {
+      startDtChainTurn(io, room, code, promptId);
+    }
+  });
+
+  socket.on('dt:submit_guess', ({ code, promptId, guessText }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'dt' || room.dt.phase !== 'guessing') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isPlaying || !player.isConnected) return;
+    if (room.dt.guesses[promptId]) return; // already guessed
+
+    // Only the target of this chain can guess
+    const chain = room.dt.chains[promptId];
+    if (!chain || chain.targetPlayerId !== player.id) return;
+
+    if (!guessText || typeof guessText !== 'string') return;
+    const sanitized = guessText.trim().slice(0, 200);
+    if (!sanitized) return;
+
+    room.dt.guesses[promptId] = sanitized;
+
+    const totalGuessers = Object.keys(room.dt.chains).length;
+    const guessedCount = Object.keys(room.dt.guesses).length;
+    const guessedPlayerIds = Object.entries(room.dt.chains)
+      .filter(([pid]) => room.dt.guesses[pid] !== undefined)
+      .map(([, c]) => c.targetPlayerId);
+    io.to(code).emit('dt:guess_received', { guessedCount, totalGuessers, guessedPlayerIds });
+
+    if (guessedCount >= totalGuessers) {
+      startDtRevealPhase(io, room, code);
+    }
+  });
+
+  const startDtRevealPhase = (io, room, code) => {
+    room.dt.phase = 'reveal';
+    room.dt.revealQueue = Object.keys(room.dt.chains);
+    // Shuffle reveal order
+    room.dt.revealQueue.sort(() => Math.random() - 0.5);
+    room.dt.revealCurrentIndex = 0;
+    room.dt.revealStep = 0;
+
+    io.to(code).emit('dt:reveal_phase', {
+      totalPrompts: room.dt.revealQueue.length,
+    });
+
+    // Broadcast initial state
+    const payload = buildDtRevealPayload(room);
+    if (payload) io.to(code).emit('dt:reveal_update', payload);
+  };
+
+  socket.on('dt:reveal_next', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'dt' || room.dt.phase !== 'reveal') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+
+    const promptId = room.dt.revealQueue[room.dt.revealCurrentIndex];
+    const chain = room.dt.chains[promptId];
+    if (!chain) return;
+
+    // Determine max step for this prompt (template=0, target=1, selfie=2, final=3, drawing N=4+N, guess=4+steps, vote=5+steps)
+    const totalDrawingSteps = chain.drawingSteps.length;
+    const maxStep = 5 + totalDrawingSteps; // 0:template 1:target 2:selfie 3:final 4..3+N:drawings 4+N:guess 5+N:vote
+
+    room.dt.revealStep++;
+    if (room.dt.revealStep > maxStep) {
+      // Move to next prompt or end reveal
+      room.dt.revealCurrentIndex++;
+      room.dt.revealStep = 0;
+      if (room.dt.revealCurrentIndex >= room.dt.revealQueue.length) {
+        // All reveals done, go to end
+        endDtGame(io, room, code);
+        return;
+      }
+    }
+
+    const payload = buildDtRevealPayload(room);
+    if (payload) io.to(code).emit('dt:reveal_update', payload);
+  });
+
+  socket.on('dt:vote', ({ code, promptId, vote }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'dt' || room.dt.phase !== 'reveal') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isPlaying || !player.isConnected) return;
+
+    if (!['correct', 'close', 'wrong'].includes(vote)) return;
+    if (!room.dt.chains[promptId]) return;
+    if (!room.dt.votes[promptId]) room.dt.votes[promptId] = {};
+    if (room.dt.votes[promptId][player.id]) return; // already voted
+
+    room.dt.votes[promptId][player.id] = vote;
+
+    const chain = room.dt.chains[promptId];
+    const eligibleVoters = room.players.filter(p => p.isConnected && p.isPlaying && p.id !== chain?.targetPlayerId);
+    const voteCount = Object.keys(room.dt.votes[promptId]).length;
+    io.to(code).emit('dt:vote_received', {
+      promptId,
+      voteCount,
+      totalVoters: eligibleVoters.length,
+      votedPlayerIds: Object.keys(room.dt.votes[promptId]),
+    });
+
+    // Re-broadcast the reveal update so everyone sees updated vote counts
+    const payload = buildDtRevealPayload(room);
+    if (payload) io.to(code).emit('dt:reveal_update', payload);
+  });
+
+  const endDtGame = (io, room, code) => {
+    room.dt.phase = 'end';
+    room.phase = 'dtEnd';
+
+    // Calculate scores from all vote outcomes
+    for (const [promptId, promptVotes] of Object.entries(room.dt.votes)) {
+      const chain = room.dt.chains[promptId];
+      if (!chain) continue;
+      const correctCount = Object.values(promptVotes).filter(v => v === 'correct').length;
+      const closeCount = Object.values(promptVotes).filter(v => v === 'close').length;
+      const wrongCount = Object.values(promptVotes).filter(v => v === 'wrong').length;
+      const success = (correctCount + closeCount) > wrongCount;
+
+      if (success) {
+        const isCorrect = correctCount >= closeCount;
+        // Target player gets points
+        room.dt.scores[chain.targetPlayerId] = (room.dt.scores[chain.targetPlayerId] || 0) + (isCorrect ? 2 : 1);
+        // Each drawer gets +1 for contributing to a successful chain
+        for (const step of chain.drawingSteps) {
+          if (!step.autoSubmitted) {
+            room.dt.scores[step.playerId] = (room.dt.scores[step.playerId] || 0) + 1;
+          }
+        }
+        // Prompt author gets +1 for a good prompt
+        room.dt.scores[chain.authorId] = (room.dt.scores[chain.authorId] || 0) + 1;
+      }
+    }
+
+    const leaderboard = room.players
+      .filter(p => p.isPlaying)
+      .map(p => ({ id: p.id, name: p.name, color: p.color, score: room.dt.scores[p.id] || 0 }))
+      .sort((a, b) => b.score - a.score);
+
+    mergeToGlobalScores(io, room, room.dt.scores);
+
+    io.to(code).emit('dt:end', {
+      scores: room.dt.scores,
+      leaderboard,
+    });
+  };
+
+  socket.on('dt:skip_to_reveal', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'dt') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+    if (room.dt.phase === 'guessing') startDtRevealPhase(io, room, code);
+  });
+
+  socket.on('dt:end_game', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'dt') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+    endDtGame(io, room, code);
+  });
+
+  socket.on('dt:restart', ({ code }) => {
+    const room = getRoom(code);
+    if (!room) return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+    cancelAllTimers(room);
+    room.phase = 'lobby';
+    room.dt = { phase: 'waiting', prompts: [], chains: {}, activeTurns: {}, pendingTurns: {}, guesses: {}, votes: {}, revealQueue: [], revealCurrentIndex: 0, revealStep: 0, chainsCompletedDrawing: 0, totalChains: 0, scores: {} };
+    room.players.forEach(p => { p.isReady = false; });
+    io.to(code).emit('dt:restarted', { code, players: room.players });
+  });
+
   // ─── Change game (keep same room/players, switch game type) ───────────────
 
   socket.on('change_game', ({ code, newGameType }) => {
@@ -3020,7 +3635,7 @@ io.on('connection', (socket) => {
     if (!room) return;
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isHost) return;
-    const validGameTypes = ['who-said-that', 'most-likely-to', 'situational', 'this-or-that', 'mixed', 'drawing', 'fill-in-the-blank', 'selfie-roast', 'caption', 'pmatch', 'photoassoc', 'selfie-beforeafter'];
+    const validGameTypes = ['who-said-that', 'most-likely-to', 'situational', 'this-or-that', 'mixed', 'drawing', 'fill-in-the-blank', 'selfie-roast', 'caption', 'pmatch', 'photoassoc', 'selfie-beforeafter', 'draw-telephone'];
     if (!validGameTypes.includes(newGameType)) return;
 
     // Cancel any active timers before resetting state
@@ -3040,6 +3655,7 @@ io.on('connection', (socket) => {
     room.selfie = { phase: 'waiting', photos: {}, assignments: {}, strokes: {}, votes: {}, scores: {} };
     room.caption = { phase: 'waiting', photos: {}, currentRound: 1, totalRounds: 3, captions: {}, votes: {}, scores: {}, usedPrompts: [], prompts: [], currentPromptIndex: 0 };
     room.photoVote = { subType: 'pmatch', phase: 'waiting', photos: {}, currentRound: 1, totalRounds: 5, prompts: [], currentPromptIndex: 0, votes: {}, scores: {} };
+    room.dt = { phase: 'waiting', prompts: [], chains: {}, activeTurns: {}, pendingTurns: {}, guesses: {}, votes: {}, revealQueue: [], revealCurrentIndex: 0, revealStep: 0, chainsCompletedDrawing: 0, totalChains: 0, scores: {} };
 
     io.to(code).emit('game_changed', {
       code,
