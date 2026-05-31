@@ -45,6 +45,7 @@ export default function LobbyPage() {
   const tMixed = translations[state.lang].mixed;
   const tHome = translations[state.lang].home;
   const tDraw = translations[state.lang].draw;
+  const tDt = translations[state.lang].dt;
   const isMlt = state.gameType === 'most-likely-to';
   const isWstLike = ['who-said-that', 'situational', 'mixed'].includes(state.gameType);
   const isTot = state.gameType === 'this-or-that';
@@ -271,7 +272,7 @@ export default function LobbyPage() {
                   title={gt.id}
                 >
                   <span className="text-lg leading-none">{gt.emoji}</span>
-                  <span className="mt-0.5 leading-tight text-center" style={{ fontSize: '0.6rem' }}>{gt.id === 'who-said-that' ? t.gameLabelShort : gt.id === 'most-likely-to' ? tMlt.gameLabelShort : gt.id === 'situational' ? tSit.gameLabelShort : gt.id === 'this-or-that' ? tTot.gameLabelShort : gt.id === 'drawing' ? tDraw.gameLabelShort : gt.id === 'draw-telephone' ? '📞 Chain' : tMixed.gameLabelShort}</span>
+                  <span className="mt-0.5 leading-tight text-center" style={{ fontSize: '0.6rem' }}>{gt.id === 'who-said-that' ? t.gameLabelShort : gt.id === 'most-likely-to' ? tMlt.gameLabelShort : gt.id === 'situational' ? tSit.gameLabelShort : gt.id === 'this-or-that' ? tTot.gameLabelShort : gt.id === 'drawing' ? tDraw.gameLabelShort : gt.id === 'draw-telephone' ? tDt.gameLabelShort : tMixed.gameLabelShort}</span>
                 </button>
               );
             })}

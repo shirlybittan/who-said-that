@@ -1144,7 +1144,7 @@ export const gameReducer = (state, action) => {
     case 'DT_MARK_TURN_SUBMITTED':
       return {
         ...state,
-        dt: { ...state.dt, hasSubmittedTurn: true, currentTurn: null },
+        dt: { ...state.dt, hasSubmittedTurn: true },
       };
     case 'DT_CHAIN_PROGRESS':
       return {

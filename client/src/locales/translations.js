@@ -231,6 +231,11 @@ export const translations = {
       classicMode: "Classic",
       yourSecretWord: "Your word:",
       secretVotingHint: "each player drew a different word!",
+    },
+    dt: {
+      gameLabel: "Chain Drawing",
+      gameLabelShort: "📞 Chain",
+      gameDesc: "Draw a prompt in a telephone chain!",
     }
   },
   fr: {
@@ -465,6 +470,11 @@ export const translations = {
       classicMode: "Classique",
       yourSecretWord: "Ton mot :",
       secretVotingHint: "chaque joueur avait un mot différent !",
+    },
+    dt: {
+      gameLabel: "Dessin en Chaîne",
+      gameLabelShort: "📞 Chaîne",
+      gameDesc: "Dessine une invite dans une chaîne téléphonique !",
     }
   },
 };

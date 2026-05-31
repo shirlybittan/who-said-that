@@ -184,7 +184,7 @@ export default function DrawTelDrawPage() {
   const onTouchMove = (e) => { e.preventDefault(); const t = e.touches[0]; const pos = getPos(e.currentTarget, t.clientX, t.clientY); moveDraw(pos.x, pos.y); };
   const onTouchEnd = (e) => { e.preventDefault(); endDraw(); };
 
-  if (!turn) {
+  if (!turn || dt.hasSubmittedTurn) {
     return (
       <motion.div
         className="flex flex-col items-center justify-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6"

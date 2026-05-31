@@ -3084,8 +3084,6 @@ io.on('connection', (socket) => {
     chain.secondsLeft = DT_DRAW_SECS;
     chain.timerRef = setInterval(() => {
       chain.secondsLeft--;
-      // Send tick only to the active drawer for this chain
-      const drawerId = room.dt.activeTurns[Object.keys(room.dt.activeTurns).find(pid => room.dt.activeTurns[pid] === promptId)];
       // (activeTurns maps playerId→promptId, so invert the lookup)
       const activeDrawerEntry = Object.entries(room.dt.activeTurns).find(([, pid]) => pid === promptId);
       if (activeDrawerEntry) {
@@ -3359,16 +3357,24 @@ io.on('connection', (socket) => {
     // Assign targets: bijection (each prompt gets one target, each player is target exactly once)
     // Build derangement-like assignment: shuffle player IDs and pair with prompts
     const playerIds = playingPlayers.map(p => p.id);
-    const shuffled = [...playerIds].sort(() => Math.random() - 0.5);
-
-    // Ensure no prompt is assigned to its own author (attempt derangement)
-    for (let attempt = 0; attempt < 100; attempt++) {
-      let valid = true;
-      for (let i = 0; i < room.dt.prompts.length; i++) {
-        if (shuffled[i] === room.dt.prompts[i].authorId) { valid = false; break; }
+    // Build the assignment using Fisher-Yates shuffle + targeted fix to guarantee no self-assignment
+    const authorIds = room.dt.prompts.map(p => p.authorId);
+    const shuffled = [...playerIds];
+    // Fisher-Yates shuffle
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    // Fix any self-assignments: for each conflict, swap with the first safe partner
+    for (let i = 0; i < shuffled.length; i++) {
+      if (shuffled[i] === authorIds[i]) {
+        for (let j = 0; j < shuffled.length; j++) {
+          if (j !== i && shuffled[j] !== authorIds[i] && shuffled[i] !== authorIds[j]) {
+            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+            break;
+          }
+        }
       }
-      if (valid) break;
-      shuffled.sort(() => Math.random() - 0.5);
     }
 
     // Create chains

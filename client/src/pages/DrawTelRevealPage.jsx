@@ -127,7 +127,7 @@ export default function DrawTelRevealPage() {
         {/* Step 3: Final text */}
         {step === 3 && (
           <motion.div
-            key="step2"
+            key="step3"
             className="w-full max-w-md"
             initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
           >
