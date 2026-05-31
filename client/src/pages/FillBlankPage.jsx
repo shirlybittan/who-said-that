@@ -13,11 +13,11 @@ export default function FillBlankPage() {
 
   const handleSubmitAnswer = () => {
     const trimmed = answerText.trim();
-    if (!trimmed || fitb.hasAnswered) return;
+    if (!trimmed) return;
     sounds.answer?.();
     socket.emit('fitb:answer', { code: state.roomCode, text: trimmed });
     dispatch({ type: 'FITB_MARK_ANSWERED', payload: { myAnswer: trimmed } });
-    setAnswerText('');
+    if (!fitb.hasAnswered) setAnswerText('');
   };
 
   const handleVote = (id) => {
@@ -65,7 +65,26 @@ export default function FillBlankPage() {
           </p>
         </div>
 
-        {!fitb.hasAnswered ? (
+        {fitb.hasAnswered ? (
+          <div className="w-full max-w-md space-y-3">
+            <p className="text-xs text-[#4ECDC4] font-['Nunito'] text-center">✓ Submitted — you can still edit</p>
+            <input
+              className="w-full bg-[#1A1A2E] border-2 border-[#4ECDC4]/60 focus:border-[#4ECDC4] outline-none rounded-xl px-4 py-3 text-white font-['Nunito'] text-base placeholder-gray-500 transition"
+              placeholder="Update your answer…"
+              value={answerText}
+              onChange={(e) => setAnswerText(e.target.value.slice(0, 120))}
+              onKeyDown={(e) => e.key === 'Enter' && handleSubmitAnswer()}
+              maxLength={120}
+            />
+            <button
+              onClick={handleSubmitAnswer}
+              disabled={!answerText.trim()}
+              className="w-full bg-[#4ECDC4] disabled:opacity-40 text-black font-['Fredoka_One'] text-lg py-3 rounded-xl transition hover:bg-[#3DBDB4]"
+            >
+              ↑ Update
+            </button>
+          </div>
+        ) : (
           <div className="w-full max-w-md space-y-3">
             <input
               className="w-full bg-[#1A1A2E] border-2 border-[#2D2D44] focus:border-[#4ECDC4] outline-none rounded-xl px-4 py-3 text-white font-['Nunito'] text-base placeholder-gray-500 transition"
@@ -83,13 +102,6 @@ export default function FillBlankPage() {
             >
               Submit
             </button>
-          </div>
-        ) : (
-          <div className="w-full max-w-md bg-[#1A1A2E] rounded-2xl border border-[#2D2D44] p-5 text-center">
-            <p className="text-[#4ECDC4] font-['Fredoka_One'] text-xl mb-2">Answer in! ✓</p>
-            <p className="text-gray-400 font-['Nunito'] text-sm">
-              Waiting for others… ({fitb.answeredCount}/{fitb.totalAnswerers})
-            </p>
           </div>
         )}
 

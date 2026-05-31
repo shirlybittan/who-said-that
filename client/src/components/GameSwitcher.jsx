@@ -9,6 +9,7 @@ const AVAILABLE_GAMES = [
   { id: 'this-or-that',      label: '🆚 This or That',     accent: '#A29BFE' },
   { id: 'drawing',           label: '🎨 Sketch It!',       accent: '#C39BD3' },
   { id: 'fill-in-the-blank', label: '✏️ Fill in the Blank', accent: '#55EFC4' },
+  { id: 'draw-telephone',    label: '📞 Drawing in Chain', accent: '#FF6B6B' },
   { id: 'selfie-roast',      label: '📸 Selfie Artist',    accent: '#FD79A8' },
   { id: 'caption',           label: '💬 Selfie Captions',  accent: '#FD79A8' },
   { id: 'pmatch',            label: '🎯 Who Fits?',         accent: '#FDCB6E' },

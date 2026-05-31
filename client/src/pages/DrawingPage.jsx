@@ -67,7 +67,6 @@ export default function DrawingPage() {
 
   // ── Drawing event handlers (all phases of pointer/touch) ─────────────────
   const startDraw = useCallback((x, y) => {
-    if (draw.hasSubmitted) return;
     sounds.draw();
     isDrawing.current = true;
     curStroke.current = { color, width, type: tool, points: [{ x, y }] };
@@ -87,7 +86,7 @@ export default function DrawingPage() {
       ctx.fill();
       ctx.restore();
     }
-  }, [color, width, tool, draw.hasSubmitted]);
+  }, [color, width, tool]);
 
   const moveDraw = useCallback((x, y) => {
     if (!isDrawing.current || !curStroke.current) return;
@@ -119,9 +118,13 @@ export default function DrawingPage() {
     if (curStroke.current && curStroke.current.points.length > 0) {
       strokesRef.current.push(curStroke.current);
       setStrokeCount(c => c + 1);
+      // Auto-update submission when player keeps drawing after first submit
+      if (draw.hasSubmitted && draw.phase === 'drawing') {
+        socket.emit('draw:submit', { code: roomCode, strokes: strokesRef.current });
+      }
     }
     curStroke.current = null;
-  }, []);
+  }, [draw.hasSubmitted, draw.phase, roomCode]);
 
   // Mouse handlers
   const onMouseDown = (e) => {
@@ -157,6 +160,9 @@ export default function DrawingPage() {
     setStrokeCount(c => Math.max(0, c - 1));
     const canvas = canvasRef.current;
     if (canvas) redrawCanvas(canvas, strokesRef.current);
+    if (draw.hasSubmitted && draw.phase === 'drawing') {
+      socket.emit('draw:submit', { code: roomCode, strokes: strokesRef.current });
+    }
   };
 
   const handleClear = () => {
@@ -168,20 +174,22 @@ export default function DrawingPage() {
       ctx.fillStyle = '#FFFFFF';
       ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
     }
+    if (draw.hasSubmitted && draw.phase === 'drawing') {
+      socket.emit('draw:submit', { code: roomCode, strokes: [] });
+    }
   };
 
   const handleSubmit = () => {
-    if (draw.hasSubmitted || draw.phase !== 'drawing') return;
+    if (draw.phase !== 'drawing') return;
     socket.emit('draw:submit', { code: roomCode, strokes: strokesRef.current });
-    dispatch({ type: 'DRAW_MARK_SUBMITTED' });
+    if (!draw.hasSubmitted) dispatch({ type: 'DRAW_MARK_SUBMITTED' });
   };
 
-  // Auto-submit when timer is about to expire and player hasn't submitted yet.
-  // Trigger at ≤1 second remaining so the emit reaches the server before it closes submissions.
+  // Auto-submit when timer is about to expire to capture the latest drawing.
   useEffect(() => {
-    if (draw.phase === 'drawing' && !draw.hasSubmitted && draw.secondsLeft <= 1) {
+    if (draw.phase === 'drawing' && draw.secondsLeft <= 1) {
       socket.emit('draw:submit', { code: roomCode, strokes: strokesRef.current });
-      dispatch({ type: 'DRAW_MARK_SUBMITTED' });
+      if (!draw.hasSubmitted) dispatch({ type: 'DRAW_MARK_SUBMITTED' });
     }
   }, [draw.secondsLeft, draw.phase, draw.hasSubmitted, roomCode, dispatch]);
 
@@ -241,8 +249,8 @@ export default function DrawingPage() {
             onTouchEnd={onTouchEnd}
           />
           {draw.hasSubmitted && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/60 rounded-xl">
-              <p className="text-white font-['Fredoka_One'] text-2xl text-center px-4">{t.waitingOthers}</p>
+            <div className="absolute top-2 right-2 bg-black/70 text-white text-xs font-['Nunito'] px-2 py-1 rounded-lg">
+              ✓ Submitted — keep drawing to update
             </div>
           )}
         </div>
@@ -310,10 +318,10 @@ export default function DrawingPage() {
             </button>
             <button
               onClick={handleSubmit}
-              disabled={draw.hasSubmitted}
+              disabled={strokeCount === 0}
               className="flex-2 flex-grow py-2 rounded-lg text-sm font-['Fredoka_One'] bg-[#C39BD3] text-black disabled:opacity-40 hover:bg-[#b089c2] transition font-bold"
             >
-              ✓ {t.submitBtn}
+              {draw.hasSubmitted ? `↑ ${t.updateBtn || 'Update'}` : `✓ ${t.submitBtn}`}
             </button>
           </div>
 

@@ -30,6 +30,7 @@ export const QUEUE_GAME_LABELS = {
   caption: 'Selfie Captions',
   'photo-vote': 'Photo Vote',
   selfie: 'Selfie Roast',
+  'draw-telephone': 'Drawing in Chain',
   'selfie-roast': 'Draw on Friends',
   photoassoc: 'Prompt Match',
   pmatch: 'Selfie Challenge',

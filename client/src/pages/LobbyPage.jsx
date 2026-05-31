@@ -12,6 +12,7 @@ const GAME_TYPES = [
   { id: 'most-likely-to', emoji: '👑', key: 'gameMlt',   color: '#4ECDC4',  dark: '#0D0D1A' },
   { id: 'mixed',          emoji: '🎲', key: 'gameMixed', color: '#FF8B94',  dark: '#0D0D1A' },
   { id: 'drawing',        emoji: '🎨', key: 'gameDraw',  color: '#C39BD3',  dark: '#0D0D1A' },
+  { id: 'draw-telephone',  emoji: '📞', key: 'gameDt',    color: '#FF6B6B',  dark: '#0D0D1A' },
 ];
 
 export default function LobbyPage() {
@@ -44,6 +45,7 @@ export default function LobbyPage() {
   const tMixed = translations[state.lang].mixed;
   const tHome = translations[state.lang].home;
   const tDraw = translations[state.lang].draw;
+  const tDt = translations[state.lang].dt;
   const isMlt = state.gameType === 'most-likely-to';
   const isWstLike = ['who-said-that', 'situational', 'mixed'].includes(state.gameType);
   const isTot = state.gameType === 'this-or-that';
@@ -61,6 +63,9 @@ export default function LobbyPage() {
       });
     } else if (isDraw) {
       socket.emit('draw:start', { code: state.roomCode, rounds: state.totalRounds });
+      return;
+    } else if (state.gameType === 'draw-telephone') {
+      socket.emit('dt:start', { code: state.roomCode });
       return;
     } else {
       if (state.gameType === 'who-said-that' && state.mode === 'custom' && (!state.customQuestions || state.customQuestions.length < state.totalRounds)) {
@@ -242,14 +247,19 @@ export default function LobbyPage() {
               const isSelected = state.gameType === gt.id || (state.gameType === 'mixed' && state.selectedSubGames?.includes(gt.id));
               
               const handleGameToggle = () => {
-                const arr = state.gameType === 'mixed' ? (state.selectedSubGames || []) : [state.gameType];
                 if (gt.id === 'mixed') {
                   handleOptionsChange('gameType', ['mixed']);
                   return;
                 }
-                const noMixed = arr.filter(id => id !== 'mixed');
-                const updated = noMixed.includes(gt.id) ? noMixed.filter(id => id !== gt.id) : [...noMixed, gt.id];
-                if (updated.length === 0) updated.push(gt.id); // Prevent empty selection
+                if (state.gameType !== 'mixed') {
+                  // Not in mixed mode — always switch directly to the chosen game
+                  handleOptionsChange('gameType', [gt.id]);
+                  return;
+                }
+                // In mixed mode — toggle the game in/out of sub-games
+                const cur = (state.selectedSubGames || []).filter(id => id !== 'mixed');
+                const updated = cur.includes(gt.id) ? cur.filter(id => id !== gt.id) : [...cur, gt.id];
+                if (updated.length === 0) updated.push(gt.id);
                 handleOptionsChange('gameType', updated);
               };
 
@@ -262,7 +272,7 @@ export default function LobbyPage() {
                   title={gt.id}
                 >
                   <span className="text-lg leading-none">{gt.emoji}</span>
-                  <span className="mt-0.5 leading-tight text-center" style={{ fontSize: '0.6rem' }}>{gt.id === 'who-said-that' ? t.gameLabelShort : gt.id === 'most-likely-to' ? tMlt.gameLabelShort : gt.id === 'situational' ? tSit.gameLabelShort : gt.id === 'this-or-that' ? tTot.gameLabelShort : gt.id === 'drawing' ? tDraw.gameLabelShort : tMixed.gameLabelShort}</span>
+                  <span className="mt-0.5 leading-tight text-center" style={{ fontSize: '0.6rem' }}>{gt.id === 'who-said-that' ? t.gameLabelShort : gt.id === 'most-likely-to' ? tMlt.gameLabelShort : gt.id === 'situational' ? tSit.gameLabelShort : gt.id === 'this-or-that' ? tTot.gameLabelShort : gt.id === 'drawing' ? tDraw.gameLabelShort : gt.id === 'draw-telephone' ? tDt.gameLabelShort : tMixed.gameLabelShort}</span>
                 </button>
               );
             })}

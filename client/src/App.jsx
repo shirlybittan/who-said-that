@@ -30,6 +30,12 @@ import CaptionResultsPage from './pages/CaptionResultsPage.jsx';
 import PhotoVotePhotoPage from './pages/PhotoVotePhotoPage.jsx';
 import PhotoVotePage from './pages/PhotoVotePage.jsx';
 import PhotoVoteResultsPage from './pages/PhotoVoteResultsPage.jsx';
+import DrawTelPromptPage from './pages/DrawTelPromptPage.jsx';
+import DrawTelDrawPage from './pages/DrawTelDrawPage.jsx';
+import DrawTelGuessPage from './pages/DrawTelGuessPage.jsx';
+import DrawTelRevealPage from './pages/DrawTelRevealPage.jsx';
+import DrawTelEndPage from './pages/DrawTelEndPage.jsx';
+import DrawTelWaitPage from './pages/DrawTelWaitPage.jsx';
 import HostPage from './pages/HostPage.jsx';
 import { useSocket } from './hooks/useSocket';
 
@@ -70,6 +76,12 @@ const AnimatedRoutes = () => {
         <Route path="/photo-vote-photo" element={<PhotoVotePhotoPage />} />
         <Route path="/photo-vote" element={<PhotoVotePage />} />
         <Route path="/photo-vote-results" element={<PhotoVoteResultsPage />} />
+        <Route path="/draw-tel-prompt" element={<DrawTelPromptPage />} />
+        <Route path="/draw-tel-draw" element={<DrawTelDrawPage />} />
+        <Route path="/draw-tel-guess" element={<DrawTelGuessPage />} />
+        <Route path="/draw-tel-reveal" element={<DrawTelRevealPage />} />
+        <Route path="/draw-tel-end" element={<DrawTelEndPage />} />
+        <Route path="/draw-tel-wait" element={<DrawTelWaitPage />} />
       </Routes>
     </AnimatePresence>
   );

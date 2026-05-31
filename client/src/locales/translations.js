@@ -37,6 +37,8 @@ export const translations = {
       gameDrawDesc: "Draw it, vote for the best!",
       gameFitb: "Fill in the Blank",
       gameFitbDesc: "Finish the sentence funnily!",
+      gameDt: "Drawing in Chain",
+      gameDtDesc: "Draw step-by-step — can the last player guess the prompt?",
       gameSelfie: "Selfie Artist",
       gameSelfieDesc: "Draw on someone's selfie!",
       gameNamePlaceholder: "Game Name (shown on TV)"
@@ -229,6 +231,11 @@ export const translations = {
       classicMode: "Classic",
       yourSecretWord: "Your word:",
       secretVotingHint: "each player drew a different word!",
+    },
+    dt: {
+      gameLabel: "Chain Drawing",
+      gameLabelShort: "📞 Chain",
+      gameDesc: "Draw a prompt in a telephone chain!",
     }
   },
   fr: {
@@ -269,6 +276,8 @@ export const translations = {
       gameDrawDesc: "Dessin collectif, vote pour le meilleur !",
       gameFitb: "Compléter la phrase",
       gameFitbDesc: "Termine la phrase de façon drôle !",
+      gameDt: "Dessin en chaîne",
+      gameDtDesc: "Dessinez étape par étape — qui devine le bon prompt ?",
       gameSelfie: "Selfie Artist",
       gameSelfieDesc: "Dessine sur le selfie de quelqu'un !",
       gameNamePlaceholder: "Nom de la partie (affiché à l'écran)"
@@ -461,6 +470,11 @@ export const translations = {
       classicMode: "Classique",
       yourSecretWord: "Ton mot :",
       secretVotingHint: "chaque joueur avait un mot différent !",
+    },
+    dt: {
+      gameLabel: "Dessin en Chaîne",
+      gameLabelShort: "📞 Chaîne",
+      gameDesc: "Dessine une invite dans une chaîne téléphonique !",
     }
   },
 };
