@@ -1123,6 +1123,16 @@ function DrawingHostPanel({ drawData, players, status }) {
 function DtHostPanel({ dtData, players, status, onRevealNext }) {
   const { phase, promptsSubmittedCount, totalPrompts, totalChains, chainsCompletedCount, chainProgress, guessedCount, totalGuessers, reveal, leaderboard } = dtData;
 
+  // Vote countdown for reveal step 2 (guess+vote — auto-advances)
+  const isRevealVoteStep = status === 'dt-reveal' && (reveal?.step ?? 0) === 2;
+  const [hostVoteSecs, setHostVoteSecs] = useState(30);
+  useEffect(() => {
+    if (!isRevealVoteStep) return;
+    setHostVoteSecs(reveal?.voteSecondsLeft ?? 30);
+    const id = setInterval(() => setHostVoteSecs(s => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(id);
+  }, [isRevealVoteStep]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── PROMPTING phase ─────────────────────────────────────────────────────
   if (status === 'dt-prompting') {
     const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
@@ -1175,6 +1185,7 @@ function DtHostPanel({ dtData, players, status, onRevealNext }) {
   if (status === 'dt-drawing') {
     const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
     const chainEntries = Object.entries(chainProgress);
+    const activeDrawerIds = dtData.activeDrawerIds || [];
     return (
       <div className="flex flex-col items-center gap-6 w-full max-w-lg">
         <motion.div className="text-center" initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }}>
@@ -1188,20 +1199,19 @@ function DtHostPanel({ dtData, players, status, onRevealNext }) {
             <span className="text-[#FF6B6B] font-['Fredoka_One'] text-2xl">{chainsCompletedCount}<span className="text-gray-500">/{totalChains}</span></span>
           </div>
           <ProgressBar value={chainsCompletedCount} total={totalChains} color="#FF6B6B" />
-          {chainEntries.length > 0 && (
-            <div className="mt-4 flex flex-col gap-2">
-              {chainEntries.map(([id, cp]) => (
-                <div key={id} className="flex items-center gap-3 bg-[#0D0D1A] rounded-xl px-3 py-2">
-                  <span className="text-gray-400 text-sm font-['Nunito'] flex-1 truncate">
-                    ✏️ {cp.drawerName} drawing ({cp.stepsDone}/{cp.totalSteps})
+          <div className="mt-4 flex flex-col gap-2">
+            {activePlayers.map(p => {
+              const isDrawing = activeDrawerIds.includes(p.id);
+              return (
+                <div key={p.id} className="flex items-center gap-3 bg-[#0D0D1A] rounded-xl px-3 py-2">
+                  <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: p.color }} />
+                  <span className="text-white font-['Nunito'] text-sm flex-1">{p.name}</span>
+                  <span className={`text-xs font-['Nunito'] px-2 py-0.5 rounded-full ${isDrawing ? 'bg-[#FF6B6B]/20 text-[#FF6B6B]' : 'bg-[#2D2D44] text-gray-500'}`}>
+                    {isDrawing ? '✏️ drawing' : '⏳ waiting'}
                   </span>
-                  <ProgressBar value={cp.stepsDone} total={cp.totalSteps} color="#FF6B6B" />
                 </div>
-              ))}
-            </div>
-          )}
-          <div className="flex flex-wrap gap-2 mt-4 justify-center">
-            {activePlayers.map(p => <PlayerAvatar key={p.id} player={p} size="sm" status="waiting" />)}
+              );
+            })}
           </div>
         </div>
       </div>
@@ -1235,136 +1245,192 @@ function DtHostPanel({ dtData, players, status, onRevealNext }) {
 
   // ── REVEAL phase ─────────────────────────────────────────────────────────
   if (status === 'dt-reveal') {
-    const { step, promptIndex, totalPrompts: total, templateText, targetName, targetColor,
+    const { step, promptIndex, totalPrompts: total, targetName, targetColor,
       originalSelfieData, authorName, finalText, drawingSteps, guessText,
-      voteCount, totalVoters, success, correctCount, closeCount, wrongCount } = reveal;
-    const N = (drawingSteps || []).length;
-
-    // Determine which drawing step to show (0-indexed within drawingSteps)
-    const drawingStepIdx = step >= 4 && step <= 3 + N ? step - 4 : -1;
-    const showDrawing = drawingStepIdx >= 0;
-    const showGuess = step === N + 4;
-    const showVote = step >= N + 5;
-    const showTemplate = step === 0;
-    const showTarget = step === 1;
-    const showSelfie = step === 2;
-    const showFinalText = step === 3;
-
-    const currentStep = drawingStepIdx >= 0 ? (drawingSteps[drawingStepIdx] || null) : null;
+      voteCount, totalVoters, correctCount, closeCount, wrongCount } = reveal;
+    const ds = drawingSteps || [];
+    const isVoteStep = step === 2;
 
     return (
-      <div className="flex flex-col items-center gap-4 w-full max-w-2xl">
+      <div className="flex flex-col items-center gap-4 w-full max-w-3xl">
         {/* Header */}
         <div className="flex items-center justify-between w-full">
-          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} key={promptIndex}>
-            <p className="text-[#FF6B6B] font-['Fredoka_One'] text-lg">📖 Chain {(promptIndex || 0) + 1} of {total}</p>
-          </motion.div>
-          <span className="text-gray-400 font-['Nunito'] text-sm">Step {step + 1}</span>
+          <span className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest">📞 Draw Telephone</span>
+          <span className="text-xs text-[#FF6B6B] font-['Nunito']">Chain {(promptIndex ?? 0) + 1} / {total}</span>
         </div>
 
-        {/* Content card */}
-        <motion.div
-          key={`${promptIndex}-${step}`}
-          initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}
-          className="w-full bg-[#1A1A2E] rounded-2xl p-6 border border-[#FF6B6B]/30 flex flex-col items-center gap-4"
-        >
-          {showTemplate && (
-            <>
-              <p className="text-gray-400 font-['Nunito'] text-sm uppercase tracking-widest">Original Prompt Template</p>
-              <p className="text-2xl font-['Fredoka_One'] text-[#FFE66D] text-center">"{templateText}"</p>
-              <p className="text-gray-500 font-['Nunito'] text-sm">written by <span className="text-white">{authorName}</span></p>
-            </>
-          )}
-          {showTarget && (
-            <>
-              <p className="text-gray-400 font-['Nunito'] text-sm uppercase tracking-widest">Target Player</p>
-              <div className="w-16 h-16 rounded-full flex items-center justify-center text-3xl font-['Fredoka_One'] text-white" style={{ backgroundColor: targetColor || '#FF6B6B' }}>
-                {(targetName || '?')[0].toUpperCase()}
+        {/* Step dots */}
+        <div className="flex gap-2">
+          {[0, 1, 2].map(s => (
+            <div
+              key={s}
+              className={`rounded-full transition-all duration-300 ${step === s ? 'w-5 h-2.5 bg-[#FF6B6B]' : s < step ? 'w-2.5 h-2.5 bg-[#FF6B6B]/50' : 'w-2.5 h-2.5 bg-[#2D2D44]'}`}
+            />
+          ))}
+        </div>
+
+        <AnimatePresence mode="wait">
+
+          {/* ── Step 0: Context + Prompt ── */}
+          {step === 0 && (
+            <motion.div
+              key="ctx"
+              className="w-full grid grid-cols-2 gap-4"
+              initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
+            >
+              {/* Left: target chip + selfie */}
+              <div className="bg-[#1A1A2E] rounded-2xl border-2 border-[#FF6B6B]/40 p-5 flex flex-col items-center gap-3">
+                <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest">Someone wrote a prompt about…</p>
+                <div
+                  className="inline-block px-5 py-2 rounded-2xl text-2xl font-['Fredoka_One']"
+                  style={{ backgroundColor: targetColor || '#FF6B6B', color: '#fff' }}
+                >
+                  {targetName || '???'}
+                </div>
+                {originalSelfieData ? (
+                  <div className="rounded-xl overflow-hidden border-2 border-[#FF6B6B]/30 w-full" style={{ aspectRatio: '4/3' }}>
+                    <img src={originalSelfieData} alt={targetName} className="w-full h-full object-cover" draggable={false} />
+                  </div>
+                ) : (
+                  <div className="rounded-xl bg-[#0D0D1A] border-2 border-[#2D2D44] w-full flex items-center justify-center" style={{ aspectRatio: '4/3' }}>
+                    <span className="text-gray-600 font-['Nunito']">No selfie</span>
+                  </div>
+                )}
               </div>
-              <p className="text-3xl font-['Fredoka_One'] text-white">{targetName}</p>
-            </>
+              {/* Right: full prompt + author */}
+              <div className="bg-[#1A1A2E] rounded-2xl border-2 border-[#FFE66D]/40 p-5 flex flex-col justify-center items-center gap-4 text-center">
+                <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest">The prompt</p>
+                <p className="text-3xl font-['Fredoka_One'] text-[#FFE66D] leading-snug">
+                  "{finalText || ''}"
+                </p>
+                <div className="border-t border-[#2D2D44] pt-3 w-full">
+                  <p className="text-sm text-gray-400 font-['Nunito']">
+                    Written by <span className="text-white font-semibold">{authorName}</span>
+                    {' '}about <span style={{ color: targetColor || '#FF6B6B' }} className="font-semibold">{targetName}</span>
+                  </p>
+                </div>
+              </div>
+            </motion.div>
           )}
-          {showSelfie && (
-            <>
-              <p className="text-gray-400 font-['Nunito'] text-sm uppercase tracking-widest">{targetName}'s Selfie</p>
-              {originalSelfieData
-                ? <img src={originalSelfieData} alt={targetName} className="w-40 h-40 rounded-2xl object-cover border-2 border-[#FF6B6B]/40" />
-                : <div className="w-40 h-40 rounded-2xl bg-[#0D0D1A] flex items-center justify-center text-6xl">🤳</div>
-              }
-            </>
-          )}
-          {showFinalText && (
-            <>
-              <p className="text-gray-400 font-['Nunito'] text-sm uppercase tracking-widest">What they had to draw</p>
-              <p className="text-2xl font-['Fredoka_One'] text-[#4ECDC4] text-center">"{finalText}"</p>
-            </>
-          )}
-          {showDrawing && currentStep && (
-            <>
-              <p className="text-gray-400 font-['Nunito'] text-sm uppercase tracking-widest">
-                Drawing {drawingStepIdx + 1} of {N} — by <span className="text-white">{currentStep.playerName}</span>
+
+          {/* ── Step 1: All drawings grid ── */}
+          {step === 1 && (
+            <motion.div
+              key="drawings"
+              className="w-full"
+              initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
+            >
+              <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest text-center mb-3">
+                How it evolved… ({ds.length} drawing{ds.length !== 1 ? 's' : ''})
               </p>
-              <div className="rounded-2xl overflow-hidden border-2 border-[#FF6B6B]/30 bg-white">
-                <ReplayCanvas strokes={currentStep.strokes || []} cssWidth={280} photoData={originalSelfieData || null} />
+              <div className={`grid gap-3 ${ds.length <= 2 ? 'grid-cols-2' : 'grid-cols-4'}`}>
+                {ds.map((d, i) => (
+                  <div key={i} className="bg-[#1A1A2E] rounded-xl border border-[#C39BD3]/30 overflow-hidden">
+                    <div className="rounded-t-xl overflow-hidden" style={{ aspectRatio: '4/3' }}>
+                      <ReplayCanvas strokes={d.strokes || []} photoData={originalSelfieData || null} cssWidth={280} />
+                    </div>
+                    <div className="p-2 flex items-center gap-1.5">
+                      <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: d.playerColor || '#C39BD3' }} />
+                      <span className="text-sm text-gray-300 font-['Nunito'] truncate">{d.playerName}</span>
+                      <span className="text-sm text-gray-600 font-['Nunito'] ml-auto">#{i + 1}</span>
+                    </div>
+                  </div>
+                ))}
               </div>
-            </>
+            </motion.div>
           )}
-          {showGuess && (
-            <>
-              <p className="text-gray-400 font-['Nunito'] text-sm uppercase tracking-widest">{targetName}'s Guess</p>
-              <p className="text-2xl font-['Fredoka_One'] text-[#FFE66D] text-center">"{guessText || '…'}"</p>
-              <p className="text-gray-500 font-['Nunito'] text-sm">Players are voting on how close this guess is…</p>
-            </>
-          )}
-          {showVote && (
-            <>
-              <p className="text-gray-400 font-['Nunito'] text-sm uppercase tracking-widest">Vote Results</p>
-              <p className="text-2xl font-['Fredoka_One'] text-[#FFE66D] text-center">"{guessText || '…'}"</p>
-              <div className="flex gap-6 mt-2">
-                <div className="flex flex-col items-center gap-1">
-                  <span className="text-3xl">✅</span>
-                  <span className="font-['Fredoka_One'] text-xl text-green-400">{correctCount}</span>
-                  <span className="text-xs text-gray-400 font-['Nunito']">Correct</span>
+
+          {/* ── Step 2: Guess + Vote ── */}
+          {step === 2 && (
+            <motion.div
+              key="vote"
+              className="w-full grid grid-cols-2 gap-4"
+              initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
+            >
+              {/* Left: before/after + prompt + guess */}
+              <div className="space-y-3">
+                <div className="bg-[#1A1A2E] rounded-2xl border-2 border-[#C39BD3]/40 p-4">
+                  <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest mb-2 text-center">Original → Final Drawing</p>
+                  <div className="flex gap-2">
+                    <div className="flex-1">
+                      <div className="rounded-lg overflow-hidden border border-[#C39BD3]/30" style={{ aspectRatio: '4/3' }}>
+                        {originalSelfieData
+                          ? <img src={originalSelfieData} alt="Original" className="w-full h-full object-cover" draggable={false} />
+                          : <div className="w-full h-full bg-[#0D0D1A] flex items-center justify-center"><span className="text-gray-600 text-xs">No selfie</span></div>
+                        }
+                      </div>
+                      <p className="text-xs text-center text-gray-500 font-['Nunito'] mt-1">Original</p>
+                    </div>
+                    <div className="flex-1">
+                      <div className="rounded-lg overflow-hidden border border-[#C39BD3]/30" style={{ aspectRatio: '4/3' }}>
+                        <ReplayCanvas strokes={ds[ds.length - 1]?.strokes || []} photoData={originalSelfieData || null} cssWidth={240} />
+                      </div>
+                      <p className="text-xs text-center text-gray-500 font-['Nunito'] mt-1">Final</p>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex flex-col items-center gap-1">
-                  <span className="text-3xl">🤏</span>
-                  <span className="font-['Fredoka_One'] text-xl text-yellow-400">{closeCount}</span>
-                  <span className="text-xs text-gray-400 font-['Nunito']">Close</span>
-                </div>
-                <div className="flex flex-col items-center gap-1">
-                  <span className="text-3xl">❌</span>
-                  <span className="font-['Fredoka_One'] text-xl text-red-400">{wrongCount}</span>
-                  <span className="text-xs text-gray-400 font-['Nunito']">Wrong</span>
+                <div className="bg-[#1A1A2E] rounded-2xl border-2 border-[#FF6B6B]/30 p-4 text-center">
+                  <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest mb-1">Original prompt</p>
+                  <p className="text-xl font-['Fredoka_One'] text-[#FFE66D] leading-snug">"{finalText}"</p>
+                  <div className="mt-2 pt-2 border-t border-[#2D2D44]">
+                    <p className="text-xs text-gray-500 font-['Nunito'] mb-0.5">
+                      <span style={{ color: targetColor || '#A8E6CF' }}>{targetName}</span> guessed…
+                    </p>
+                    <p className="text-lg font-['Fredoka_One'] text-[#A8E6CF]">"{guessText || '…'}"</p>
+                  </div>
                 </div>
               </div>
-              {voteCount < totalVoters && (
-                <p className="text-gray-500 font-['Nunito'] text-sm mt-1">{voteCount}/{totalVoters} votes received</p>
-              )}
-              {(reveal.votedPlayerIds || []).length > 0 && (
-                <div className="flex flex-wrap gap-2 mt-2 justify-center">
+              {/* Right: countdown + vote tally + per-player status */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest">How close was the guess?</p>
+                  <span
+                    className="text-sm font-['Nunito'] tabular-nums"
+                    style={{ color: hostVoteSecs <= 10 ? '#FF6B6B' : '#9CA3AF' }}
+                  >
+                    ⏱ {hostVoteSecs}s
+                  </span>
+                </div>
+                <div className="bg-[#1A1A2E] rounded-xl border border-[#2D2D44] p-4 flex justify-around text-center">
+                  <div>
+                    <p className="text-3xl font-['Fredoka_One'] text-[#22C55E]">{correctCount ?? 0}</p>
+                    <p className="text-xs text-gray-500 font-['Nunito']">Correct</p>
+                  </div>
+                  <div>
+                    <p className="text-3xl font-['Fredoka_One'] text-[#EAB308]">{closeCount ?? 0}</p>
+                    <p className="text-xs text-gray-500 font-['Nunito']">Close</p>
+                  </div>
+                  <div>
+                    <p className="text-3xl font-['Fredoka_One'] text-[#EF4444]">{wrongCount ?? 0}</p>
+                    <p className="text-xs text-gray-500 font-['Nunito']">Wrong</p>
+                  </div>
+                </div>
+                <p className="text-xs text-gray-500 font-['Nunito'] text-center">{voteCount}/{totalVoters} voted</p>
+                <div className="flex flex-wrap gap-2 justify-center">
                   {players.filter(p => p.isPlaying && p.isConnected && p.id !== reveal.targetPlayerId).map(p => (
-                    <PlayerAvatar key={p.id} player={p} size="sm" status={(reveal.votedPlayerIds || []).includes(p.id) ? 'voted' : 'waiting'} />
+                    <PlayerAvatar
+                      key={p.id}
+                      player={p}
+                      size="sm"
+                      status={(reveal.votedPlayerIds || []).includes(p.id) ? 'answered' : 'waiting'}
+                    />
                   ))}
                 </div>
-              )}
-              {success !== null && (
-                <p className={`font-['Fredoka_One'] text-xl mt-1 ${success ? 'text-green-400' : 'text-red-400'}`}>
-                  {success ? '🎉 Success!' : '😬 Not quite…'}
-                </p>
-              )}
-            </>
+              </div>
+            </motion.div>
           )}
-        </motion.div>
 
-        {/* Next button */}
-        <motion.button
-          onClick={onRevealNext}
-          className="px-8 py-3 rounded-2xl font-['Fredoka_One'] text-xl text-white"
-          style={{ backgroundColor: '#FF6B6B' }}
-          whileTap={{ scale: 0.95 }}
-        >
-          ▶ Next
-        </motion.button>
+        </AnimatePresence>
+
+        {/* Next button — hidden on vote step (server auto-advances) */}
+        {!isVoteStep && (
+          <button
+            onClick={onRevealNext}
+            className="px-8 py-3 rounded-2xl font-['Fredoka_One'] text-xl text-white bg-[#FF6B6B] hover:bg-[#ff5252] transition mt-2"
+          >
+            Next →
+          </button>
+        )}
       </div>
     );
   }
@@ -3000,15 +3066,16 @@ export default function HostPage() {
       setDtData(prev => ({ ...prev, phase: 'drawing', totalChains, chainsCompletedCount: 0, chainProgress: {} }));
       setStatus('dt-drawing');
     });
-    sock.on('dt:chain_progress', ({ chainsCompleted, totalChains }) => {
+    sock.on('dt:chain_progress', ({ chainsCompleted, totalChains, activeDrawerIds }) => {
       if (!isActiveSock()) return;
-      setDtData(prev => ({ ...prev, chainsCompletedCount: chainsCompleted, totalChains }));
+      setDtData(prev => ({ ...prev, chainsCompletedCount: chainsCompleted, totalChains, activeDrawerIds: activeDrawerIds || prev.activeDrawerIds || [] }));
     });
-    sock.on('dt:drawing_progress', ({ promptId, stepsDone, totalSteps, drawerName }) => {
+    sock.on('dt:drawing_progress', ({ promptId, stepsDone, totalSteps, drawerName, activeDrawerIds }) => {
       if (!isActiveSock()) return;
       setDtData(prev => ({
         ...prev,
         chainProgress: { ...prev.chainProgress, [promptId]: { stepsDone, totalSteps, drawerName } },
+        activeDrawerIds: activeDrawerIds || prev.activeDrawerIds || [],
       }));
     });
     sock.on('dt:guessing_phase', ({ totalGuessers }) => {

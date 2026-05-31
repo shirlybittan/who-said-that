@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
@@ -184,19 +185,16 @@ export default function DrawTelDrawPage() {
   const onTouchMove = (e) => { e.preventDefault(); const t = e.touches[0]; const pos = getPos(e.currentTarget, t.clientX, t.clientY); moveDraw(pos.x, pos.y); };
   const onTouchEnd = (e) => { e.preventDefault(); endDraw(); };
 
-  if (!turn || dt.hasSubmittedTurn) {
-    return (
-      <motion.div
-        className="flex flex-col items-center justify-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6"
-        initial={{ opacity: 0 }} animate={{ opacity: 1 }}
-      >
-        <p className="text-2xl font-['Fredoka_One'] text-[#FF6B6B] mb-2">Waiting for your turn…</p>
-        <p className="text-gray-400 font-['Nunito'] text-sm">
-          {dt.chainsCompletedCount}/{dt.totalChains} chains complete
-        </p>
-      </motion.div>
-    );
-  }
+  const navigate = useNavigate();
+
+  // No turn at all → return to wait page (shouldn't normally happen in regular flow)
+  useEffect(() => {
+    if (!turn) {
+      navigate('/draw-tel-wait');
+    }
+  }, [!!turn, navigate]);
+
+  if (!turn) return null;
 
   return (
     <motion.div
@@ -241,7 +239,7 @@ export default function DrawTelDrawPage() {
           onTouchMove={onTouchMove}
           onTouchEnd={onTouchEnd}
         />
-        {submitted && (
+        {(submitted || dt.hasSubmittedTurn) && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/60 rounded-xl">
             <p className="text-white font-['Fredoka_One'] text-2xl text-center px-4">Submitted! Waiting…</p>
           </div>

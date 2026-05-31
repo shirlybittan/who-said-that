@@ -1,10 +1,19 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useGame } from '../store/gameStore.jsx';
 import { motion } from 'framer-motion';
 
 export default function DrawTelWaitPage() {
   const { state } = useGame();
   const { dt } = state;
+  const navigate = useNavigate();
+
+  // If a drawing turn arrives while waiting, go draw immediately
+  useEffect(() => {
+    if (dt.currentTurn && !dt.hasSubmittedTurn && dt.phase === 'drawing') {
+      navigate('/draw-tel-draw');
+    }
+  }, [dt.currentTurn, dt.hasSubmittedTurn, dt.phase, navigate]);
 
   const phase = dt.phase;
 
