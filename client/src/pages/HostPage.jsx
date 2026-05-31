@@ -507,6 +507,7 @@ function QuestionPanel({ questionData, players }) {
 
 function VotingPanel({ votingData, players }) {
   const current = votingData.answers?.[votingData.currentIndex];
+  const authorId = current?.playerId;
   const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
   return (
     <div className="flex flex-col items-center gap-8 w-full max-w-4xl">
@@ -541,7 +542,7 @@ function VotingPanel({ votingData, players }) {
       <div className="flex flex-wrap gap-4 justify-center">
         {activePlayers.map(p => (
           <PlayerAvatar key={p.id} player={p} size="sm"
-            status={votingData.votedPlayerIds?.includes(p.id) ? 'voted' : 'waiting'} />
+            status={p.id === authorId ? 'answered' : votingData.votedPlayerIds?.includes(p.id) ? 'voted' : 'waiting'} />
         ))}
       </div>
     </div>
@@ -2654,7 +2655,7 @@ export default function HostPage() {
         ...prev,
         prompt: data.prompt, round: data.round, totalRounds: data.totalRounds,
         voteCount: 0, totalVoters: data.players?.length || 0,
-        secondsLeft: 30, paused: false, results: [], majorityIds: [],
+        secondsLeft: 30, paused: false, results: [], majorityIds: [], votedPlayerIds: [],
         gameName: data.gameName || prev.gameName,
       }));
       setStatus('mlt-voting');
@@ -2673,7 +2674,6 @@ export default function HostPage() {
         jokersUsed: data.jokersUsed || [],
         prevScores: { ...prev.scores }, scores: data.scores || prev.scores,
       }));
-      if (data.players) setPlayers(data.players);
       setStatus('mlt-results');
     });
 
@@ -2815,8 +2815,8 @@ export default function HostPage() {
       setStatus(prev => prev === 'drawing' ? 'draw-voting' : prev);
     });
 
-    sock.on('draw:vote_received', ({ voteCount, totalVoters }) => {
-      setDrawData(prev => ({ ...prev, voteCount, totalVoters }));
+    sock.on('draw:vote_received', ({ voteCount, totalVoters, votedPlayerIds }) => {
+      setDrawData(prev => ({ ...prev, voteCount, totalVoters, votedPlayerIds: votedPlayerIds || prev.votedPlayerIds }));
     });
 
     sock.on('draw:results', (data) => {

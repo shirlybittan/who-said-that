@@ -69,12 +69,7 @@ const startAnswerTimer = (io, room, code, seconds, onExpire) => {
 
 // ─── Draw helpers ─────────────────────────────────────────────────────────────
 
-const pickDrawWord = (players) => {
-  if (players && players.length > 0 && drawPrompts.length > 0 && Math.random() < 0.4) {
-    const prompt = drawPrompts[Math.floor(Math.random() * drawPrompts.length)];
-    const target = players[Math.floor(Math.random() * players.length)];
-    return prompt.replace('{name}', target.name);
-  }
+const pickDrawWord = () => {
   return drawWordBank[Math.floor(Math.random() * drawWordBank.length)];
 };
 
@@ -413,7 +408,7 @@ const emitNextQuestion = (io, room, code) => {
       phase: 'drawing',
       round: 1,
       totalRounds: 1,
-      word: q.word || pickDrawWord(playingPlayers),
+      word: q.word || pickDrawWord(),
       timeLimit: 90,
       secondsLeft: 90,
       submissions: {},
@@ -870,7 +865,11 @@ io.on('connection', (socket) => {
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isConnected || !player.isPlaying) return;
 
-    if (!room.answers.find(a => a.playerId === player.id)) {
+    const existingAnswer = room.answers.find(a => a.playerId === player.id);
+    if (existingAnswer) {
+      existingAnswer.text = text;
+      existingAnswer.votes = [];
+    } else {
       room.answers.push({
         playerId: player.id,
         playerName: player.name,
@@ -1525,7 +1524,7 @@ io.on('connection', (socket) => {
       phase: 'drawing',
       round: 1,
       totalRounds,
-      word: drawMode === 'classic' ? pickDrawWord(playingPlayers) : null,
+      word: drawMode === 'classic' ? pickDrawWord() : null,
       timeLimit: 90,
       secondsLeft: 90,
       submissions: {},
@@ -1594,7 +1593,7 @@ io.on('connection', (socket) => {
         io.to(code).emit('draw:submission_received', { submittedCount, totalDrawers: playingPlayers.length, submittedPlayerIds: [] });
       } else {
         // Player: only that player gets a new word, their submission is cleared
-        const newWord = pickDrawWord(playingPlayers);
+        const newWord = pickDrawWord();
         room.draw.playerWords[player.id] = newWord;
         delete room.draw.submissions[player.id];
         socket.emit('draw:secret_word', { word: newWord, skipped: true });
@@ -1603,7 +1602,7 @@ io.on('connection', (socket) => {
       }
     } else {
       // Classic mode: everyone gets a new word, reset all submissions and timer
-      const newWord = pickDrawWord(playingPlayers);
+      const newWord = pickDrawWord();
       room.draw.word = newWord;
       room.draw.submissions = {};
       if (room.draw.timerRef) { clearInterval(room.draw.timerRef); room.draw.timerRef = null; }
@@ -1624,7 +1623,7 @@ io.on('connection', (socket) => {
     if (!room || room.phase !== 'drawing' || !room.draw || room.draw.phase !== 'drawing') return;
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isPlaying) return;
-    if (room.draw.submissions[player.id]) return; // already submitted
+    const isResubmit = !!room.draw.submissions[player.id];
 
     // Sanitize: cap strokes, cap points, validate hex color, limit width
     if (!Array.isArray(strokes)) return;
@@ -1644,7 +1643,7 @@ io.on('connection', (socket) => {
     const submittedPlayerIds = Object.keys(room.draw.submissions);
     io.to(code).emit('draw:submission_received', { submittedCount, totalDrawers: playingPlayers.length, submittedPlayerIds });
 
-    if (submittedCount >= playingPlayers.length) {
+    if (!isResubmit && submittedCount >= playingPlayers.length) {
       if (room.draw.timerRef) { clearInterval(room.draw.timerRef); room.draw.timerRef = null; }
       startDrawVoting(io, room, code);
     }
@@ -1738,7 +1737,7 @@ io.on('connection', (socket) => {
         if (p.socketId) io.to(p.socketId).emit('draw:secret_word', { word: room.draw.playerWords[p.id] });
       });
     } else {
-      room.draw.word = pickDrawWord(nextPlayingPlayers);
+      room.draw.word = pickDrawWord();
       io.to(code).emit('draw:round_start', { word: room.draw.word, round: room.draw.round, totalRounds: room.draw.totalRounds, timeLimit: room.draw.timeLimit, players, mode: 'classic' });
     }
     startDrawTimer(io, room, code, room.draw.timeLimit);
@@ -1820,19 +1819,22 @@ io.on('connection', (socket) => {
     if (!room || room.phase !== 'fitb' || room.fitb.phase !== 'answering') return;
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
-    if (room.fitb.answers.find(a => a.playerId === player.id)) return; // already answered
 
-    // Sanitize
     const sanitizedText = String(text || '').slice(0, 120).trim();
     if (!sanitizedText) return;
 
-    room.fitb.answers.push({
-      playerId: player.id,
-      playerName: player.name,
-      playerColor: player.color,
-      text: sanitizedText,
-      votes: 0,
-    });
+    const existingFitb = room.fitb.answers.find(a => a.playerId === player.id);
+    if (existingFitb) {
+      existingFitb.text = sanitizedText;
+    } else {
+      room.fitb.answers.push({
+        playerId: player.id,
+        playerName: player.name,
+        playerColor: player.color,
+        text: sanitizedText,
+        votes: 0,
+      });
+    }
 
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
     const answeredCount = room.fitb.answers.length;

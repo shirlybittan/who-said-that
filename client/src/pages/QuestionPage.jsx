@@ -120,8 +120,11 @@ export default function QuestionPage() {
             />
           </div>
         </div>
-      ) : !state.hasAnswered ? (
+      ) : (
         <form onSubmit={submitAnswer} className="w-full max-w-md">
+          {state.hasAnswered && (
+            <p className="text-xs text-[#4ECDC4] font-['Nunito'] mb-2 text-center">✓ Submitted — you can still edit</p>
+          )}
           <textarea
             value={answer}
             onChange={(e) => setAnswer(e.target.value)}
@@ -134,16 +137,12 @@ export default function QuestionPage() {
             disabled={!answer.trim()}
             className={`w-full font-bold py-4 px-6 rounded-xl transition transform active:scale-95 text-xl font-['Fredoka_One'] uppercase shadow-lg ${answer.trim() ? 'bg-[#FFE66D] text-black hover:bg-[#ffdd33]' : 'bg-gray-600 text-gray-400 cursor-not-allowed'}`}
           >
-            {t.submitBtn}
+            {state.hasAnswered ? '↑ Update' : t.submitBtn}
           </button>
-        </form>
-      ) : (
-        <div className="animate-pulse bg-[#1A1A2E] p-8 rounded-2xl border-2 border-[#2D2D44] w-full max-w-md mt-6">
-          <p className="text-2xl font-['Fredoka_One'] text-[#FF6B6B] mb-4">{t.waiting}</p>
-          <p className="text-lg font-['Nunito'] text-gray-300">
+          <p className="text-xs text-gray-500 font-['Nunito'] mt-3 text-center">
             {state.answeredCount} / {state.totalPlayers || state.players.length} {t.answered}
           </p>
-        </div>
+        </form>
       )}
 
       {!state.isPlaying && state.isHost && (
@@ -154,7 +153,7 @@ export default function QuestionPage() {
           {t.skipHost}
         </button>
       )}
-      {!state.hasAnswered && state.isPlaying && (
+      {state.isPlaying && (
         <button
           onClick={handleVoteSkip}
           disabled={hasVotedSkip}
