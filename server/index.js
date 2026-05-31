@@ -3255,13 +3255,11 @@ io.on('connection', (socket) => {
   const startDtGuessingPhase = (io, room, code) => {
     room.dt.phase = 'guessing';
     const totalGuessers = Object.keys(room.dt.chains).length;
-    console.log(`[DT] startDtGuessingPhase: room=${code}, totalGuessers=${totalGuessers}, chains=${JSON.stringify(Object.keys(room.dt.chains))}`);
     io.to(code).emit('dt:guessing_phase', { totalGuessers, secondsLeft: DT_GUESS_SECS });
 
     for (const [promptId, chain] of Object.entries(room.dt.chains)) {
       const targetPlayer = room.players.find(p => p.id === chain.targetPlayerId);
       const finalStrokes = buildCombinedStrokes(chain);
-      console.log(`[DT] chain ${promptId}: targetPlayerId=${chain.targetPlayerId}, targetPlayer=${JSON.stringify(targetPlayer ? { id: targetPlayer.id, name: targetPlayer.name, socketId: targetPlayer.socketId, isConnected: targetPlayer.isConnected } : null)}, strokes=${finalStrokes.length}`);
       if (targetPlayer?.socketId) {
         io.to(targetPlayer.socketId).emit('dt:your_guess', {
           promptId,
@@ -3270,8 +3268,6 @@ io.on('connection', (socket) => {
           drawerCount: chain.drawingSteps.length,
           secondsLeft: DT_GUESS_SECS,
         });
-      } else {
-        console.log(`[DT] WARNING: no socketId for target player of chain ${promptId} — skipping dt:your_guess`);
       }
     }
 
@@ -3432,6 +3428,7 @@ io.on('connection', (socket) => {
 
     // When all players have submitted, assign targets and start drawing chains
     if (room.dt.prompts.length >= playingPlayers.length) {
+      if (room.dt.promptTimerRef) { clearTimeout(room.dt.promptTimerRef); room.dt.promptTimerRef = null; }
       startDtDrawingPhase(io, room, code, playingPlayers);
     }
   });

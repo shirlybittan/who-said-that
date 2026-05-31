@@ -186,13 +186,14 @@ export default function DrawTelDrawPage() {
   const onTouchEnd = (e) => { e.preventDefault(); endDraw(); };
 
   const navigate = useNavigate();
+  const turnExists = !!turn;
 
   // No turn at all → return to wait page (shouldn't normally happen in regular flow)
   useEffect(() => {
-    if (!turn) {
+    if (!turnExists) {
       navigate('/draw-tel-wait');
     }
-  }, [!!turn, navigate]);
+  }, [turnExists, navigate]);
 
   if (!turn) return null;
 
