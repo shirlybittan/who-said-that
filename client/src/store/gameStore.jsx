@@ -209,6 +209,8 @@ const initialState = {
     hasSubmittedPrompt: false,
     promptsSubmittedCount: 0,
     totalPrompts: 0,
+    promptSecondsLeft: 60,
+    guessSecondsLeft: 60,
     // Drawing turn (sent to you when it's your turn in a chain)
     currentTurn: null,           // { promptId, finalText, existingStrokes, position, totalPositions, secondsLeft }
     hasSubmittedTurn: false,
@@ -239,6 +241,7 @@ const initialState = {
       votes: {},
       voteCount: 0,
       totalVoters: 0,
+      voteSecondsLeft: 30,
       hasVoted: false,
       success: null,
       correctCount: 0,
@@ -1089,6 +1092,7 @@ export const gameReducer = (state, action) => {
           ...initialState.dt,
           phase: 'prompting',
           totalPrompts: action.payload.totalPrompts,
+          promptSecondsLeft: action.payload.secondsLeft || 60,
           hasSubmittedPrompt: false,
           promptsSubmittedCount: 0,
         },
@@ -1111,6 +1115,8 @@ export const gameReducer = (state, action) => {
           totalChains: action.payload.totalChains,
           chainsCompletedCount: 0,
           chainProgress: {},
+          currentTurn: null,
+          hasSubmittedTurn: false,
         },
       };
     case 'DT_YOUR_TURN':
@@ -1177,6 +1183,7 @@ export const gameReducer = (state, action) => {
           ...state.dt,
           phase: 'guessing',
           totalGuessers: action.payload.totalGuessers,
+          guessSecondsLeft: action.payload.secondsLeft || 60,
           guessedCount: 0,
         },
       };
@@ -1186,6 +1193,7 @@ export const gameReducer = (state, action) => {
         dt: {
           ...state.dt,
           phase: 'guessing',
+          guessSecondsLeft: action.payload.secondsLeft || 60,
           guessTurn: {
             promptId: action.payload.promptId,
             finalStrokes: action.payload.finalStrokes || [],
@@ -1246,6 +1254,7 @@ export const gameReducer = (state, action) => {
             votes: action.payload.votes || {},
             voteCount: action.payload.voteCount,
             totalVoters: action.payload.totalVoters,
+            voteSecondsLeft: action.payload.voteSecondsLeft ?? state.dt.reveal.voteSecondsLeft,
             success: action.payload.success,
             correctCount: action.payload.correctCount || 0,
             closeCount: action.payload.closeCount || 0,

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
@@ -10,6 +10,13 @@ export default function DrawTelPromptPage() {
   const sounds = useSounds();
   const [promptText, setPromptText] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [secondsLeft, setSecondsLeft] = useState(dt.promptSecondsLeft || 60);
+
+  useEffect(() => {
+    if (submitted) return;
+    const id = setInterval(() => setSecondsLeft(s => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(id);
+  }, [submitted]);
 
   const hasName = promptText.toLowerCase().includes('[name]');
   const canSubmit = hasName && promptText.trim().length > 3 && !submitted;
@@ -31,6 +38,9 @@ export default function DrawTelPromptPage() {
         <span className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest">📞 Draw Telephone</span>
         <span className="text-xs text-[#FF6B6B] font-['Nunito']">
           {dt.promptsSubmittedCount}/{dt.totalPrompts} submitted
+        </span>
+        <span className="text-xs font-['Nunito'] tabular-nums" style={{ color: secondsLeft <= 10 ? '#FF6B6B' : '#9CA3AF' }}>
+          ⏱ {secondsLeft}s
         </span>
       </div>
 
