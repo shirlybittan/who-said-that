@@ -346,10 +346,7 @@ export default function DrawingPage() {
             confirmLabel={draw.hasSubmitted ? `↑ ${t.updateBtn || 'Update'}` : `✓ ${t.submitBtn}`}
             disableConfirm={strokeCount === 0}
             isHost={isHost}
-          >
-            {/* Canvas and toolbar are rendered above; no additional children needed here */}
-            <span />
-          </MiniGameWrapper>
+          />
         </div>
       </motion.div>
     );

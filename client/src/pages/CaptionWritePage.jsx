@@ -18,7 +18,10 @@ export default function CaptionWritePage() {
     if (!trimmed) return;
     sounds.answer?.();
     socket.emit('caption:submit_caption', { code: state.roomCode, text: trimmed });
-    dispatch({ type: 'CAPTION_MARK_CAPTION_WRITTEN' });
+    // Only mark as written on initial submission; updates don't change the flag
+    if (!caption.hasWrittenCaption) {
+      dispatch({ type: 'CAPTION_MARK_CAPTION_WRITTEN' });
+    }
   };
 
   const { hasConfirmed, confirm, editResponse } = useMiniGameLifecycle({
