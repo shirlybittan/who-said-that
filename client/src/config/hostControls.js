@@ -212,6 +212,9 @@ export function buildHostControls({
     'draw-end': buildEndButtons({ onPlayAgain, onNextQueueGame, onNewPartyPack, hasNextInQueue, nextGame }),
     'fitb-end': buildEndButtons({ onPlayAgain, onNextQueueGame, onNewPartyPack, hasNextInQueue, nextGame }),
     'selfie-results': buildEndButtons({ onPlayAgain, onNextQueueGame, onNewPartyPack, hasNextInQueue, nextGame }),
+    'dt-end': buildEndButtons({ onPlayAgain, onNextQueueGame, onNewPartyPack, hasNextInQueue, nextGame }),
+    'caption-end': buildEndButtons({ onPlayAgain, onNextQueueGame, onNewPartyPack, hasNextInQueue, nextGame }),
+    'photovote-end': buildEndButtons({ onPlayAgain, onNextQueueGame, onNewPartyPack, hasNextInQueue, nextGame }),
   };
 }
 

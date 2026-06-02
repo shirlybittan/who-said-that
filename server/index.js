@@ -972,16 +972,17 @@ io.on('connection', (socket) => {
     if (!player || !player.isConnected || !player.isPlaying) return;
 
     const currentAnswer = room.answers[room.currentAnswerIndex];
-    if (!currentAnswer) return;      if (player.id === currentAnswer.playerId) return; // Prevent author from voting
+    if (!currentAnswer) return;      const connectedPlayersCount = activePlayers(room).length;
+    const expectedVotes = connectedPlayersCount; 
+
+    // allow author to fake vote, record it so they look identical to others
     if (!currentAnswer.votes.find(v => v.voterId === player.id)) {
       currentAnswer.votes.push({
         voterId: player.id,
-        votedForId: votedPlayerId
+        votedForId: votedPlayerId,
+        isAuthorFakeVote: player.id === currentAnswer.playerId
       });
     }
-
-    const connectedPlayersCount = activePlayers(room).length;
-    const expectedVotes = connectedPlayersCount - 1; // Author doesn't vote
 
     io.to(code).emit('vote_received', { votedCount: currentAnswer.votes.length, totalPlayers: expectedVotes, votedPlayerIds: currentAnswer.votes.map(v => v.voterId) });
 
@@ -2563,7 +2564,7 @@ io.on('connection', (socket) => {
       featuredOwnerId: room.caption.featuredOwnerId,
       featuredOwnerName: owner?.name || '?',
       featuredPhotoData: room.caption.photos[room.caption.featuredOwnerId],
-      writers: playingPlayers.map(p => ({ id: p.id, name: p.name })),
+      writers: playingPlayers.filter(p => p.id !== room.caption.featuredOwnerId).map(p => ({ id: p.id, name: p.name })),
     });
   }
 

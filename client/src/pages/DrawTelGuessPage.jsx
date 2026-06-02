@@ -4,6 +4,8 @@ import { socket } from '../socket';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
 import ReplayCanvas from '../components/game/ReplayCanvas';
+import MiniGameWrapper from '../components/MiniGameWrapper.jsx';
+import { useMiniGameLifecycle } from '../hooks/useMiniGameLifecycle.js';
 
 export default function DrawTelGuessPage() {
   const { state, dispatch } = useGame();
@@ -11,25 +13,38 @@ export default function DrawTelGuessPage() {
   const guessTurn = dt.guessTurn;
   const sounds = useSounds();
   const [guessText, setGuessText] = useState('');
-  const [submitted, setSubmitted] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(dt.guessSecondsLeft || 60);
 
-  useEffect(() => {
-    if (submitted) return;
-    const id = setInterval(() => setSecondsLeft(s => Math.max(0, s - 1)), 1000);
-    return () => clearInterval(id);
-  }, [submitted]);
+  const canSubmit = guessText.trim().length > 0;
 
-  const canSubmit = guessText.trim().length > 0 && !submitted;
-
-  const handleSubmit = (e) => {
-    e.preventDefault();
+  const doSubmit = () => {
     if (!canSubmit || !guessTurn) return;
     sounds.answer?.();
     socket.emit('dt:submit_guess', { code: roomCode, promptId: guessTurn.promptId, guessText: guessText.trim() });
     dispatch({ type: 'DT_MARK_GUESSED' });
-    setSubmitted(true);
   };
+
+  const { hasConfirmed, confirm, editResponse, markConfirmed } = useMiniGameLifecycle({
+    onSubmit: doSubmit,
+    resetKey: guessTurn?.promptId,
+  });
+
+  useEffect(() => {
+    if (hasConfirmed) return;
+    if (secondsLeft <= 0) {
+      if (guessTurn) {
+        let textToSubmit = guessText.trim();
+        if (!textToSubmit) textToSubmit = "I had absolutely no idea 🤦‍♂️";
+        sounds.answer?.();
+        socket.emit('dt:submit_guess', { code: roomCode, promptId: guessTurn.promptId, guessText: textToSubmit });
+        dispatch({ type: 'DT_MARK_GUESSED' });
+      }
+      markConfirmed();
+      return;
+    }
+    const id = setInterval(() => setSecondsLeft(s => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(id);
+  }, [secondsLeft, hasConfirmed, guessText, guessTurn, roomCode, sounds, dispatch, markConfirmed]);
 
   if (!guessTurn) {
     return (
@@ -79,8 +94,8 @@ export default function DrawTelGuessPage() {
         </p>
       </div>
 
-      {submitted ? (
-        <div className="w-full max-w-md bg-[#1A1A2E] rounded-2xl border border-[#2D2D44] p-6 text-center">
+      {hasConfirmed ? (
+        <div className="w-full max-w-md bg-[#1A1A2E] rounded-2xl border border-[#2D2D44] p-6 text-center shadow-lg">
           <p className="text-[#FF6B6B] font-['Fredoka_One'] text-2xl mb-2">Guess submitted! ✓</p>
           <p className="text-gray-400 font-['Nunito'] text-sm">
             Waiting for others… ({dt.guessedCount}/{dt.totalGuessers})
@@ -94,10 +109,22 @@ export default function DrawTelGuessPage() {
               />
             ))}
           </div>
+          <button
+            onClick={editResponse}
+            className="w-full py-3 mt-6 rounded-2xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF6B6B] hover:text-[#FF6B6B] transition active:scale-95"
+          >
+            ✏️ Edit Guess
+          </button>
         </div>
       ) : (
-        <form onSubmit={handleSubmit} className="w-full max-w-md space-y-3">
-          <div className="relative">
+        <div className="w-full max-w-md">
+          <MiniGameWrapper
+            hasConfirmed={hasConfirmed}
+            onConfirm={confirm}
+            onEditResponse={editResponse}
+            confirmLabel="Submit Guess"
+            disableConfirm={!canSubmit}
+          >
             <input
               type="text"
               value={guessText}
@@ -106,16 +133,15 @@ export default function DrawTelGuessPage() {
               className="w-full bg-[#1A1A2E] border-2 border-[#2D2D44] focus:border-[#FF6B6B] outline-none rounded-xl px-4 py-3 text-white font-['Nunito'] text-base placeholder-gray-600 transition"
               maxLength={200}
               autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  confirm();
+                }
+              }}
             />
-          </div>
-          <button
-            type="submit"
-            disabled={!canSubmit}
-            className="w-full bg-[#FF6B6B] disabled:opacity-30 text-white font-['Fredoka_One'] text-lg py-3 rounded-xl transition hover:bg-[#ff5252]"
-          >
-            Submit Guess
-          </button>
-        </form>
+          </MiniGameWrapper>
+        </div>
       )}
     </motion.div>
   );

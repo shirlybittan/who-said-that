@@ -24,7 +24,7 @@ export default function VotingPage() {
 
   useEffect(() => {
     if (!state.isPlaying) return;   // cast screen never auto-votes
-    if (state.hasVoted || isRevealed || state.allVotesIn || isMyAnswer) return;
+    if (state.hasVoted || isRevealed || state.allVotesIn) return;
     if (timeLeft <= 0) {
        const eligiblePlayers = state.players.filter(p => p.isConnected && p.id !== state.playerId);
        if (eligiblePlayers.length > 0) {
@@ -36,7 +36,7 @@ export default function VotingPage() {
     }
     const timer = setInterval(() => setTimeLeft(prev => prev - 1), 1000);
     return () => clearInterval(timer);
-  }, [timeLeft, state.hasVoted, isRevealed, state.allVotesIn, isMyAnswer, state.players, state.playerId, state.roomCode, dispatch]);
+  }, [timeLeft, state.hasVoted, isRevealed, state.allVotesIn, state.players, state.playerId, state.roomCode, dispatch]);
 
   const handleVote = (votedPlayerId) => {
     if (state.hasVoted) return;
@@ -63,7 +63,7 @@ export default function VotingPage() {
       <div className="flex justify-between w-full max-w-md items-center py-4 mb-4">
          <p className="text-xl font-['Fredoka_One'] text-[#FFE66D] uppercase tracking-widest text-center w-full relative">
            {t.answerNum.replace('{current}', state.currentAnswerIndex + 1).replace('{total}', state.answers.length)}
-           {!state.hasVoted && !isRevealed && !isMyAnswer && !state.allVotesIn && (
+           {!state.hasVoted && !isRevealed && !state.allVotesIn && (
              <span className="absolute right-0 text-red-500 text-lg top-0">⏳ {timeLeft}s</span>
            )}
          </p>
@@ -102,13 +102,19 @@ export default function VotingPage() {
       )}
 
       {/* Voting Section */}
+      {!state.hasVoted && !isRevealed && isMyAnswer && !state.allVotesIn && (
+        <div className="mb-6 text-center flex flex-col items-center">
+           <h3 className="text-2xl font-['Fredoka_One'] text-[#FFE66D] mb-2 animate-pulse">{t.yourAnswer}</h3>
+           <p className="text-gray-300 font-['Nunito'] text-lg mt-2">{t.letsSee}</p>
+        </div>
+      )}
       {/* Voting buttons — hidden for cast-screen host */}
       <motion.div
         className="w-full max-w-md grid grid-cols-2 gap-4 auto-rows-fr"
         initial="hidden" animate="show"
         variants={{ hidden: {}, show: { transition: { staggerChildren: 0.06, delayChildren: 0.1 } } }}
       >
-        {state.isPlaying && !state.hasVoted && !isRevealed && !isMyAnswer && state.players.filter(p => p.isConnected && p.isPlaying && p.id !== state.playerId).map(p => (
+        {state.isPlaying && !state.hasVoted && !isRevealed && state.players.filter(p => p.isConnected && p.isPlaying && p.id !== state.playerId).map(p => (
            <motion.button
              key={p.id}
              onClick={() => handleVote(p.id)}
@@ -122,14 +128,6 @@ export default function VotingPage() {
            </motion.button>
         ))}
       </motion.div>
-
-      {!state.hasVoted && !isRevealed && isMyAnswer && !state.allVotesIn && (
-        <div className="mt-8 text-center flex flex-col items-center">
-           <h3 className="text-2xl font-['Fredoka_One'] text-[#FFE66D] mb-2 animate-pulse">{t.yourAnswer}</h3>
-           <p className="text-gray-300 font-['Nunito'] text-lg mt-2">{t.letsSee}</p>
-           <p className="text-gray-400 font-['Nunito'] mt-4">{t.waitingVotes.replace('{current}', state.votedCount).replace('{total}', state.totalPlayers || state.players.length - 1)}</p>
-        </div>
-      )}
 
       {state.hasVoted && !isRevealed && !state.allVotesIn && (
         <VoteLocked

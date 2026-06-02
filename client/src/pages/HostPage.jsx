@@ -542,7 +542,7 @@ function VotingPanel({ votingData, players }) {
       <div className="flex flex-wrap gap-4 justify-center">
         {activePlayers.map(p => (
           <PlayerAvatar key={p.id} player={p} size="sm"
-            status={p.id === authorId ? 'answered' : votingData.votedPlayerIds?.includes(p.id) ? 'voted' : 'waiting'} />
+            status={votingData.votedPlayerIds?.includes(p.id) ? 'voted' : 'waiting'} />
         ))}
       </div>
     </div>
@@ -1747,7 +1747,7 @@ function CaptionHostPanel({ captionData, players }) {
             <div className="bg-[#FD79A8] h-2 rounded-full transition-all" style={{ width: total ? `${(written / total) * 100}%` : '0%' }} />
           </div>
           <div className="flex flex-wrap gap-3 justify-center mt-4">
-            {players.filter(p => p.isPlaying && p.isConnected).map(p => (
+            {players.filter(p => p.isPlaying && p.isConnected && p.id !== captionData.featuredOwnerId).map(p => (
               <PlayerAvatar key={p.id} player={p} size="sm" status={(captionData.captionSubmittedPlayerIds || []).includes(p.id) ? 'answered' : 'waiting'} />
             ))}
           </div>
@@ -2692,6 +2692,9 @@ export default function HostPage() {
   const [gameQueue, setGameQueue] = useState([]); // [{type, rounds, mode?}]
   const [queueIndex, setQueueIndex] = useState(0);
 
+  // Transition blocker to prevent double clicks skipping logic
+  const [isTransitioning, setIsTransitioning] = useState(false);
+
   // Change Game picker overlay
   const [showGamePicker, setShowGamePicker] = useState(false);
   // Main menu overlay
@@ -2954,12 +2957,14 @@ export default function HostPage() {
     });
     sock.on('caption:writing_phase', (data) => {
       setCaptionData(prev => ({ ...prev, phase: 'writing', round: data.round, totalRounds: data.totalRounds || prev.totalRounds, prompt: data.prompt || '', featuredOwnerId: data.featuredOwnerId, featuredOwnerName: data.featuredOwnerName || '', featuredPhotoData: data.featuredPhotoData || null, totalWriters: (data.writers || []).length, captionCount: 0, captionSubmittedPlayerIds: [] }));
+      setStatus('caption');
     });
     sock.on('caption:caption_submitted', (data) => {
       setCaptionData(prev => ({ ...prev, captionCount: data.submittedCount, totalWriters: data.totalCount, captionSubmittedPlayerIds: data.submittedPlayerIds || prev.captionSubmittedPlayerIds }));
     });
     sock.on('caption:voting_phase', (data) => {
       setCaptionData(prev => ({ ...prev, phase: 'voting', captions: data.captions || [], featuredPhotoData: data.featuredPhotoData || prev.featuredPhotoData, featuredOwnerName: data.featuredOwnerName || prev.featuredOwnerName, voteCount: 0, totalVoters: 0, votedPlayerIds: [] }));
+      setStatus('caption');
     });
     sock.on('caption:vote_received', (data) => {
       setCaptionData(prev => ({ ...prev, voteCount: data.voteCount, totalVoters: data.totalVoters, votedPlayerIds: data.votedPlayerIds || prev.votedPlayerIds }));
@@ -3146,6 +3151,19 @@ export default function HostPage() {
       if (roomPhase === 'sit-results') return 'sit-results';
       if (roomPhase === 'roundEnd') return 'round-end';
       if (roomPhase === 'gameEnd') return 'game-end';
+      if (roomPhase === 'fitb') return 'fitb';
+      if (roomPhase === 'fitbEnd') return 'fitb-end';
+      if (roomPhase === 'selfie') return 'selfie';
+      if (roomPhase === 'selfieEnd') return 'selfie-results';
+      if (roomPhase === 'caption') return 'caption';
+      if (roomPhase === 'captionEnd' || roomData?.caption?.phase === 'ended') return 'caption-end';
+      if (roomPhase === 'photovote') return 'photovote';
+      if (roomPhase === 'photovoteEnd' || roomData?.photoVote?.phase === 'ended') return 'photovote-end';
+      if (roomPhase === 'dt' || roomPhase === 'dt-prompting' || roomPhase === 'dt-selfie' || roomPhase === 'dt-drawing' || roomPhase === 'dt-guessing' || roomPhase === 'dt-reveal') {
+        const dtPhase = roomData?.drawTel?.phase || 'prompting';
+        return `dt-${dtPhase}`;
+      }
+      if (roomPhase === 'dtEnd') return 'dt-end';
       if (roomPhase === 'tot') return 'tot';
       if (roomPhase === 'totEnd') return 'tot-end';
       if (roomPhase === 'drawing') {
@@ -3294,11 +3312,14 @@ export default function HostPage() {
   const handleSelfieNextRound = () => socketRef.current?.emit('selfie:next_round', { code: gameInfo.code });
   const handleSelfieSkipQuestion = () => socketRef.current?.emit('selfie:skip_question', { code: gameInfo.code });
   const handleSkipMiniGame = () => {
+    if (isTransitioning) return;
+    setIsTransitioning(true);
     // If there's a next game in the playlist queue, advance to it
     if (gameQueue && gameQueue.length > 1 && queueIndex + 1 < gameQueue.length) {
-      handleNextQueueGame();
+      handleNextQueueGame(true); // pass flag to bypass transitioning check inside
     } else {
       socketRef.current?.emit('skip_mini_game', { code: gameInfo.code });
+      setTimeout(() => setIsTransitioning(false), 500);
     }
   };
   const handleKickPlayer = (playerId) => socketRef.current?.emit('kick_player', { code: gameInfo.code, targetPlayerId: playerId });
@@ -3307,48 +3328,76 @@ export default function HostPage() {
   const handleNextAnswer = () => socketRef.current?.emit('next_answer_request', { code: gameInfo.code });
   const handleDrawNewWord = () => socketRef.current?.emit('draw:skip_word', { code: gameInfo.code });
   const handleDrawRestart = () => socketRef.current?.emit('draw:restart', { code: gameInfo.code });
-  const handleNextQueueGame = () => {
+  const handleNextQueueGame = (skipTransitionCheck = false) => {
+    if (!skipTransitionCheck && isTransitioning) return;
+    if (!skipTransitionCheck) setIsTransitioning(true);
+
     const nextIdx = queueIndex + 1;
-    if (nextIdx >= gameQueue.length) return;
+    if (nextIdx >= gameQueue.length) {
+      if (!skipTransitionCheck) setIsTransitioning(false);
+      return;
+    }
     const nextGame = gameQueue[nextIdx];
     const code = gameInfo.code;
     const sock = socketRef.current;
-    if (!sock || !code) return;
+    if (!sock || !code) {
+      if (!skipTransitionCheck) setIsTransitioning(false);
+      return;
+    }
+    
+    setStatus('connecting');
     setQueueIndex(nextIdx);
     const nextRounds = nextGame.rounds || 5;
     const nextMode = nextGame.mode || 'classic';
     setCreatorSettings({ gameType: nextGame.type, rounds: nextRounds, drawMode: nextMode });
     setGameInfo(prev => ({ ...prev, gameType: nextGame.type }));
-    // Start the next game directly — server start handlers cancel previous timers and reset state
-    // (no change_game needed; players navigate on receiving the new game's first event)
+    // First explicitly switch the game type on the server
+    sock.emit('change_game', { code, newGameType: nextGame.type });
+
+    // Then start the next game directly — server start handlers cancel previous timers and setup state
     const t = nextGame.type;
-    if (t === 'most-likely-to') sock.emit('mlt:start', { code, rounds: nextRounds, allowSelfVote: true });
-    else if (t === 'drawing') sock.emit('draw:start', { code, rounds: nextRounds, mode: nextMode });
-    else if (t === 'fill-in-the-blank') sock.emit('fitb:start', { code, rounds: nextRounds });
-    else if (t === 'selfie-roast') sock.emit('selfie:start', { code, rounds: nextRounds });
-    else if (t === 'caption') sock.emit('caption:start', { code, rounds: nextRounds });
-    else if (t === 'pmatch') sock.emit('photovote:start', { code, subType: 'pmatch', rounds: nextRounds });
-    else if (t === 'photoassoc') sock.emit('photovote:start', { code, subType: 'photoassoc', rounds: nextRounds });
-    else if (t === 'draw-telephone') sock.emit('dt:start', { code });
-    else sock.emit('start_game', { code });
+    setTimeout(() => {
+      if (t === 'most-likely-to') sock.emit('mlt:start', { code, rounds: nextRounds, allowSelfVote: true });
+      else if (t === 'drawing') sock.emit('draw:start', { code, rounds: nextRounds, mode: nextMode });
+      else if (t === 'fill-in-the-blank') sock.emit('fitb:start', { code, rounds: nextRounds });
+      else if (t === 'selfie-roast') sock.emit('selfie:start', { code, rounds: nextRounds });
+      else if (t === 'caption') sock.emit('caption:start', { code, rounds: nextRounds });
+      else if (t === 'pmatch') sock.emit('photovote:start', { code, subType: 'pmatch', rounds: nextRounds });
+      else if (t === 'photoassoc') sock.emit('photovote:start', { code, subType: 'photoassoc', rounds: nextRounds });
+      else if (t === 'draw-telephone') sock.emit('dt:start', { code });
+      else sock.emit('start_game', { code });
+      
+      setIsTransitioning(false);
+    }, 200); // 200ms delay to ensure clients process game_changed before the start states
   };
 
   const handleNewGame = () => {
+    if (isTransitioning) return;
+    setIsTransitioning(true);
+    setStatus('connecting');
     // Reset room to lobby keeping all players connected, so group can play again
     socketRef.current?.emit('change_game', { code: gameInfo.code, newGameType: gameInfo.gameType || 'who-said-that' });
     setGameQueue([]);
     setQueueIndex(0);
+    setTimeout(() => setIsTransitioning(false), 500);
   };
 
   const handlePlayAgain = () => {
+    if (isTransitioning) return;
+    setIsTransitioning(true);
+    setStatus('connecting');
     const code = gameInfo.code;
     const sock = socketRef.current;
-    if (!sock || !code) return;
+    if (!sock || !code) {
+      setIsTransitioning(false);
+      return;
+    }
     const gameType = creatorSettings.gameType || gameInfo.gameType;
     // Reset everyone to lobby — they'll start again from the lobby screen
     sock.emit('change_game', { code, newGameType: gameType });
     setGameQueue([]);
     setQueueIndex(0);
+    setTimeout(() => setIsTransitioning(false), 500);
   };
 
   const handleNewPartyPack = () => {
@@ -3555,11 +3604,19 @@ export default function HostPage() {
                 { id: 'caption',           label: '💬 Selfie Captions',     accent: '#FD79A8' },
                 { id: 'pmatch',            label: '🎭 Selfie Challenge',    accent: '#FDCB6E' },
                 { id: 'photoassoc',        label: '🎯 Prompt Match',        accent: '#A29BFE' },
+                { id: 'playlist',          label: '📋 Playlist',            accent: '#FDCB6E' },
                 { id: 'mixed',             label: '🎲 Mixed Pack',          accent: '#FDCB6E', colSpan: true },
               ].map(g => (
                 <button
                   key={g.id}
                   onClick={() => {
+                    if (g.id === 'playlist') {
+                      setShowMainMenu(false);
+                      setGameQueue([]);
+                      setQueueIndex(0);
+                      setStatus('creating'); // Go back to room creation so they can select a new playlist
+                      return;
+                    }
                     const sock = socketRef.current;
                     const code = gameInfo.code;
                     if (!sock || !code) return;
@@ -3607,11 +3664,19 @@ export default function HostPage() {
                 { id: 'caption',           label: '💬 Selfie Captions',     accent: '#FD79A8' },
                 { id: 'pmatch',            label: '🎭 Selfie Challenge',    accent: '#FDCB6E' },
                 { id: 'photoassoc',        label: '🎯 Prompt Match',        accent: '#A29BFE' },
+                { id: 'playlist',          label: '📋 Playlist',            accent: '#FDCB6E' },
                 { id: 'mixed',             label: '🎲 Mixed Pack',          accent: '#FDCB6E' },
               ].map(g => (
                 <button
                   key={g.id}
                   onClick={() => {
+                    if (g.id === 'playlist') {
+                      setShowGamePicker(false);
+                      setGameQueue([]);
+                      setQueueIndex(0);
+                      setStatus('creating');
+                      return;
+                    }
                     const code = gameInfo.code;
                     const sock = socketRef.current;
                     if (!sock || !code) return;

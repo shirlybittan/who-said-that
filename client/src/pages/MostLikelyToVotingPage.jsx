@@ -72,11 +72,16 @@ export default function MostLikelyToVotingPage() {
         </h1>
       </div>
 
+      {/* Timer (visible to everyone) */}
+      {mlt.secondsLeft !== undefined && (
+        <div className="w-full max-w-lg flex justify-center mb-6">
+          <TimerRing secondsLeft={mlt.secondsLeft} paused={mlt.paused} size={112} />
+        </div>
+      )}
+
       {/* ── Host controls (visible to any host, playing or not) ── */}
       {isHost && (
         <div className="flex flex-col items-center gap-5 w-full max-w-lg">
-          <TimerRing secondsLeft={mlt.secondsLeft} paused={mlt.paused} size={112} />
-
           {/* Vote progress */}
           <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5 text-center">
             <p className="text-4xl font-['Fredoka_One'] text-white mb-1">
