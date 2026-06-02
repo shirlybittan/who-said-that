@@ -3,6 +3,7 @@
     "dev": "concurrently \"npm run dev --prefix client\" \"npm start --prefix server\""
   },
   "dependencies": {
+    "@playwright/test": "^1.60.0",
     "qrcode.react": "^4.2.0",
     "react-confetti": "^6.4.0",
     "react-router-dom": "^6.30.3",
