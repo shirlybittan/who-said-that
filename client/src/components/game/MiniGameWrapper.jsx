@@ -43,7 +43,7 @@ export default function MiniGameWrapper({
         </div>
       )}
 
-      {isHost && adminControls ? <div data-testid="admin-controls">{adminControls}</div> : null}
+      {isHost && adminControls && <div data-testid="admin-controls">{adminControls}</div>}
     </section>
   );
 }

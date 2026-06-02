@@ -4,6 +4,8 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { cleanup, render, screen, fireEvent } from '@testing-library/react';
 import MiniGameWrapper from '../MiniGameWrapper';
 
+const skipRoundAdminButton = <button type="button" aria-label="Skip Round">Skip Round</button>;
+
 afterEach(() => {
   cleanup();
 });
@@ -44,7 +46,7 @@ function renderWrapper({
       onConfirm={onConfirm}
       onEditResponse={onEditResponse}
       isHost={isHost}
-      adminControls={<button type="button">Skip Round</button>}
+      adminControls={skipRoundAdminButton}
     >
       {childByType[childType]}
     </MiniGameWrapper>
@@ -61,7 +63,7 @@ describe('MiniGameWrapper', () => {
     expect(screen.queryByText('Waiting for other players...')).not.toBeInTheDocument();
   });
 
-  it('locks inputs, calls submit callback, and shows waiting + edit controls after confirm', async () => {
+  it('locks inputs, calls submit callback, and shows waiting + edit controls after confirm', () => {
     const { onConfirm } = renderWrapper({ childType: 'drawing' });
 
     const drawingInput = screen.getByLabelText('Drawing Input');
@@ -76,7 +78,7 @@ describe('MiniGameWrapper', () => {
     expect(screen.queryByRole('button', { name: 'Confirm' })).not.toBeInTheDocument();
   });
 
-  it('returns to editable state when Edit Response is clicked', async () => {
+  it('returns to editable state when Edit Response is clicked', () => {
     const { onEditResponse } = renderWrapper({ childType: 'captioning' });
 
     const captionInput = screen.getByLabelText('Caption Input');
@@ -95,7 +97,7 @@ describe('MiniGameWrapper', () => {
   it.each([
     ['drawing', 'drawing', 'Drawing Input'],
     ['captioning', 'captioning', 'Caption Input'],
-  ])('renders consistent lifecycle controls for %s mode', async (mode, childType, inputLabel) => {
+  ])('renders consistent lifecycle controls for %s mode', (mode, childType, inputLabel) => {
     renderWrapper({ mode, childType });
 
     const input = screen.getByLabelText(inputLabel);
@@ -106,22 +108,19 @@ describe('MiniGameWrapper', () => {
     expect(screen.getByText('Waiting for other players...')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Edit Response' })).toBeInTheDocument();
     expect(input).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Response' }));
+    expect(screen.getByRole('button', { name: 'Confirm' })).toBeInTheDocument();
+    expect(input).toBeEnabled();
   });
 
   it('shows admin controls only for hosts', () => {
-    const { rerender } = render(
-      <MiniGameWrapper mode="drawing" onConfirm={vi.fn()} isHost adminControls={<button type="button">Skip Round</button>}>
-        {({ isConfirmed }) => <MockDrawingGame isConfirmed={isConfirmed} />}
-      </MiniGameWrapper>
-    );
+    renderWrapper({ isHost: true });
 
     expect(screen.getByText('Skip Round')).toBeInTheDocument();
 
-    rerender(
-      <MiniGameWrapper mode="drawing" onConfirm={vi.fn()} isHost={false} adminControls={<button type="button">Skip Round</button>}>
-        {({ isConfirmed }) => <MockDrawingGame isConfirmed={isConfirmed} />}
-      </MiniGameWrapper>
-    );
+    cleanup();
+    renderWrapper({ isHost: false });
 
     expect(screen.queryByText('Skip Round')).not.toBeInTheDocument();
   });
