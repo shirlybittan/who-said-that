@@ -3,6 +3,8 @@ import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
+import MiniGameWrapper from '../components/MiniGameWrapper.jsx';
+import { useMiniGameLifecycle } from '../hooks/useMiniGameLifecycle.js';
 
 export default function CaptionWritePage() {
   const { state, dispatch } = useGame();
@@ -11,13 +13,18 @@ export default function CaptionWritePage() {
   const [text, setText] = useState('');
   const MAX_LEN = 140;
 
-  const handleSubmit = () => {
+  const doSubmit = () => {
     const trimmed = text.trim();
-    if (!trimmed || caption.hasWrittenCaption) return;
+    if (!trimmed) return;
     sounds.answer?.();
     socket.emit('caption:submit_caption', { code: state.roomCode, text: trimmed });
     dispatch({ type: 'CAPTION_MARK_CAPTION_WRITTEN' });
   };
+
+  const { hasConfirmed, confirm, editResponse } = useMiniGameLifecycle({
+    onSubmit: doSubmit,
+    resetKey: caption.round,
+  });
 
   return (
     <motion.div
@@ -41,8 +48,16 @@ export default function CaptionWritePage() {
         <p className="text-[#FFE66D] font-['Nunito'] text-sm font-semibold">{caption.prompt}</p>
       </div>
 
-      {!caption.hasWrittenCaption ? (
-        <div className="w-full max-w-sm flex flex-col gap-3">
+      <MiniGameWrapper
+        hasConfirmed={hasConfirmed}
+        onConfirm={confirm}
+        onEditResponse={editResponse}
+        confirmLabel={caption.hasWrittenCaption ? '↑ Update Caption' : 'Submit Caption 🚀'}
+        disableConfirm={!text.trim()}
+        isHost={state.isHost}
+        waitingMessage={`Caption submitted! (${caption.captionSubmittedCount} / ${caption.totalWriters} in)`}
+      >
+        <div className="w-full max-w-sm flex flex-col gap-2">
           <textarea
             value={text}
             onChange={e => setText(e.target.value.slice(0, MAX_LEN))}
@@ -54,24 +69,8 @@ export default function CaptionWritePage() {
             <span>{text.trim().length === 0 ? 'Min 1 character' : ''}</span>
             <span>{text.length}/{MAX_LEN}</span>
           </div>
-          <button
-            onClick={handleSubmit}
-            disabled={!text.trim()}
-            className="w-full py-3 rounded-2xl font-['Fredoka_One'] text-xl transition-colors disabled:opacity-40 bg-[#FD79A8] text-white"
-          >
-            Submit Caption 🚀
-          </button>
         </div>
-      ) : (
-        <div className="flex flex-col items-center gap-3 mt-4">
-          <div className="text-5xl">✅</div>
-          <p className="text-[#FD79A8] font-['Fredoka_One'] text-lg">Caption submitted!</p>
-          <p className="text-gray-500 font-['Nunito'] text-sm">
-            {caption.captionSubmittedCount} / {caption.totalWriters} captions in
-          </p>
-          <p className="text-gray-500 font-['Nunito'] text-xs">Waiting for everyone…</p>
-        </div>
-      )}
+      </MiniGameWrapper>
     </motion.div>
   );
 }

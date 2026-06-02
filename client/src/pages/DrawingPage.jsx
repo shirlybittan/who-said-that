@@ -8,6 +8,8 @@ import { useSounds } from '../hooks/useSounds';
 import { CANVAS_W, CANVAS_H, redrawCanvas } from '../utils/canvasUtils';
 import TimerRing from '../components/game/TimerRing';
 import ReplayCanvas from '../components/game/ReplayCanvas';
+import MiniGameWrapper from '../components/MiniGameWrapper.jsx';
+import { useMiniGameLifecycle } from '../hooks/useMiniGameLifecycle.js';
 
 const COLORS = [
   '#000000', '#FFFFFF', '#EF4444', '#F97316', '#EAB308',
@@ -185,13 +187,19 @@ export default function DrawingPage() {
     if (!draw.hasSubmitted) dispatch({ type: 'DRAW_MARK_SUBMITTED' });
   };
 
+  const { hasConfirmed, confirm, editResponse, markConfirmed } = useMiniGameLifecycle({
+    onSubmit: handleSubmit,
+    resetKey: draw.round,
+  });
+
   // Auto-submit when timer is about to expire to capture the latest drawing.
   useEffect(() => {
     if (draw.phase === 'drawing' && draw.secondsLeft <= 1) {
       socket.emit('draw:submit', { code: roomCode, strokes: strokesRef.current });
       if (!draw.hasSubmitted) dispatch({ type: 'DRAW_MARK_SUBMITTED' });
+      markConfirmed();
     }
-  }, [draw.secondsLeft, draw.phase, draw.hasSubmitted, roomCode, dispatch]);
+  }, [draw.secondsLeft, draw.phase, draw.hasSubmitted, roomCode, dispatch, markConfirmed]);
 
   const handleVote = (votedForPlayerId) => {
     if (draw.hasVoted || votedForPlayerId === playerId) return;
@@ -316,13 +324,6 @@ export default function DrawingPage() {
             >
               🗑 {t.clear}
             </button>
-            <button
-              onClick={handleSubmit}
-              disabled={strokeCount === 0}
-              className="flex-2 flex-grow py-2 rounded-lg text-sm font-['Fredoka_One'] bg-[#C39BD3] text-black disabled:opacity-40 hover:bg-[#b089c2] transition font-bold"
-            >
-              {draw.hasSubmitted ? `↑ ${t.updateBtn || 'Update'}` : `✓ ${t.submitBtn}`}
-            </button>
           </div>
 
           {/* Host controls */}
@@ -334,6 +335,21 @@ export default function DrawingPage() {
               {t.skipToVote} →
             </button>
           )}
+        </div>
+
+        {/* Unified confirm / waiting controls */}
+        <div className="w-full max-w-md mt-3">
+          <MiniGameWrapper
+            hasConfirmed={hasConfirmed}
+            onConfirm={confirm}
+            onEditResponse={editResponse}
+            confirmLabel={draw.hasSubmitted ? `↑ ${t.updateBtn || 'Update'}` : `✓ ${t.submitBtn}`}
+            disableConfirm={strokeCount === 0}
+            isHost={isHost}
+          >
+            {/* Canvas and toolbar are rendered above; no additional children needed here */}
+            <span />
+          </MiniGameWrapper>
         </div>
       </motion.div>
     );

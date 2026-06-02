@@ -25,4 +25,41 @@ describe('gameReducer', () => {
     expect(newState.answers.length).toBe(1);
     expect(newState.hasVoted).toBe(false);
   });
+
+  it('handles GAME_SWITCHED action — resets round and per-game state', () => {
+    const prevState = {
+      gameType: 'who-said-that',
+      phase: 'voting',
+      hasAnswered: true,
+      hasVoted: true,
+      answers: [{ text: 'some answer' }],
+      currentQuestion: 'Some question?',
+      gameEnded: false,
+      players: [{ id: 'p1', name: 'Alice' }],
+      gameName: 'My Game',
+      mlt:  { totalRounds: 5, allowSelfVote: false },
+      draw: {},
+      fitb: {},
+      selfie: {},
+      caption: {},
+      photoVote: {},
+      sit: {},
+      tot: {},
+      dt: {},
+    };
+
+    const action = {
+      type: 'GAME_SWITCHED',
+      payload: { gameType: 'drawing', players: prevState.players, gameName: 'My Game' },
+    };
+
+    const newState = gameReducer(prevState, action);
+
+    expect(newState.gameType).toBe('drawing');
+    expect(newState.phase).toBe('lobby');
+    expect(newState.hasAnswered).toBe(false);
+    expect(newState.hasVoted).toBe(false);
+    expect(newState.answers).toEqual([]);
+    expect(newState.currentQuestion).toBeNull();
+  });
 });
