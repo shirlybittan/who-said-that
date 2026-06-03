@@ -1126,8 +1126,8 @@ function DtHostPanel({ dtData, players, status, onRevealNext }) {
   useEffect(() => {
     if (!isRevealVoteStep) return;
     setHostVoteSecs(reveal?.voteSecondsLeft ?? 30);
-    const id = setTimeout(() => setHostVoteSecs(s => Math.max(0, s - 1)), 1000);
-    return () => clearTimeout(id);
+    const id = setInterval(() => setHostVoteSecs(s => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(id);
   }, [isRevealVoteStep]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── PROMPTING phase ─────────────────────────────────────────────────────

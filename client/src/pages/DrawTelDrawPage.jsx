@@ -28,6 +28,11 @@ export default function DrawTelDrawPage() {
   const turn = dt.currentTurn;
   const selfieData = turn?.originalSelfieData || null;
   const sounds = useSounds();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!turn) navigate('/draw-tel-wait', { replace: true });
+  }, [turn, navigate]);
 
   const canvasRef = useRef(null);
   const strokesRef = useRef([]);

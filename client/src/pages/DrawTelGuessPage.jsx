@@ -101,55 +101,43 @@ export default function DrawTelGuessPage() {
           </p>
         </div>
 
-        {hasConfirmed ? (
-          <div className="w-full max-w-md bg-[#1A1A2E] rounded-2xl border border-[#2D2D44] p-6 text-center shadow-lg">
-            <p className="text-[#FF6B6B] font-['Fredoka_One'] text-2xl mb-2">Guess submitted! ✓</p>
-            <p className="text-gray-400 font-['Nunito'] text-sm">
-              Waiting for other players to guess...
-            </p>
-            <div className="mt-4 flex justify-center gap-2">
-              {Array.from({ length: dt.totalGuessers }).map((_, i) => (
-                <div
-                  key={i}
-                  className="w-3 h-3 rounded-full transition-colors duration-300"
-                  style={{ backgroundColor: i < dt.guessedCount ? '#FF6B6B' : '#2D2D44' }}
-                />
-              ))}
-            </div>
-            <button
-              onClick={editResponse}
-              className="w-full py-3 mt-6 rounded-2xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF6B6B] hover:text-[#FF6B6B] transition active:scale-95"
-            >
-              ✏️ Edit Guess
-            </button>
-          </div>
-        ) : (
-          <div className="w-full max-w-md">
-            <MiniGameWrapper
-              hasConfirmed={hasConfirmed}
-              onConfirm={confirm}
-              onEditResponse={editResponse}
-              confirmLabel="Submit Guess"
-              disableConfirm={!canSubmit}
-            >
-              <input
-                type="text"
-                value={guessText}
-                onChange={(e) => setGuessText(e.target.value.slice(0, 200))}
-                placeholder="What was the original prompt?"
-                className="w-full bg-[#1A1A2E] border-2 border-[#2D2D44] focus:border-[#FF6B6B] outline-none rounded-xl px-4 py-3 text-white font-['Nunito'] text-base placeholder-gray-600 transition"
-                maxLength={200}
-                autoFocus
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    confirm();
-                  }
-                }}
-              />
-            </MiniGameWrapper>
-          </div>
-        )}
+        <div className="w-full max-w-md">
+          <MiniGameWrapper
+            hasConfirmed={hasConfirmed}
+            onConfirm={confirm}
+            onEditResponse={editResponse}
+            confirmLabel="Submit Guess"
+            disableConfirm={!canSubmit}
+            waitingMessage="Waiting for other players to guess..."
+          >
+            <input
+              type="text"
+              value={guessText}
+              onChange={(e) => setGuessText(e.target.value.slice(0, 200))}
+              placeholder="What was the original prompt?"
+              className="w-full bg-[#1A1A2E] border-2 border-[#2D2D44] focus:border-[#FF6B6B] outline-none rounded-xl px-4 py-3 text-white font-['Nunito'] text-base placeholder-gray-600 transition"
+              maxLength={200}
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  confirm();
+                }
+              }}
+            />
+            {hasConfirmed && (
+              <div className="mt-2 flex justify-center gap-2">
+                {Array.from({ length: dt.totalGuessers }).map((_, i) => (
+                  <div
+                    key={i}
+                    className="w-3 h-3 rounded-full transition-colors duration-300"
+                    style={{ backgroundColor: i < dt.guessedCount ? '#FF6B6B' : '#2D2D44' }}
+                  />
+                ))}
+              </div>
+            )}
+          </MiniGameWrapper>
+        </div>
       </motion.div>
     </GamePageWrapper>
   );

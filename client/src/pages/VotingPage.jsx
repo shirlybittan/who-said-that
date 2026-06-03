@@ -106,6 +106,9 @@ export default function VotingPage() {
         <div className="mb-6 text-center flex flex-col items-center">
            <h3 className="text-2xl font-['Fredoka_One'] text-[#FFE66D] mb-2 animate-pulse">{t.yourAnswer}</h3>
            <p className="text-gray-300 font-['Nunito'] text-lg mt-2">{t.letsSee}</p>
+           <p className="text-sm text-gray-400 font-['Nunito'] mt-1">
+             {t.waitingVotes.replace('{current}', state.votedCount).replace('{total}', state.totalPlayers || state.players.length - 1)}
+           </p>
         </div>
       )}
       {/* Voting buttons — hidden for cast-screen host */}
