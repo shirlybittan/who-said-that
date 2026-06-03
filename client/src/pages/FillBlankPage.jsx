@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
@@ -15,14 +15,14 @@ export default function FillBlankPage() {
   const [answerText, setAnswerText] = useState('');
   const [localSecondsLeft, setLocalSecondsLeft] = useState(90);
 
-  const doSubmitAnswer = ({ allowEmpty = false } = {}) => {
+  const doSubmitAnswer = useCallback(({ allowEmpty = false } = {}) => {
     const trimmed = answerText.trim();
-    const value = trimmed || (allowEmpty ? '🤷 Blanked out under pressure' : '');
+    const value = trimmed || (allowEmpty ? 'No answer provided' : '');
     if (!value) return;
     sounds.answer?.();
     socket.emit('fitb:answer', { code: state.roomCode, text: value });
     dispatch({ type: 'FITB_MARK_ANSWERED', payload: { myAnswer: value } });
-  };
+  }, [answerText, sounds, state.roomCode, dispatch]);
 
   const { hasConfirmed, confirm, editResponse, markConfirmed } = useMiniGameLifecycle({
     onSubmit: doSubmitAnswer,
@@ -46,7 +46,7 @@ export default function FillBlankPage() {
     if (fitb.phase !== 'answering' || !state.isPlaying || hasConfirmed || secondsLeft > 0) return;
     doSubmitAnswer({ allowEmpty: true });
     markConfirmed();
-  }, [fitb.phase, state.isPlaying, hasConfirmed, secondsLeft, markConfirmed]);
+  }, [fitb.phase, state.isPlaying, hasConfirmed, secondsLeft, markConfirmed, doSubmitAnswer]);
 
   const handleVote = (id) => {
     if (fitb.hasVoted) return;

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
@@ -15,9 +15,9 @@ export default function CaptionWritePage() {
   const [localSecondsLeft, setLocalSecondsLeft] = useState(90);
   const MAX_LEN = 140;
 
-  const doSubmit = ({ allowEmpty = false } = {}) => {
+  const doSubmit = useCallback(({ allowEmpty = false } = {}) => {
     const trimmed = text.trim();
-    const value = trimmed || (allowEmpty ? '🤐 No caption from me this round' : '');
+    const value = trimmed || (allowEmpty ? 'No answer provided' : '');
     if (!value) return;
     sounds.answer?.();
     socket.emit('caption:submit_caption', { code: state.roomCode, text: value });
@@ -25,7 +25,7 @@ export default function CaptionWritePage() {
     if (!caption.hasWrittenCaption) {
       dispatch({ type: 'CAPTION_MARK_CAPTION_WRITTEN' });
     }
-  };
+  }, [text, sounds, state.roomCode, caption.hasWrittenCaption, dispatch]);
 
   const { hasConfirmed, confirm, editResponse, markConfirmed } = useMiniGameLifecycle({
     onSubmit: doSubmit,
@@ -51,7 +51,7 @@ export default function CaptionWritePage() {
     if (!state.isPlaying || hasConfirmed || secondsLeft > 0) return;
     doSubmit({ allowEmpty: true });
     markConfirmed();
-  }, [state.isPlaying, hasConfirmed, secondsLeft, markConfirmed]);
+  }, [state.isPlaying, hasConfirmed, secondsLeft, markConfirmed, doSubmit]);
 
   return (
     <motion.div
@@ -111,7 +111,7 @@ export default function CaptionWritePage() {
               style={{ backgroundColor: answered ? p.color : '#1A1A2E' }}
               title={`${p.name} — ${answered ? 'answered' : 'waiting'}`}
             >
-              {p.name?.charAt(0)?.toUpperCase() || '?'}
+              {answered ? '✓' : (p.name?.charAt(0)?.toUpperCase() || '?')}
             </div>
           );
         })}

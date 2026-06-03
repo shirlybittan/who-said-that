@@ -2248,7 +2248,7 @@ function HostControlBar({ status, isRoomCreator, players, mlt, paused, votingDat
   const canStart = playingCount >= 3;
   const hasNextInQueue = gameQueue && gameQueue.length > 1 && queueIndex < gameQueue.length - 1;
   const pauseResumeBtn = (
-    <button onClick={onPauseResume} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FFE66D] text-[#FFE66D] bg-[#FFE66D]/10 hover:bg-[#FFE66D]/20 active:scale-95 transition">
+    <button aria-label={paused ? 'Resume game' : 'Pause game'} onClick={onPauseResume} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FFE66D] text-[#FFE66D] bg-[#FFE66D]/10 hover:bg-[#FFE66D]/20 active:scale-95 transition">
       {paused ? '▶ Resume' : '⏸ Pause'}
     </button>
   );
@@ -3395,7 +3395,6 @@ export default function HostPage() {
     sock.emit('change_game', { code, newGameType: nextGame.type });
     setPaused(false);
     setStatus('lobby');
-    setIsTransitioning(false);
   };
 
   const handleNewGame = () => {
