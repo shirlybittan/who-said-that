@@ -1,4 +1,4 @@
-const { calculateScores, selectMixedQuestions } = require('./gameLogic');
+const { calculateScores, selectMixedQuestions, upsertPlayerAnswer } = require('./gameLogic');
 
 describe('calculateScores', () => {
   it('should calculate scores correctly for multiple answers', () => {
@@ -52,5 +52,30 @@ describe('selectMixedQuestions', () => {
 
   it('returns an empty array when count is 0', () => {
     expect(selectMixedQuestions(0)).toEqual([]);
+  });
+});
+
+describe('upsertPlayerAnswer', () => {
+  it('allows updating a player answer before voting starts', () => {
+    const answers = [
+      { playerId: 'p1', playerName: 'A', text: 'old', votes: [] },
+      { playerId: 'p2', playerName: 'B', text: 'other', votes: [] },
+    ];
+    const updated = upsertPlayerAnswer(answers, { playerId: 'p1', playerName: 'A', text: 'new', votes: [] });
+    expect(updated).toHaveLength(2);
+    expect(updated.find(a => a.playerId === 'p1')?.text).toBe('new');
+  });
+
+  it('uses the updated answer text for subsequent scoring input', () => {
+    let answers = [{ playerId: 'author1', playerName: 'A', text: 'first draft', votes: [] }];
+    answers = upsertPlayerAnswer(answers, {
+      playerId: 'author1',
+      playerName: 'A',
+      text: 'final answer',
+      votes: [{ voterId: 'v1', votedForId: 'author1' }],
+    });
+    expect(answers[0].text).toBe('final answer');
+    const scores = calculateScores(answers, { v1: 0, author1: 0 }, 2);
+    expect(scores.v1).toBe(1);
   });
 });

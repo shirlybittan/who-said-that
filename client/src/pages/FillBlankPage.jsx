@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
@@ -6,25 +6,47 @@ import { useSounds } from '../hooks/useSounds';
 import VoteCoin from '../components/game/VoteCoin';
 import MiniGameWrapper from '../components/MiniGameWrapper.jsx';
 import { useMiniGameLifecycle } from '../hooks/useMiniGameLifecycle.js';
+import TimerRing from '../components/game/TimerRing.jsx';
 
 export default function FillBlankPage() {
   const { state, dispatch } = useGame();
   const fitb = state.fitb;
   const sounds = useSounds();
   const [answerText, setAnswerText] = useState('');
+  const [localSecondsLeft, setLocalSecondsLeft] = useState(90);
 
-  const doSubmitAnswer = () => {
+  const doSubmitAnswer = ({ allowEmpty = false } = {}) => {
     const trimmed = answerText.trim();
-    if (!trimmed) return;
+    const value = trimmed || (allowEmpty ? '🤷 Blanked out under pressure' : '');
+    if (!value) return;
     sounds.answer?.();
-    socket.emit('fitb:answer', { code: state.roomCode, text: trimmed });
-    dispatch({ type: 'FITB_MARK_ANSWERED', payload: { myAnswer: trimmed } });
+    socket.emit('fitb:answer', { code: state.roomCode, text: value });
+    dispatch({ type: 'FITB_MARK_ANSWERED', payload: { myAnswer: value } });
   };
 
-  const { hasConfirmed, confirm, editResponse } = useMiniGameLifecycle({
+  const { hasConfirmed, confirm, editResponse, markConfirmed } = useMiniGameLifecycle({
     onSubmit: doSubmitAnswer,
     resetKey: fitb.question,
   });
+  const secondsLeft = typeof fitb.secondsLeft === 'number' ? fitb.secondsLeft : localSecondsLeft;
+
+  useEffect(() => {
+    if (fitb.phase !== 'answering') return;
+    setLocalSecondsLeft(90);
+  }, [fitb.phase, fitb.question]);
+
+  useEffect(() => {
+    if (fitb.phase !== 'answering' || typeof fitb.secondsLeft === 'number') return undefined;
+    if (secondsLeft <= 0) return undefined;
+    const timer = setInterval(() => setLocalSecondsLeft((prev) => Math.max(0, prev - 1)), 1000);
+    return () => clearInterval(timer);
+  }, [fitb.phase, fitb.secondsLeft, secondsLeft]);
+
+  useEffect(() => {
+    if (fitb.phase !== 'answering' || !state.isPlaying || hasConfirmed || secondsLeft > 0) return;
+    doSubmitAnswer({ allowEmpty: true });
+    markConfirmed();
+  }, [fitb.phase, state.isPlaying, hasConfirmed, secondsLeft, markConfirmed]);
 
   const handleVote = (id) => {
     if (fitb.hasVoted) return;
@@ -63,6 +85,9 @@ export default function FillBlankPage() {
         <div className="w-full max-w-md mt-6 mb-4 flex items-center justify-between text-sm text-gray-500 font-['Nunito']">
           <span>Round {fitb.round} / {fitb.totalRounds}</span>
           <span className="text-[#4ECDC4]">Fill in the Blank</span>
+        </div>
+        <div className="mb-4">
+          <TimerRing secondsLeft={secondsLeft} total={90} size={98} />
         </div>
 
         <div className="w-full max-w-md bg-[#1A1A2E] rounded-2xl border-2 border-[#4ECDC4]/40 p-6 mb-6">

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
@@ -9,13 +9,21 @@ export default function SelfieVotePage() {
   const { state, dispatch } = useGame();
   const selfie = state.selfie;
   const sounds = useSounds();
+  const [pendingVote, setPendingVote] = useState(null);
 
-  const handleVote = (drawerId) => {
+  const handleSelectVote = (drawerId) => {
     if (selfie.hasVoted) return;
     if (drawerId === state.playerId) return;
+    sounds.click?.();
+    setPendingVote(drawerId);
+  };
+
+  const handleConfirmVote = () => {
+    if (!pendingVote || selfie.hasVoted) return;
     sounds.vote?.();
-    socket.emit('selfie:vote', { code: state.roomCode, drawerId });
-    dispatch({ type: 'SELFIE_MARK_VOTED', payload: { drawerId } });
+    socket.emit('selfie:vote', { code: state.roomCode, drawerId: pendingVote });
+    dispatch({ type: 'SELFIE_MARK_VOTED', payload: { drawerId: pendingVote } });
+    setPendingVote(null);
   };
 
   const handleShowResults = () => {
@@ -55,7 +63,7 @@ export default function SelfieVotePage() {
                 ${selected ? 'border-[#FF6B6B] bg-[#FF6B6B]/10' : 'border-[#2D2D44] bg-[#1A1A2E]'}
                 ${!selfie.hasVoted && !isOwn ? 'cursor-pointer hover:border-[#FF6B6B]/60' : ''}
                 ${isOwn ? 'opacity-60' : ''}`}
-              onClick={() => !selfie.hasVoted && !isOwn && handleVote(sub.drawerId)}
+            onClick={() => !selfie.hasVoted && !isOwn && handleSelectVote(sub.drawerId)}
             >
               <ReplayCanvas photoData={sub.photoData} strokes={sub.strokes} cssWidth="100%" className="rounded-xl overflow-hidden" />
               {sub.prompt && (
@@ -74,6 +82,23 @@ export default function SelfieVotePage() {
           );
         })}
       </motion.div>
+
+      {!selfie.hasVoted && pendingVote && (
+        <div className="w-full max-w-md flex gap-2 mb-2">
+          <button
+            onClick={() => setPendingVote(null)}
+            className="flex-1 py-2 rounded-xl border border-gray-600 text-gray-300 hover:text-white hover:border-gray-300 transition"
+          >
+            ← Change
+          </button>
+          <button
+            onClick={handleConfirmVote}
+            className="flex-1 py-2 rounded-xl border border-[#4ECDC4] text-[#4ECDC4] bg-[#4ECDC4]/10 hover:bg-[#4ECDC4]/20 transition"
+          >
+            Confirm Vote ✓
+          </button>
+        </div>
+      )}
 
       {selfie.hasVoted && (
         <p className="text-gray-400 font-['Nunito'] text-sm">

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
@@ -8,14 +8,22 @@ export default function PhotoVotePage() {
   const { state, dispatch } = useGame();
   const pv = state.photoVote;
   const sounds = useSounds();
+  const [pendingVote, setPendingVote] = useState(null);
 
   const modeColor = pv.subType === 'photoassoc' ? '#A29BFE' : '#FDCB6E';
 
-  const handleVote = (targetPlayerId) => {
+  const handleSelectVote = (targetPlayerId) => {
     if (pv.hasVoted || targetPlayerId === state.playerId) return;
+    sounds.click?.();
+    setPendingVote(targetPlayerId);
+  };
+
+  const handleConfirmVote = () => {
+    if (pv.hasVoted || !pendingVote) return;
     sounds.vote?.();
-    socket.emit('photovote:vote', { code: state.roomCode, targetPlayerId });
-    dispatch({ type: 'PHOTOVOTE_MARK_VOTED', payload: { targetPlayerId } });
+    socket.emit('photovote:vote', { code: state.roomCode, targetPlayerId: pendingVote });
+    dispatch({ type: 'PHOTOVOTE_MARK_VOTED', payload: { targetPlayerId: pendingVote } });
+    setPendingVote(null);
   };
 
   return (
@@ -29,13 +37,13 @@ export default function PhotoVotePage() {
       <div className="grid grid-cols-2 gap-3 w-full max-w-sm">
         {(pv.photos || []).map((photo) => {
           const isMe = photo.playerId === state.playerId;
-          const isVoted = pv.myVote === photo.playerId;
+          const isVoted = pv.myVote === photo.playerId || (!pv.hasVoted && pendingVote === photo.playerId);
           const isDimmed = pv.hasVoted && !isVoted;
 
           return (
             <button
               key={photo.playerId}
-              onClick={() => handleVote(photo.playerId)}
+              onClick={() => handleSelectVote(photo.playerId)}
               disabled={pv.hasVoted || isMe}
               className={`relative flex flex-col items-center rounded-2xl overflow-hidden border-2 transition-all ${
                 isVoted
@@ -63,6 +71,23 @@ export default function PhotoVotePage() {
           );
         })}
       </div>
+
+      {!pv.hasVoted && pendingVote && (
+        <div className="w-full max-w-sm flex gap-2 mt-4">
+          <button
+            onClick={() => setPendingVote(null)}
+            className="flex-1 py-2 rounded-xl border border-gray-600 text-gray-300 hover:text-white hover:border-gray-300 transition"
+          >
+            ← Change
+          </button>
+          <button
+            onClick={handleConfirmVote}
+            className="flex-1 py-2 rounded-xl border border-[#4ECDC4] text-[#4ECDC4] bg-[#4ECDC4]/10 hover:bg-[#4ECDC4]/20 transition"
+          >
+            Confirm Vote ✓
+          </button>
+        </div>
+      )}
 
       {pv.hasVoted && (
         <p className="text-gray-500 font-['Nunito'] text-sm mt-5">

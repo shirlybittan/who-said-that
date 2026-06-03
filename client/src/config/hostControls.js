@@ -52,12 +52,14 @@ export function buildHostControls({
   mlt = {},
   votingData = {},
   fitbData = {},
+  paused = false,
   gameQueue = [],
   queueIndex = 0,
   handlers = {},
 }) {
   const {
     onStart,
+    onPauseResume,
     onMltPauseResume,
     onMltChangeQuestion,
     onMltNext,
@@ -88,6 +90,7 @@ export function buildHostControls({
     onClick: onSkipMiniGame,
     color: '#FF8B94',
   };
+  const pauseBtn = { label: paused ? '▶ Resume' : '⏸ Pause', onClick: onPauseResume, color: '#FFE66D' };
 
   const hasNextInQueue = gameQueue.length > 1 && queueIndex < gameQueue.length - 1;
   const nextGame = hasNextInQueue ? gameQueue[queueIndex + 1] : null;
@@ -105,6 +108,7 @@ export function buildHostControls({
         disabled: !canStart,
         color: '#4ECDC4',
       },
+      ...(hasNextInQueue ? [skipBtn] : []),
     ],
 
     'mlt-voting': [
@@ -119,11 +123,13 @@ export function buildHostControls({
     ],
 
     question: [
+      pauseBtn,
       { label: '⏭ Skip Question', onClick: onSkipQuestion, color: '#FFE66D' },
       skipBtn,
     ],
 
     'sit-voting': [
+      pauseBtn,
       { label: '⏭ Skip Question', onClick: onSkipQuestion, color: '#FFE66D' },
       skipBtn,
     ],
@@ -144,6 +150,7 @@ export function buildHostControls({
     ],
 
     voting: [
+      pauseBtn,
       { label: '⏭ Skip Question', onClick: onSkipQuestion, color: '#FFE66D' },
       {
         label: votingData?.allVotesIn ? 'Next Answer →' : '⏳ Waiting for votes...',
@@ -156,6 +163,7 @@ export function buildHostControls({
     ],
 
     drawing: [
+      pauseBtn,
       { label: '🔄 New Word', onClick: onDrawNewWord, color: '#FFE66D' },
       skipBtn,
     ],
@@ -172,12 +180,14 @@ export function buildHostControls({
 
     // fitb sub-phases embedded under the 'fitb' key (special handling in component)
     'fitb-answering': [
+      pauseBtn,
       { label: '🔄 Change Question', onClick: onFitbChangeQuestion, color: '#F9CA24' },
       { label: '⏭ Skip to Vote', onClick: onFitbSkipToVote, color: '#FFE66D' },
       skipBtn,
     ],
 
     'fitb-voting': [
+      pauseBtn,
       { label: '🏆 Show Results', onClick: onFitbShowResults, color: '#F9CA24' },
       skipBtn,
     ],
@@ -187,18 +197,25 @@ export function buildHostControls({
       skipBtn,
     ],
 
-    caption: [skipBtn],
-    photovote: [skipBtn],
+    caption: [pauseBtn, skipBtn],
+    photovote: [pauseBtn, skipBtn],
 
     selfie: [
+      pauseBtn,
       { label: '🔄 Change Question', onClick: onSelfieSkipQuestion, color: '#FD79A8' },
       skipBtn,
     ],
 
     'selfie-vote': [
+      pauseBtn,
       { label: '🏆 Show Results', onClick: onShowSelfieResults, color: '#FD79A8' },
       skipBtn,
     ],
+    'dt-selfie': [pauseBtn, skipBtn],
+    'dt-prompting': [pauseBtn, skipBtn],
+    'dt-drawing': [pauseBtn, skipBtn],
+    'dt-guessing': [pauseBtn, skipBtn],
+    'dt-reveal': [pauseBtn, skipBtn],
 
     'selfie-round-results': [
       { label: 'Next Round →', onClick: onSelfieNextRound, primary: true, color: '#FD79A8' },

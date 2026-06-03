@@ -68,6 +68,7 @@ const createRoom = (socketId, playerName = 'Host', gameType = 'most-likely-to', 
     players: [player],
     usedQuestionIds: [],
     timer: null,
+    paused: false,
     answerTimerRef: null,
     globalScores: {},
     roomConfig: {

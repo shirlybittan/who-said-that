@@ -352,6 +352,9 @@ export const useSocket = () => {
     const onFitbAnswerReceived = (data) => {
       dispatch({ type: 'FITB_ANSWER_RECEIVED', payload: data });
     };
+    const onFitbTimer = (data) => {
+      dispatch({ type: 'FITB_TIMER', payload: data });
+    };
 
     const onFitbVotingStarted = (data) => {
       dispatch({ type: 'FITB_VOTING_STARTED', payload: data });
@@ -441,6 +444,9 @@ export const useSocket = () => {
     };
     const onCaptionCaptionSubmitted = (data) => {
       dispatch({ type: 'CAPTION_CAPTION_SUBMITTED', payload: data });
+    };
+    const onCaptionTimer = (data) => {
+      dispatch({ type: 'CAPTION_TIMER', payload: data });
     };
     const onCaptionVotingPhase = (data) => {
       dispatch({ type: 'CAPTION_VOTING_PHASE', payload: data });
@@ -548,6 +554,7 @@ export const useSocket = () => {
     socket.on('draw:secret_word', onDrawSecretWord);
     socket.on('draw:word_changed', onDrawWordChanged);
     socket.on('fitb:round_start', onFitbRoundStart);
+    socket.on('fitb:timer', onFitbTimer);
     socket.on('fitb:answer_received', onFitbAnswerReceived);
     socket.on('fitb:voting_started', onFitbVotingStarted);
     socket.on('fitb:vote_received', onFitbVoteReceived);
@@ -568,6 +575,7 @@ export const useSocket = () => {
     socket.on('caption:photo_phase', onCaptionPhotoPhase);
     socket.on('caption:photo_submitted', onCaptionPhotoSubmitted);
     socket.on('caption:writing_phase', onCaptionWritingPhase);
+    socket.on('caption:timer', onCaptionTimer);
     socket.on('caption:caption_submitted', onCaptionCaptionSubmitted);
     socket.on('caption:voting_phase', onCaptionVotingPhase);
     socket.on('caption:your_caption_id', onCaptionYourCaptionId);
@@ -733,6 +741,7 @@ export const useSocket = () => {
       socket.off('draw:secret_word', onDrawSecretWord);
       socket.off('draw:word_changed', onDrawWordChanged);
       socket.off('fitb:round_start', onFitbRoundStart);
+      socket.off('fitb:timer', onFitbTimer);
       socket.off('fitb:answer_received', onFitbAnswerReceived);
       socket.off('fitb:voting_started', onFitbVotingStarted);
       socket.off('fitb:vote_received', onFitbVoteReceived);
@@ -753,6 +762,7 @@ export const useSocket = () => {
       socket.off('caption:photo_phase', onCaptionPhotoPhase);
       socket.off('caption:photo_submitted', onCaptionPhotoSubmitted);
       socket.off('caption:writing_phase', onCaptionWritingPhase);
+      socket.off('caption:timer', onCaptionTimer);
       socket.off('caption:caption_submitted', onCaptionCaptionSubmitted);
       socket.off('caption:voting_phase', onCaptionVotingPhase);
       socket.off('caption:your_caption_id', onCaptionYourCaptionId);

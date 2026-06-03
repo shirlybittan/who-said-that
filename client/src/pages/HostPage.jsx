@@ -2241,26 +2241,39 @@ function CreateRoomForm({ onSubmit, onBack }) {
 // ─── Host control bar (creator only) ─────────────────────────────────────────
 // QUEUE_GAME_LABELS imported from '../config/hostControls'
 
-function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbData, photoVoteData, captionData, isMixedMode, onStart, onMltPauseResume, onMltChangeQuestion, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, onNewGame, onPlayAgain, onNewPartyPack, gameQueue, queueIndex, onSelfieNextRound, onSelfieSkipQuestion, onShowSelfieResults, onFitbChangeQuestion, onFitbSkipToVote, onFitbShowResults, onFitbNextRound, onPhotoVoteChangeQuestion, onPhotoVoteSkipToResults, onPhotoVoteNextRound, onCaptionChangeQuestion, onCaptionSkipToVoting, onCaptionSkipToResults, onCaptionNextRound }) {
+function HostControlBar({ status, isRoomCreator, players, mlt, paused, votingData, fitbData, photoVoteData, captionData, isMixedMode, onStart, onPauseResume, onMltPauseResume, onMltChangeQuestion, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, onNewGame, onPlayAgain, onNewPartyPack, gameQueue, queueIndex, onSelfieNextRound, onSelfieSkipQuestion, onShowSelfieResults, onFitbChangeQuestion, onFitbSkipToVote, onFitbShowResults, onFitbNextRound, onPhotoVoteChangeQuestion, onPhotoVoteSkipToResults, onPhotoVoteNextRound, onCaptionChangeQuestion, onCaptionSkipToVoting, onCaptionSkipToResults, onCaptionNextRound }) {
   if (!isRoomCreator) return null;
 
   const playingCount = players.filter(p => p.isPlaying && p.isConnected).length;
   const canStart = playingCount >= 3;
+  const hasNextInQueue = gameQueue && gameQueue.length > 1 && queueIndex < gameQueue.length - 1;
+  const pauseResumeBtn = (
+    <button onClick={onPauseResume} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FFE66D] text-[#FFE66D] bg-[#FFE66D]/10 hover:bg-[#FFE66D]/20 active:scale-95 transition">
+      {paused ? '▶ Resume' : '⏸ Pause'}
+    </button>
+  );
 
   let controls = null;
 
   if (status === 'lobby') {
     controls = (
-      <button
-        onClick={onStart}
-        disabled={!canStart}
-        className={`px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl transition ${canStart
-          ? 'bg-[#4ECDC4] text-black hover:bg-[#3dbdb5] active:scale-95'
-          : 'bg-[#2D2D44] text-gray-500 cursor-not-allowed'}`}
-        style={canStart ? { boxShadow: '0 0 20px #4ECDC460' } : {}}
-      >
-        {canStart ? '▶ Start Game' : `⏳ Need ${3 - playingCount} more player${3 - playingCount !== 1 ? 's' : ''}`}
-      </button>
+      <div className="flex gap-3">
+        <button
+          onClick={onStart}
+          disabled={!canStart}
+          className={`px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl transition ${canStart
+            ? 'bg-[#4ECDC4] text-black hover:bg-[#3dbdb5] active:scale-95'
+            : 'bg-[#2D2D44] text-gray-500 cursor-not-allowed'}`}
+          style={canStart ? { boxShadow: '0 0 20px #4ECDC460' } : {}}
+        >
+          {canStart ? '▶ Start Game' : `⏳ Need ${3 - playingCount} more player${3 - playingCount !== 1 ? 's' : ''}`}
+        </button>
+        {hasNextInQueue && (
+          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+            🔀 Skip Mini Game
+          </button>
+        )}
+      </div>
     );
   } else if (status === 'mlt-voting') {
     controls = (
@@ -2290,6 +2303,7 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
   } else if (status === 'question') {
     controls = (
       <div className="flex gap-3">
+        {pauseResumeBtn}
         <button onClick={onSkipQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FFE66D] hover:text-[#FFE66D] active:scale-95 transition">
           ⏭ Skip Question
         </button>
@@ -2301,6 +2315,7 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
   } else if (status === 'sit-voting') {
     controls = (
       <div className="flex gap-3">
+        {pauseResumeBtn}
         <button onClick={onSkipQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FFE66D] hover:text-[#FFE66D] active:scale-95 transition">
           ⏭ Skip Question
         </button>
@@ -2345,6 +2360,7 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
   } else if (status === 'voting') {
     controls = (
       <div className="flex gap-3">
+        {pauseResumeBtn}
         <button onClick={onSkipQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FFE66D] hover:text-[#FFE66D] active:scale-95 transition">
           ⏭ Skip Question
         </button>
@@ -2364,6 +2380,7 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
   } else if (status === 'drawing') {
     controls = (
       <div className="flex gap-3">
+        {pauseResumeBtn}
         <button onClick={onDrawNewWord} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FFE66D] hover:text-[#FFE66D] active:scale-95 transition">
           🔄 New Word
         </button>
@@ -2399,6 +2416,7 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
     if (fitbPhase === 'answering') {
       controls = (
         <div className="flex gap-3">
+          {pauseResumeBtn}
           <button onClick={onFitbChangeQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#F9CA24] hover:text-[#F9CA24] active:scale-95 transition">
             🔄 Change Question
           </button>
@@ -2413,6 +2431,7 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
     } else if (fitbPhase === 'voting') {
       controls = (
         <div className="flex gap-3">
+          {pauseResumeBtn}
           <button onClick={onFitbShowResults} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#F9CA24] text-[#F9CA24] hover:bg-[#F9CA24]/10 active:scale-95 transition">
             🏆 Show Results
           </button>
@@ -2438,6 +2457,7 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
     if (capPhase === 'writing') {
       controls = (
         <div className="flex gap-3">
+          {pauseResumeBtn}
           <button onClick={onCaptionChangeQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FD79A8] hover:text-[#FD79A8] active:scale-95 transition">
             🔄 Change Question
           </button>
@@ -2452,6 +2472,7 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
     } else if (capPhase === 'voting') {
       controls = (
         <div className="flex gap-3">
+          {pauseResumeBtn}
           <button onClick={onCaptionSkipToResults} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FFE66D] hover:text-[#FFE66D] active:scale-95 transition">
             🏆 Show Results
           </button>
@@ -2474,6 +2495,7 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
     } else {
       controls = (
         <div className="flex gap-3">
+          {pauseResumeBtn}
           <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
             🔀 Skip Mini Game
           </button>
@@ -2485,6 +2507,7 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
     if (pvPhase === 'voting') {
       controls = (
         <div className="flex gap-3">
+          {pauseResumeBtn}
           <button onClick={onPhotoVoteChangeQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FDCB6E] hover:text-[#FDCB6E] active:scale-95 transition">
             🔄 Change Question
           </button>
@@ -2518,6 +2541,7 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
     } else {
       controls = (
         <div className="flex gap-3">
+          {pauseResumeBtn}
           <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
             🔀 Skip Mini Game
           </button>
@@ -2527,6 +2551,7 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
   } else if (status === 'selfie') {
     controls = (
       <div className="flex gap-3">
+        {pauseResumeBtn}
         <button onClick={onSelfieSkipQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FD79A8] hover:text-[#FD79A8] active:scale-95 transition">
           🔄 Change Question
         </button>
@@ -2538,6 +2563,7 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
   } else if (status === 'selfie-vote') {
     controls = (
       <div className="flex gap-3">
+        {pauseResumeBtn}
         <button onClick={onShowSelfieResults} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FD79A8] text-[#FD79A8] hover:bg-[#FD79A8]/10 active:scale-95 transition">
           🏆 Show Results
         </button>
@@ -2557,8 +2583,16 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
         </button>
       </div>
     );
+  } else if (status === 'dt-selfie' || status === 'dt-prompting' || status === 'dt-drawing' || status === 'dt-guessing' || status === 'dt-reveal') {
+    controls = (
+      <div className="flex gap-3">
+        {pauseResumeBtn}
+        <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+          🔀 Skip Mini Game
+        </button>
+      </div>
+    );
   } else if (status === 'game-end' || status === 'mlt-end' || status === 'tot-end' || status === 'draw-end' || status === 'fitb-end' || status === 'selfie-results') {
-    const hasNextInQueue = gameQueue && gameQueue.length > 1 && queueIndex < gameQueue.length - 1;
     const nextGame = hasNextInQueue ? gameQueue[queueIndex + 1] : null;
     controls = (
       <div className="flex gap-3 flex-wrap justify-center">
@@ -2687,6 +2721,7 @@ export default function HostPage() {
 
   // Transition blocker to prevent double clicks skipping logic
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [paused, setPaused] = useState(false);
 
   // Change Game picker overlay
   const [showGamePicker, setShowGamePicker] = useState(false);
@@ -2725,8 +2760,16 @@ export default function HostPage() {
 
     sock.on('mlt:timer', ({ secondsLeft }) => setMlt(prev => ({ ...prev, secondsLeft })));
     sock.on('mlt:question_changed', (data) => setMlt(prev => ({ ...prev, currentPrompt: data.currentPrompt })));
-    sock.on('mlt:paused', () => setMlt(prev => ({ ...prev, paused: true })));
-    sock.on('mlt:resumed', ({ secondsLeft }) => setMlt(prev => ({ ...prev, paused: false, secondsLeft })));
+    sock.on('mlt:paused', () => {
+      setPaused(true);
+      setMlt(prev => ({ ...prev, paused: true }));
+    });
+    sock.on('mlt:resumed', ({ secondsLeft }) => {
+      setPaused(false);
+      setMlt(prev => ({ ...prev, paused: false, secondsLeft }));
+    });
+    sock.on('game_paused', () => setPaused(true));
+    sock.on('game_resumed', () => setPaused(false));
     sock.on('mlt:vote_received', ({ voteCount, totalVoters, votedPlayerIds }) => setMlt(prev => ({ ...prev, voteCount, totalVoters, votedPlayerIds: votedPlayerIds || prev.votedPlayerIds })));
 
     sock.on('mlt:results', (data) => {
@@ -3120,6 +3163,8 @@ export default function HostPage() {
       setGameInfo(prev => ({ ...prev, gameType: gameType || prev.gameType, gameName: gameName || prev.gameName }));
       setPlayers(p || []);
       setCreatorSettings(prev => ({ ...prev, gameType: gameType || prev.gameType }));
+      setPaused(false);
+      setIsTransitioning(false);
       setStatus('lobby');
     });
 
@@ -3293,6 +3338,9 @@ export default function HostPage() {
     if (mlt.paused) sock.emit('mlt:resume', { code: gameInfo.code });
     else sock.emit('mlt:pause', { code: gameInfo.code });
   };
+  const handlePauseResume = () => {
+    socketRef.current?.emit('toggle_pause', { code: gameInfo.code });
+  };
 
   // "Change Question" in MLT replaces the current round's prompt without advancing the round counter
   const handleMltChangeQuestion = () => socketRef.current?.emit('mlt:change_question', { code: gameInfo.code });
@@ -3344,24 +3392,10 @@ export default function HostPage() {
     const nextMode = nextGame.mode || 'classic';
     setCreatorSettings({ gameType: nextGame.type, rounds: nextRounds, drawMode: nextMode });
     setGameInfo(prev => ({ ...prev, gameType: nextGame.type }));
-    // First explicitly switch the game type on the server
     sock.emit('change_game', { code, newGameType: nextGame.type });
-
-    // Then start the next game directly — server start handlers cancel previous timers and setup state
-    const t = nextGame.type;
-    setTimeout(() => {
-      if (t === 'most-likely-to') sock.emit('mlt:start', { code, rounds: nextRounds, allowSelfVote: true });
-      else if (t === 'drawing') sock.emit('draw:start', { code, rounds: nextRounds, mode: nextMode });
-      else if (t === 'fill-in-the-blank') sock.emit('fitb:start', { code, rounds: nextRounds });
-      else if (t === 'selfie-roast') sock.emit('selfie:start', { code, rounds: nextRounds });
-      else if (t === 'caption') sock.emit('caption:start', { code, rounds: nextRounds });
-      else if (t === 'pmatch') sock.emit('photovote:start', { code, subType: 'pmatch', rounds: nextRounds });
-      else if (t === 'photoassoc') sock.emit('photovote:start', { code, subType: 'photoassoc', rounds: nextRounds });
-      else if (t === 'draw-telephone') sock.emit('dt:start', { code });
-      else sock.emit('start_game', { code });
-      
-      setIsTransitioning(false);
-    }, 200); // 200ms delay to ensure clients process game_changed before the start states
+    setPaused(false);
+    setStatus('lobby');
+    setIsTransitioning(false);
   };
 
   const handleNewGame = () => {
@@ -3710,9 +3744,11 @@ export default function HostPage() {
         isRoomCreator={isRoomCreator}
         players={players}
         mlt={mlt}
+        paused={paused}
         votingData={votingData}
         fitbData={fitbData}
         onStart={handleStartGame}
+        onPauseResume={handlePauseResume}
         onMltPauseResume={handleMltPauseResume}
         onMltChangeQuestion={handleMltChangeQuestion}
         onMltSkip={handleMltSkip}
@@ -3755,6 +3791,3 @@ export default function HostPage() {
     </div>
   );
 }
-
-
-

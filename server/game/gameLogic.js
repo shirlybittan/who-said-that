@@ -88,6 +88,16 @@ const shuffleAnswers = (answers) => {
   return shuffle([...answers]);
 };
 
+const upsertPlayerAnswer = (answers, nextAnswer) => {
+  const idx = answers.findIndex(a => a.playerId === nextAnswer.playerId);
+  if (idx >= 0) {
+    const updated = [...answers];
+    updated[idx] = { ...updated[idx], ...nextAnswer };
+    return updated;
+  }
+  return [...answers, nextAnswer];
+};
+
 const calculateScores = (answers, currentScores, numPlayers) => {
   const newScores = { ...currentScores };
   
@@ -139,6 +149,7 @@ module.exports = {
   selectDrawingQuestion,
   selectMixedQuestions,
   shuffleAnswers,
+  upsertPlayerAnswer,
   calculateScores,
   computeStats
 };

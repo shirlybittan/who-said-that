@@ -1,33 +1,57 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
 import MiniGameWrapper from '../components/MiniGameWrapper.jsx';
 import { useMiniGameLifecycle } from '../hooks/useMiniGameLifecycle.js';
+import TimerRing from '../components/game/TimerRing.jsx';
 
 export default function CaptionWritePage() {
   const { state, dispatch } = useGame();
   const caption = state.caption;
   const sounds = useSounds();
   const [text, setText] = useState('');
+  const [localSecondsLeft, setLocalSecondsLeft] = useState(90);
   const MAX_LEN = 140;
 
-  const doSubmit = () => {
+  const doSubmit = ({ allowEmpty = false } = {}) => {
     const trimmed = text.trim();
-    if (!trimmed) return;
+    const value = trimmed || (allowEmpty ? '🤐 No caption from me this round' : '');
+    if (!value) return;
     sounds.answer?.();
-    socket.emit('caption:submit_caption', { code: state.roomCode, text: trimmed });
+    socket.emit('caption:submit_caption', { code: state.roomCode, text: value });
     // Only mark as written on initial submission; updates don't change the flag
     if (!caption.hasWrittenCaption) {
       dispatch({ type: 'CAPTION_MARK_CAPTION_WRITTEN' });
     }
   };
 
-  const { hasConfirmed, confirm, editResponse } = useMiniGameLifecycle({
+  const { hasConfirmed, confirm, editResponse, markConfirmed } = useMiniGameLifecycle({
     onSubmit: doSubmit,
     resetKey: caption.round,
   });
+  const secondsLeft = typeof caption.secondsLeft === 'number' ? caption.secondsLeft : localSecondsLeft;
+  const writerPlayers = (state.players || []).filter(
+    (p) => p.isPlaying && p.isConnected && p.id !== caption.featuredOwnerId
+  );
+
+  useEffect(() => {
+    setLocalSecondsLeft(90);
+  }, [caption.round, caption.phase]);
+
+  useEffect(() => {
+    if (typeof caption.secondsLeft === 'number') return undefined;
+    if (secondsLeft <= 0) return undefined;
+    const timer = setInterval(() => setLocalSecondsLeft((prev) => Math.max(0, prev - 1)), 1000);
+    return () => clearInterval(timer);
+  }, [caption.secondsLeft, secondsLeft]);
+
+  useEffect(() => {
+    if (!state.isPlaying || hasConfirmed || secondsLeft > 0) return;
+    doSubmit({ allowEmpty: true });
+    markConfirmed();
+  }, [state.isPlaying, hasConfirmed, secondsLeft, markConfirmed]);
 
   return (
     <motion.div
@@ -38,6 +62,9 @@ export default function CaptionWritePage() {
       <p className="text-gray-400 font-['Nunito'] text-sm text-center mb-4">
         Round {caption.round} of {caption.totalRounds}
       </p>
+      <div className="mb-4">
+        <TimerRing secondsLeft={secondsLeft} total={90} size={104} />
+      </div>
 
       {caption.featuredPhotoData && (
         <img
@@ -74,6 +101,21 @@ export default function CaptionWritePage() {
           </div>
         </div>
       </MiniGameWrapper>
+      <div className="w-full max-w-md mt-5 flex flex-wrap justify-center gap-2">
+        {writerPlayers.map((p) => {
+          const answered = (caption.captionSubmittedPlayerIds || []).includes(p.id);
+          return (
+            <div
+              key={p.id}
+              className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-['Fredoka_One'] border ${answered ? 'border-[#4ECDC4] text-white' : 'border-[#2D2D44] text-gray-500'}`}
+              style={{ backgroundColor: answered ? p.color : '#1A1A2E' }}
+              title={`${p.name} — ${answered ? 'answered' : 'waiting'}`}
+            >
+              {p.name?.charAt(0)?.toUpperCase() || '?'}
+            </div>
+          );
+        })}
+      </div>
     </motion.div>
   );
 }

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
@@ -8,13 +8,21 @@ export default function CaptionVotePage() {
   const { state, dispatch } = useGame();
   const caption = state.caption;
   const sounds = useSounds();
+  const [pendingVote, setPendingVote] = useState(null);
 
-  const handleVote = (captionId) => {
+  const handleSelectVote = (captionId) => {
     if (caption.hasVoted) return;
     if (captionId === caption.myOwnCaptionId) return; // can't vote for own caption
+    sounds.click?.();
+    setPendingVote(captionId);
+  };
+
+  const handleConfirmVote = () => {
+    if (!pendingVote || caption.hasVoted) return;
     sounds.vote?.();
-    socket.emit('caption:vote', { code: state.roomCode, captionId });
-    dispatch({ type: 'CAPTION_MARK_VOTED', payload: { captionId } });
+    socket.emit('caption:vote', { code: state.roomCode, captionId: pendingVote });
+    dispatch({ type: 'CAPTION_MARK_VOTED', payload: { captionId: pendingVote } });
+    setPendingVote(null);
   };
 
   return (
@@ -42,9 +50,13 @@ export default function CaptionVotePage() {
             return (
               <button
                 key={c.id}
-                onClick={() => handleVote(c.id)}
+                onClick={() => handleSelectVote(c.id)}
                 disabled={isOwn}
                 className={`w-full py-4 px-5 rounded-2xl border font-['Nunito'] text-base text-left transition-colors ${
+                  pendingVote === c.id
+                    ? 'border-[#4ECDC4] bg-[#4ECDC4]/15 text-white'
+                    : ''
+                } ${
                   isOwn
                     ? 'border-gray-700 bg-[#1A1A2E]/50 text-gray-500 cursor-not-allowed'
                     : 'bg-[#1A1A2E] border-gray-600 text-white hover:border-[#FD79A8] hover:bg-[#FD79A8]/10'
@@ -55,6 +67,22 @@ export default function CaptionVotePage() {
               </button>
             );
           })}
+          {pendingVote && (
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={() => setPendingVote(null)}
+                className="flex-1 py-2 rounded-xl border border-gray-600 text-gray-300 hover:text-white hover:border-gray-300 transition"
+              >
+                ← Change
+              </button>
+              <button
+                onClick={handleConfirmVote}
+                className="flex-1 py-2 rounded-xl border border-[#4ECDC4] text-[#4ECDC4] bg-[#4ECDC4]/10 hover:bg-[#4ECDC4]/20 transition"
+              >
+                Confirm Vote ✓
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         <div className="w-full max-w-sm flex flex-col gap-3">

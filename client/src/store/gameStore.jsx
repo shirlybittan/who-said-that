@@ -106,6 +106,7 @@ const initialState = {
     totalAnswerers: 0,
     voteCount: 0,
     totalVoters: 0,
+    secondsLeft: null,
     scores: {},
     leaderboard: [],
   },
@@ -181,6 +182,7 @@ const initialState = {
     totalPhotographers: 0,
     captionSubmittedCount: 0,
     totalWriters: 0,
+    secondsLeft: null,
     voteCount: 0,
     totalVoters: 0,
     scores: {},
@@ -573,6 +575,7 @@ export const gameReducer = (state, action) => {
           totalAnswerers: (action.payload.players || state.fitb.players).length,
           voteCount: 0,
           totalVoters: 0,
+          secondsLeft: action.payload.secondsLeft ?? null,
         },
       };
     case 'FITB_ANSWER_RECEIVED':
@@ -584,6 +587,11 @@ export const gameReducer = (state, action) => {
       return {
         ...state,
         fitb: { ...state.fitb, hasAnswered: true, myAnswer: action.payload.myAnswer },
+      };
+    case 'FITB_TIMER':
+      return {
+        ...state,
+        fitb: { ...state.fitb, secondsLeft: action.payload.secondsLeft },
       };
     case 'FITB_VOTING_STARTED':
       return {
@@ -597,6 +605,7 @@ export const gameReducer = (state, action) => {
           hasVoted: false,
           myVote: null,
           voteCount: 0,
+          secondsLeft: null,
         },
       };
     case 'FITB_VOTE_RECEIVED':
@@ -925,6 +934,7 @@ export const gameReducer = (state, action) => {
           captionSubmittedCount: 0,
           captionSubmittedPlayerIds: [],
           hasWrittenCaption: false,
+          secondsLeft: action.payload.secondsLeft ?? null,
         },
       };
     case 'CAPTION_CAPTION_SUBMITTED': {
@@ -941,6 +951,11 @@ export const gameReducer = (state, action) => {
         },
       };
     }
+    case 'CAPTION_TIMER':
+      return {
+        ...state,
+        caption: { ...state.caption, secondsLeft: action.payload.secondsLeft },
+      };
     case 'CAPTION_MARK_CAPTION_WRITTEN':
       return { ...state, caption: { ...state.caption, hasWrittenCaption: true } };
     case 'CAPTION_VOTING_PHASE':
