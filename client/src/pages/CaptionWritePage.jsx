@@ -10,7 +10,7 @@ export default function CaptionWritePage() {
   const { state, dispatch } = useGame();
   const caption = state.caption;
   const sounds = useSounds();
-  const [text, setText] = useState('');
+  const [text, setText] = useState(caption.myCaption || '');
   const MAX_LEN = 140;
 
   const doSubmit = () => {

@@ -537,6 +537,11 @@ function VotingPanel({ votingData, players }) {
           </p>
         </div>
         <ProgressBar value={votingData.voteCount} total={votingData.totalPlayers} color="#6C5CE7" />
+        <div className="flex flex-wrap gap-3 justify-center mt-4">
+          {activePlayers.map(p => (
+            <PlayerAvatar key={p.id} player={p} size="sm" status={votingData.votedPlayerIds?.includes(p.id) ? 'voted' : 'waiting'} />
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -800,12 +805,11 @@ function SitPanel({ sitData, players }) {
           total={sitData.totalVoters || activePlayers.length}
           color="#A8E6CF"
         />
-      </div>
-      <div className="flex flex-wrap gap-4 justify-center">
-        {activePlayers.map(p => (
-          <PlayerAvatar key={p.id} player={p} size="sm"
-            status={sitData.votedPlayerIds?.includes(p.id) ? 'voted' : 'waiting'} />
-        ))}
+        <div className="flex flex-wrap gap-3 justify-center mt-4">
+          {activePlayers.map(p => (
+            <PlayerAvatar key={p.id} player={p} size="sm" status={sitData.votedPlayerIds?.includes(p.id) ? 'voted' : 'waiting'} />
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -1122,8 +1126,8 @@ function DtHostPanel({ dtData, players, status, onRevealNext }) {
   useEffect(() => {
     if (!isRevealVoteStep) return;
     setHostVoteSecs(reveal?.voteSecondsLeft ?? 30);
-    const id = setInterval(() => setHostVoteSecs(s => Math.max(0, s - 1)), 1000);
-    return () => clearInterval(id);
+    const id = setTimeout(() => setHostVoteSecs(s => Math.max(0, s - 1)), 1000);
+    return () => clearTimeout(id);
   }, [isRevealVoteStep]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── PROMPTING phase ─────────────────────────────────────────────────────
@@ -1446,7 +1450,7 @@ function DtHostPanel({ dtData, players, status, onRevealNext }) {
               transition={{ delay: i * 0.08 }}
               className="flex items-center gap-4 bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl px-5 py-3"
             >
-              <span className="text-2xl w-10 text-center">{medals[i] || `${i + 1}.`}</span>
+              <span className="text-2xl w-10 text-center">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}</span>
               <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-['Fredoka_One'] text-white flex-shrink-0"
                 style={{ backgroundColor: entry.color || '#FF6B6B' }}>
                 {(entry.name || '?')[0].toUpperCase()}
@@ -1921,7 +1925,7 @@ const GAME_TYPES_FOR_CREATE = [
   { id: 'drawing',           label: '🎨 Pictionary Battle',    desc: 'Draw and guess!',                accent: '#C39BD3' },
   { id: 'fill-in-the-blank', label: '✏️ Fill in the Blank',  desc: 'Finish the sentence!',           accent: '#F9CA24' },
   { id: 'draw-telephone',    label: '📞 Drawing in Chain',    desc: 'Draw step by step, guess the prompt!', accent: '#FF6B6B' },
-  { id: 'selfie-roast',      label: '📸 Selfie Artist',       desc: "Draw on someone's selfie!",     accent: '#FD79A8' },
+  { id: 'selfie-roast',      label: '📸 Draw on Friends',       desc: "Draw on someone's selfie!",     accent: '#FD79A8' },
   { id: 'caption',           label: '💬 Selfie Captions',     desc: 'Write funny captions!',          accent: '#FD79A8' },
   { id: 'pmatch',            label: '🎭 Selfie Challenge',    desc: 'Act out a prompt — best selfie wins!', accent: '#FDCB6E' },
   { id: 'photoassoc',        label: '🎯 Prompt Match',        desc: 'Vote who matches the vibe!',     accent: '#A29BFE' },
@@ -2361,11 +2365,7 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
         </button>
       </div>
     );
-  } else if (status === 'drawing') {
-    controls = (
-      <div className="flex gap-3">
-        <button onClick={onDrawNewWord} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FFE66D] hover:text-[#FFE66D] active:scale-95 transition">
-          🔄 New Word
+  } else if
         </button>
         <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
           🔀 Skip Mini Game
