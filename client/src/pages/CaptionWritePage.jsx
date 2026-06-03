@@ -1,16 +1,21 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
 import MiniGameWrapper from '../components/MiniGameWrapper.jsx';
 import { useMiniGameLifecycle } from '../hooks/useMiniGameLifecycle.js';
+import TimerRing from '../components/game/TimerRing';
+
+const DEFAULT_CAPTION_DURATION = 90;
 
 export default function CaptionWritePage() {
   const { state, dispatch } = useGame();
   const caption = state.caption;
   const sounds = useSounds();
   const [text, setText] = useState('');
+  const [localSecondsLeft, setLocalSecondsLeft] = useState(DEFAULT_CAPTION_DURATION);
+  const captionDuration = typeof caption.timerTotal === 'number' ? caption.timerTotal : DEFAULT_CAPTION_DURATION;
   const MAX_LEN = 140;
 
   const doSubmit = () => {
@@ -28,12 +33,25 @@ export default function CaptionWritePage() {
     onSubmit: doSubmit,
     resetKey: caption.round,
   });
+  const timerSeconds = typeof caption.secondsLeft === 'number' ? caption.secondsLeft : localSecondsLeft;
+
+  useEffect(() => {
+    if (typeof caption.secondsLeft === 'number') return;
+    setLocalSecondsLeft(captionDuration);
+    const timer = setInterval(() => {
+      setLocalSecondsLeft((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [caption.round, caption.secondsLeft, captionDuration]);
 
   return (
     <motion.div
       className="flex flex-col items-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6"
       initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}
     >
+      <div className="mt-2 mb-4">
+        <TimerRing secondsLeft={timerSeconds} total={captionDuration} />
+      </div>
       <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8] mt-6 mb-1">Write a Caption! ✍️</h1>
       <p className="text-gray-400 font-['Nunito'] text-sm text-center mb-4">
         Round {caption.round} of {caption.totalRounds}

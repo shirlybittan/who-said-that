@@ -105,6 +105,7 @@ export function buildHostControls({
         disabled: !canStart,
         color: '#4ECDC4',
       },
+      ...(hasNextInQueue ? [skipBtn] : []),
     ],
 
     'mlt-voting': [

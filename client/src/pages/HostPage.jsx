@@ -2246,21 +2246,29 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
 
   const playingCount = players.filter(p => p.isPlaying && p.isConnected).length;
   const canStart = playingCount >= 3;
+  const hasNextInQueue = gameQueue && gameQueue.length > 1 && queueIndex < gameQueue.length - 1;
 
   let controls = null;
 
   if (status === 'lobby') {
     controls = (
-      <button
-        onClick={onStart}
-        disabled={!canStart}
-        className={`px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl transition ${canStart
-          ? 'bg-[#4ECDC4] text-black hover:bg-[#3dbdb5] active:scale-95'
-          : 'bg-[#2D2D44] text-gray-500 cursor-not-allowed'}`}
-        style={canStart ? { boxShadow: '0 0 20px #4ECDC460' } : {}}
-      >
-        {canStart ? '▶ Start Game' : `⏳ Need ${3 - playingCount} more player${3 - playingCount !== 1 ? 's' : ''}`}
-      </button>
+      <div className="flex gap-3">
+        <button
+          onClick={onStart}
+          disabled={!canStart}
+          className={`px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl transition ${canStart
+            ? 'bg-[#4ECDC4] text-black hover:bg-[#3dbdb5] active:scale-95'
+            : 'bg-[#2D2D44] text-gray-500 cursor-not-allowed'}`}
+          style={canStart ? { boxShadow: '0 0 20px #4ECDC460' } : {}}
+        >
+          {canStart ? '▶ Start Game' : `⏳ Need ${3 - playingCount} more player${3 - playingCount !== 1 ? 's' : ''}`}
+        </button>
+        {hasNextInQueue && (
+          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+            🔀 Skip Mini Game
+          </button>
+        )}
+      </div>
     );
   } else if (status === 'mlt-voting') {
     controls = (
@@ -2558,7 +2566,6 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
       </div>
     );
   } else if (status === 'game-end' || status === 'mlt-end' || status === 'tot-end' || status === 'draw-end' || status === 'fitb-end' || status === 'selfie-results') {
-    const hasNextInQueue = gameQueue && gameQueue.length > 1 && queueIndex < gameQueue.length - 1;
     const nextGame = hasNextInQueue ? gameQueue[queueIndex + 1] : null;
     controls = (
       <div className="flex gap-3 flex-wrap justify-center">
@@ -3120,6 +3127,7 @@ export default function HostPage() {
       setGameInfo(prev => ({ ...prev, gameType: gameType || prev.gameType, gameName: gameName || prev.gameName }));
       setPlayers(p || []);
       setCreatorSettings(prev => ({ ...prev, gameType: gameType || prev.gameType }));
+      setIsTransitioning(false);
       setStatus('lobby');
     });
 
@@ -3338,30 +3346,14 @@ export default function HostPage() {
       return;
     }
     
-    setStatus('connecting');
+    setStatus('lobby');
     setQueueIndex(nextIdx);
     const nextRounds = nextGame.rounds || 5;
     const nextMode = nextGame.mode || 'classic';
     setCreatorSettings({ gameType: nextGame.type, rounds: nextRounds, drawMode: nextMode });
     setGameInfo(prev => ({ ...prev, gameType: nextGame.type }));
-    // First explicitly switch the game type on the server
     sock.emit('change_game', { code, newGameType: nextGame.type });
-
-    // Then start the next game directly — server start handlers cancel previous timers and setup state
-    const t = nextGame.type;
-    setTimeout(() => {
-      if (t === 'most-likely-to') sock.emit('mlt:start', { code, rounds: nextRounds, allowSelfVote: true });
-      else if (t === 'drawing') sock.emit('draw:start', { code, rounds: nextRounds, mode: nextMode });
-      else if (t === 'fill-in-the-blank') sock.emit('fitb:start', { code, rounds: nextRounds });
-      else if (t === 'selfie-roast') sock.emit('selfie:start', { code, rounds: nextRounds });
-      else if (t === 'caption') sock.emit('caption:start', { code, rounds: nextRounds });
-      else if (t === 'pmatch') sock.emit('photovote:start', { code, subType: 'pmatch', rounds: nextRounds });
-      else if (t === 'photoassoc') sock.emit('photovote:start', { code, subType: 'photoassoc', rounds: nextRounds });
-      else if (t === 'draw-telephone') sock.emit('dt:start', { code });
-      else sock.emit('start_game', { code });
-      
-      setIsTransitioning(false);
-    }, 200); // 200ms delay to ensure clients process game_changed before the start states
+    setIsTransitioning(false);
   };
 
   const handleNewGame = () => {
@@ -3755,6 +3747,4 @@ export default function HostPage() {
     </div>
   );
 }
-
-
 

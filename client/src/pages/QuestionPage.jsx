@@ -6,13 +6,15 @@ import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
 import MiniGameWrapper from '../components/MiniGameWrapper.jsx';
 import { useMiniGameLifecycle } from '../hooks/useMiniGameLifecycle.js';
+import TimerRing from '../components/game/TimerRing';
 
 export default function QuestionPage() {
   const { state, dispatch } = useGame();
   const t = translations[state.lang].question;
   const tSit = translations[state.lang].situational;
   const [answer, setAnswer] = useState('');
-  const [timeLeft, setTimeLeft] = useState(60);
+  const roundDurationSecs = state.roomConfig?.roundDurationSecs || 60;
+  const [timeLeft, setTimeLeft] = useState(roundDurationSecs);
   const [hasVotedSkip, setHasVotedSkip] = useState(false);
   const sounds = useSounds();
 
@@ -32,11 +34,11 @@ export default function QuestionPage() {
   });
 
   useEffect(() => {
-    setTimeLeft(60);
+    setTimeLeft(roundDurationSecs);
     setHasVotedSkip(false);
     sounds.reveal();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.currentQuestion]);
+  }, [state.currentQuestion, roundDurationSecs]);
 
   useEffect(() => {
     if (!state.isPlaying) return;   // cast screen never auto-submits
@@ -78,11 +80,13 @@ export default function QuestionPage() {
       className="flex flex-col items-center justify-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 text-center shadow-lg"
       initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}
     >
+      <div className="mb-4">
+        <TimerRing secondsLeft={timeLeft} total={roundDurationSecs} />
+      </div>
       <div className="mb-8 w-full max-w-lg">
         <h3 className="text-xl font-['Fredoka_One'] text-[#FFE66D] uppercase tracking-widest mb-2">
           {t.round} {state.currentRound} {t.of} {state.totalRounds}
         </h3>
-        <p className="text-xl font-bold font-['Nunito'] text-red-400 mb-2">⏳ {timeLeft}s</p>
 
         {/* Situational: target player badge */}
         {isSituational && target && (

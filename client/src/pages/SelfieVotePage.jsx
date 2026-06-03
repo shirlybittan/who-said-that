@@ -4,11 +4,13 @@ import { socket } from '../socket';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
 import ReplayCanvas from '../components/game/ReplayCanvas';
+import TimerRing from '../components/game/TimerRing';
 
 export default function SelfieVotePage() {
   const { state, dispatch } = useGame();
   const selfie = state.selfie;
   const sounds = useSounds();
+  const timerSeconds = typeof selfie.secondsLeft === 'number' ? selfie.secondsLeft : null;
 
   const handleVote = (drawerId) => {
     if (selfie.hasVoted) return;
@@ -28,6 +30,11 @@ export default function SelfieVotePage() {
       className="flex flex-col items-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6"
       initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}
     >
+      {timerSeconds !== null && (
+        <div className="mt-2 mb-4">
+          <TimerRing secondsLeft={timerSeconds} />
+        </div>
+      )}
       <h1 className="text-2xl font-['Fredoka_One'] text-[#FF6B6B] mt-6 mb-2">Vote for Funniest! 😂</h1>
       {selfie.promptTemplate ? (
         <div className="bg-[#FFE66D]/10 border border-[#FFE66D]/30 rounded-xl px-4 py-2 mb-4 text-center">

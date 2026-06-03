@@ -6,6 +6,7 @@ import { useSounds } from '../hooks/useSounds';
 import VoteCoin from '../components/game/VoteCoin';
 import MiniGameWrapper from '../components/MiniGameWrapper.jsx';
 import { useMiniGameLifecycle } from '../hooks/useMiniGameLifecycle.js';
+import TimerRing from '../components/game/TimerRing';
 
 export default function FillBlankPage() {
   const { state, dispatch } = useGame();
@@ -25,6 +26,9 @@ export default function FillBlankPage() {
     onSubmit: doSubmitAnswer,
     resetKey: fitb.question,
   });
+  const timerSeconds = typeof fitb.secondsLeft === 'number'
+    ? fitb.secondsLeft
+    : (state.phaseTimer?.active ? state.phaseTimer.secondsLeft : null);
 
   const handleVote = (id) => {
     if (fitb.hasVoted) return;
@@ -60,6 +64,11 @@ export default function FillBlankPage() {
         className="flex flex-col items-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6"
         initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}
       >
+        {timerSeconds !== null && (
+          <div className="mt-4 mb-2">
+            <TimerRing secondsLeft={timerSeconds} />
+          </div>
+        )}
         <div className="w-full max-w-md mt-6 mb-4 flex items-center justify-between text-sm text-gray-500 font-['Nunito']">
           <span>Round {fitb.round} / {fitb.totalRounds}</span>
           <span className="text-[#4ECDC4]">Fill in the Blank</span>
@@ -121,6 +130,11 @@ export default function FillBlankPage() {
         className="flex flex-col items-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6"
         initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}
       >
+        {timerSeconds !== null && (
+          <div className="mt-4 mb-2">
+            <TimerRing secondsLeft={timerSeconds} />
+          </div>
+        )}
         <h1 className="text-2xl font-['Fredoka_One'] text-[#FF6B6B] mt-6 mb-2">Vote for the best!</h1>
         <p className="text-gray-400 font-['Nunito'] text-sm italic text-center mb-6">"{fitb.question}"</p>
 
