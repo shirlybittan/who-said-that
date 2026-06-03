@@ -2365,13 +2365,6 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
         </button>
       </div>
     );
-  } else if
-        </button>
-        <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-          🔀 Skip Mini Game
-        </button>
-      </div>
-    );
   } else if (status === 'draw-voting') {
     controls = (
       <div className="flex gap-3">

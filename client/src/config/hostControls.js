@@ -89,7 +89,7 @@ export function buildHostControls({
     color: '#FF8B94',
   };
 
-  const hasNextInQueue = gameQueue.length > 1 && queueIndex < gameQueue.length - 1;
+  const hasNextInQueue = gameQueue.length > 0 && queueIndex < gameQueue.length - 1;
   const nextGame = hasNextInQueue ? gameQueue[queueIndex + 1] : null;
 
   const fitbPhase = fitbData?.phase;
