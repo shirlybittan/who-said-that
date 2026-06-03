@@ -538,13 +538,6 @@ function VotingPanel({ votingData, players }) {
         </div>
         <ProgressBar value={votingData.voteCount} total={votingData.totalPlayers} color="#6C5CE7" />
       </div>
-
-      <div className="flex flex-wrap gap-4 justify-center">
-        {activePlayers.map(p => (
-          <PlayerAvatar key={p.id} player={p} size="sm"
-            status={votingData.votedPlayerIds?.includes(p.id) ? 'voted' : 'waiting'} />
-        ))}
-      </div>
     </div>
   );
 }
