@@ -116,4 +116,4 @@ const createPresignedUpload = async (roomCode, playerId, mimeType = 'image/jpeg'
   return { uploadUrl, publicUrl, objectKey };
 };
 
-module.exports = { isConfigured, createPresignedUpload };
+module.exports = { isConfigured, createPresignedUpload, getPublicBaseUrl };

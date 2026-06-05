@@ -57,6 +57,7 @@ export default function SelfiePhotoPage() {
   const [compressed, setCompressed] = useState(null);
   const [processing, setProcessing] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState(false);
   const [usingSaved, setUsingSaved] = useState(false);
 
   // Pre-fill with saved selfie if available and photo not yet submitted
@@ -88,11 +89,19 @@ export default function SelfiePhotoPage() {
     if (!compressed || selfie.hasSubmittedPhoto || uploading) return;
     sounds.answer?.();
     setUploading(true);
+    setUploadError(false);
 
     // Try cloud upload first; fall back to inline base64 if unavailable
     let photoData = compressed;
     const cloudUrl = await tryCloudUpload(state.roomCode, state.playerId, compressed);
     if (cloudUrl) photoData = cloudUrl;
+
+    // Confirm we still have something to send
+    if (!photoData) {
+      setUploadError(true);
+      setUploading(false);
+      return;
+    }
 
     socket.emit('selfie:submit_photo', { code: state.roomCode, photoData });
     dispatch({ type: 'SELFIE_MARK_PHOTO_SUBMITTED' });
@@ -168,6 +177,11 @@ export default function SelfiePhotoPage() {
                   {uploading ? 'Uploading…' : usingSaved ? 'Use This ✓' : 'Use This!'}
                 </button>
               </div>
+              {uploadError && (
+                <p className="text-[#FF6B6B] font-['Nunito'] text-sm text-center mt-1">
+                  Upload failed. Check your connection and try again.
+                </p>
+              )}
             </div>
           )}
         </>

@@ -17,7 +17,7 @@ const { buildMiniGameSnapshot } = require('./game/miniGameSnapshot');
 const mltPromptBank = require('./questions/mostLikelyTo');
 const { words: drawWordBank, prompts: drawPrompts } = require('./questions/drawing');
 const { selfiePrompts } = require('./questions/selfie');
-const { isConfigured: storageConfigured, createPresignedUpload } = require('./storage/photoStorage');
+const { isConfigured: storageConfigured, createPresignedUpload, getPublicBaseUrl } = require('./storage/photoStorage');
 
 const app = express();
 app.use(cors());
@@ -673,8 +673,9 @@ io.on('connection', (socket) => {
         }),
       });
       socket.to(room.code).emit('player_reconnected', { playerId: player.id, playerName: player.name, players: room.players });
-    } catch (_) {
-      // Auth credentials no longer valid (room expired, etc.) — client will handle via join_room
+    } catch (err) {
+      // Expected: room expired or player not found — client will handle via join_room
+      if (err.message !== 'Room not found') console.warn('[auth-rejoin]', err.message);
     }
   })();
 
@@ -2286,7 +2287,12 @@ io.on('connection', (socket) => {
 
     // ── Validate: accept either a cloud storage HTTPS URL or a Base64 data URI ──
     if (!photoData || typeof photoData !== 'string') return;
-    const isCloudUrl = /^https:\/\/.+\.(jpg|jpeg|png|webp)(\?.*)?$/i.test(photoData);
+    // Cloud URL must originate from our own configured storage bucket to prevent
+    // content injection via arbitrary external URLs.
+    const storageBase = storageConfigured() ? getPublicBaseUrl() : null;
+    const isCloudUrl = !!(storageBase &&
+      photoData.startsWith(storageBase) &&
+      /\.(jpg|jpeg|png|webp)(\?.*)?$/i.test(photoData));
     const isBase64 = photoData.startsWith('data:image/jpeg;base64,') ||
                      photoData.startsWith('data:image/png;base64,')  ||
                      photoData.startsWith('data:image/webp;base64,');
