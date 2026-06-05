@@ -964,7 +964,7 @@ function DrawingHostPanel({ drawData, players, status }) {
                   {isSecretMode && (
                     <p className="text-[#FFE66D] font-['Fredoka_One'] text-lg">{sub.word}</p>
                   )}
-                  <p className="text-white font-['Fredoka_One'] text-base">{status === 'voting' ? '???' : sub.name}</p>
+                  <p className="text-white font-['Fredoka_One'] text-base">{status === 'draw-voting' ? '???' : sub.name}</p>
                 </div>
               </motion.div>
             ))}
@@ -2367,6 +2367,17 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
           style={votingData?.allVotesIn ? { boxShadow: '0 0 20px #6C5CE760' } : {}}
         >
           {votingData?.allVotesIn ? 'Next Answer →' : '⏳ Waiting for votes...'}
+        </button>
+        <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+          🔀 Skip Mini Game
+        </button>
+      </div>
+    );
+  } else if (status === 'drawing') {
+    controls = (
+      <div className="flex gap-3">
+        <button onClick={onDrawNewWord} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FFE66D] text-[#FFE66D] hover:bg-[#FFE66D]/10 active:scale-95 transition">
+          🔄 New Word
         </button>
         <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
           🔀 Skip Mini Game

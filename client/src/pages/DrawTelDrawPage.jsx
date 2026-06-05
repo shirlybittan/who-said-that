@@ -236,7 +236,7 @@ export default function DrawTelDrawPage() {
                 </p>
                 {turn?.position > 1 ? (
                   <div className="bg-[#000] rounded-xl overflow-hidden relative" style={{ aspectRatio: `${CANVAS_W}/${CANVAS_H}` }}>
-                    {selfieData && <img src={selfieData} alt="" className="absolute inset-0 w-full h-full object-cover opacity-80" />}
+                    {selfieData && <img src={selfieData} alt="" className="absolute inset-0 w-full h-full object-cover" />}
                     <canvas
                       ref={r => {
                         if (r) {
@@ -267,11 +267,19 @@ export default function DrawTelDrawPage() {
           {/* Right: Canvas + Controls */}
           <div className="lg:w-[420px] flex flex-col gap-3">
             <div className="relative w-full" style={{ aspectRatio: `${CANVAS_W}/${CANVAS_H}` }}>
+              {/* Selfie photo behind the canvas */}
+              {selfieData && (
+                <img
+                  src={selfieData}
+                  className="absolute inset-0 w-full h-full object-cover rounded-2xl pointer-events-none"
+                  alt="selfie background"
+                />
+              )}
               <canvas
                 ref={canvasRef}
                 width={CANVAS_W}
                 height={CANVAS_H}
-                className="absolute inset-0 w-full h-full bg-white rounded-2xl"
+                className={`absolute inset-0 w-full h-full rounded-2xl ${selfieData ? 'bg-transparent' : 'bg-white'}`}
                 style={{ touchAction: 'none' }}
                 onTouchStart={onTouchStart}
                 onTouchMove={onTouchMove}
@@ -281,13 +289,6 @@ export default function DrawTelDrawPage() {
                 onMouseUp={endDraw}
                 onMouseLeave={endDraw}
               />
-              {selfieData && (
-                <img
-                  src={selfieData}
-                  className="absolute inset-0 w-full h-full object-cover rounded-2xl pointer-events-none opacity-30"
-                  alt="selfie background"
-                />
-              )}
               {submitted && (
                 <div className="absolute inset-0 bg-black/70 rounded-2xl flex flex-col items-center justify-center gap-2">
                   <p className="text-3xl">✅</p>

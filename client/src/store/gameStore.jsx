@@ -804,6 +804,7 @@ export const gameReducer = (state, action) => {
       return {
         ...state,
         phase: 'drawing',
+        phaseTimer: { secondsLeft: 0, active: false, paused: false },
         draw: {
           ...state.draw,
           phase: 'drawing',
