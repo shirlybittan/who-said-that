@@ -8,6 +8,8 @@ import TimerRing from '../components/game/TimerRing';
 import VoteCoin from '../components/game/VoteCoin';
 import ReplayCanvas from '../components/game/ReplayCanvas';
 import { QUEUE_GAME_LABELS } from '../config/hostControls';
+import MostLikelyToHostView from '../games/most-likely-to/HostView.jsx';
+import ThisOrThatHostView from '../games/this-or-that/HostView.jsx';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
 const CLIENT_URL = (import.meta.env.VITE_CLIENT_URL || '').replace(/\/$/, '') || null;
@@ -427,7 +429,7 @@ function MltEndPanel({ mlt }) {
   );
 }
 
-function QuestionPanel({ questionData, players }) {
+function QuestionPanel({ questionData, players, paused = false }) {
   const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
   const computeSecondsLeft = () => {
     const elapsed = questionData.startedAt ? Math.floor((Date.now() - questionData.startedAt) / 1000) : 0;
@@ -441,10 +443,10 @@ function QuestionPanel({ questionData, players }) {
   }, [questionData.text]); // Reset timer when question changes
 
   useEffect(() => {
-    if (secondsLeft <= 0) return;
+    if (secondsLeft <= 0 || paused) return;
     const id = setTimeout(() => setSecondsLeft(s => Math.max(0, s - 1)), 1000);
     return () => clearTimeout(id);
-  }, [secondsLeft]);
+  }, [secondsLeft, paused]);
 
   return (
     <div className="flex flex-col items-center gap-8 w-full max-w-5xl">
@@ -456,7 +458,7 @@ function QuestionPanel({ questionData, players }) {
           {questionData.type === 'situational' ? ' Situational' : '🤔 Who Said That?'}
         </span>
       </div>
-      <TimerRing secondsLeft={secondsLeft} total={questionData.roundDuration || 60} paused={false} size={100} />
+      <TimerRing secondsLeft={secondsLeft} total={questionData.roundDuration || 60} paused={paused} size={100} />
 
       {questionData.type === 'situational' && questionData.target && (
         <div className="flex items-center gap-3 bg-[#A8E6CF]/10 border border-[#A8E6CF]/30 rounded-2xl px-5 py-3">
@@ -962,7 +964,7 @@ function DrawingHostPanel({ drawData, players, status }) {
                   {isSecretMode && (
                     <p className="text-[#FFE66D] font-['Fredoka_One'] text-lg">{sub.word}</p>
                   )}
-                  <p className="text-white font-['Fredoka_One'] text-base">{status === 'voting' ? '???' : sub.name}</p>
+                  <p className="text-white font-['Fredoka_One'] text-base">{status === 'draw-voting' ? '???' : sub.name}</p>
                 </div>
               </motion.div>
             ))}
@@ -2245,7 +2247,7 @@ function CreateRoomForm({ onSubmit, onBack }) {
 // ─── Host control bar (creator only) ─────────────────────────────────────────
 // QUEUE_GAME_LABELS imported from '../config/hostControls'
 
-function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbData, photoVoteData, captionData, isMixedMode, onStart, onMltPauseResume, onMltChangeQuestion, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, onNewGame, onPlayAgain, onNewPartyPack, gameQueue, queueIndex, onSelfieNextRound, onSelfieSkipQuestion, onShowSelfieResults, onFitbChangeQuestion, onFitbSkipToVote, onFitbShowResults, onFitbNextRound, onPhotoVoteChangeQuestion, onPhotoVoteSkipToResults, onPhotoVoteNextRound, onCaptionChangeQuestion, onCaptionSkipToVoting, onCaptionSkipToResults, onCaptionNextRound }) {
+function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbData, photoVoteData, captionData, isMixedMode, onStart, onMltPauseResume, onMltChangeQuestion, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, onNewGame, onPlayAgain, onNewPartyPack, gameQueue, queueIndex, onSelfieNextRound, onSelfieSkipQuestion, onShowSelfieResults, onFitbChangeQuestion, onFitbSkipToVote, onFitbShowResults, onFitbNextRound, onPhotoVoteChangeQuestion, onPhotoVoteSkipToResults, onPhotoVoteNextRound, onCaptionChangeQuestion, onCaptionSkipToVoting, onCaptionSkipToResults, onCaptionNextRound, onAnswerPauseResume, answerPaused }) {
   if (!isRoomCreator) return null;
 
   const playingCount = players.filter(p => p.isPlaying && p.isConnected).length;
@@ -2294,6 +2296,9 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
   } else if (status === 'question') {
     controls = (
       <div className="flex gap-3">
+        <button onClick={onAnswerPauseResume} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FFE66D] text-[#FFE66D] bg-[#FFE66D]/10 hover:bg-[#FFE66D]/20 active:scale-95 transition">
+          {answerPaused ? '▶ Resume' : '⏸ Pause'}
+        </button>
         <button onClick={onSkipQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FFE66D] hover:text-[#FFE66D] active:scale-95 transition">
           ⏭ Skip Question
         </button>
@@ -2305,6 +2310,9 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
   } else if (status === 'sit-voting') {
     controls = (
       <div className="flex gap-3">
+        <button onClick={onAnswerPauseResume} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FFE66D] text-[#FFE66D] bg-[#FFE66D]/10 hover:bg-[#FFE66D]/20 active:scale-95 transition">
+          {answerPaused ? '▶ Resume' : '⏸ Pause'}
+        </button>
         <button onClick={onSkipQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FFE66D] hover:text-[#FFE66D] active:scale-95 transition">
           ⏭ Skip Question
         </button>
@@ -2359,6 +2367,17 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
           style={votingData?.allVotesIn ? { boxShadow: '0 0 20px #6C5CE760' } : {}}
         >
           {votingData?.allVotesIn ? 'Next Answer →' : '⏳ Waiting for votes...'}
+        </button>
+        <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+          🔀 Skip Mini Game
+        </button>
+      </div>
+    );
+  } else if (status === 'drawing') {
+    controls = (
+      <div className="flex gap-3">
+        <button onClick={onDrawNewWord} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FFE66D] text-[#FFE66D] hover:bg-[#FFE66D]/10 active:scale-95 transition">
+          🔄 New Word
         </button>
         <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
           🔀 Skip Mini Game
@@ -2577,7 +2596,7 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
   if (!controls) return null;
 
   return (
-    <div className="flex-shrink-0 flex justify-center items-center gap-6 py-4 px-6 bg-[#0D0D1A]/95 border-t border-[#2D2D44]">
+    <div className="flex-shrink-0 flex justify-center items-center gap-6 py-4 px-6 bg-[#0D0D1A]/95 border-t border-[#2D2D44] z-10">
       <span className="text-xs font-['Nunito'] text-gray-600 uppercase tracking-widest">Host Controls</span>
       <div className="w-px h-5 bg-[#2D2D44]" />
       {controls}
@@ -2605,6 +2624,8 @@ export default function HostPage() {
     results: [], majorityIds: [], jokersUsed: [], scores: {}, prevScores: {}, leaderboard: [], gameName: '',
   });
 
+  const [phaseTimer, setPhaseTimer] = useState({ secondsLeft: 0, active: false, paused: false });
+
   const [questionData, setQuestionData] = useState({
     text: '', round: 0, totalRounds: 0, type: 'wst', target: null,
     answeredCount: 0, totalAnswerers: 0, answeredPlayerIds: [], roundDuration: 60,
@@ -2621,6 +2642,7 @@ export default function HostPage() {
     question: '', a: '', b: '', round: 0, totalRounds: 0,
     voteCount: 0, totalVoters: 0, votedPlayerIds: [], countA: 0, countB: 0, pctA: 0, pctB: 0,
     majorityChoice: null, scores: {}, leaderboard: [], resultsVisible: false,
+    secondsLeft: 0, paused: false, timeLimit: 30,
   });
 
   const [sitData, setSitData] = useState({
@@ -2675,8 +2697,34 @@ export default function HostPage() {
   });
 
   // Queue state for "Game Playlist" mode
-  const [gameQueue, setGameQueue] = useState([]); // [{type, rounds, mode?}]
-  const [queueIndex, setQueueIndex] = useState(0);
+  const [gameQueue, setGameQueue] = useState(() => {
+    try {
+      const stored = sessionStorage.getItem('wst_gameQueue');
+      return stored ? JSON.parse(stored) : [];
+    } catch { return []; }
+  });
+  const [queueIndex, setQueueIndex] = useState(() => {
+    try {
+      const stored = sessionStorage.getItem('wst_queueIndex');
+      return stored ? parseInt(stored, 10) : 0;
+    } catch { return 0; }
+  });
+
+  useEffect(() => {
+    if (gameQueue && gameQueue.length > 0) {
+      sessionStorage.setItem('wst_gameQueue', JSON.stringify(gameQueue));
+    } else {
+      sessionStorage.removeItem('wst_gameQueue');
+    }
+  }, [gameQueue]);
+
+  useEffect(() => {
+    if (gameQueue && gameQueue.length > 0) {
+      sessionStorage.setItem('wst_queueIndex', queueIndex.toString());
+    } else {
+      sessionStorage.removeItem('wst_queueIndex');
+    }
+  }, [queueIndex, gameQueue]);
 
   // Transition blocker to prevent double clicks skipping logic
   const [isTransitioning, setIsTransitioning] = useState(false);
@@ -2751,8 +2799,11 @@ export default function HostPage() {
           ...prev,
           question: data.question || '', a: data.a || '', b: data.b || '',
           round: data.round, totalRounds: data.totalRounds,
-          voteCount: 0, totalVoters: 0, resultsVisible: false,
+          voteCount: 0, totalVoters: 0, votedPlayerIds: [], resultsVisible: false,
           countA: 0, countB: 0, pctA: 0, pctB: 0, majorityChoice: null,
+          secondsLeft: data.secondsLeft ?? data.timeLimit ?? 30,
+          timeLimit: data.timeLimit ?? 30,
+          paused: false,
         }));
         setStatus('tot');
       } else {
@@ -2798,6 +2849,12 @@ export default function HostPage() {
     });
 
     sock.on('tot:vote_received', ({ voteCount, totalVoters, votedPlayerIds }) => setTotData(prev => ({ ...prev, voteCount, totalVoters, votedPlayerIds: votedPlayerIds || prev.votedPlayerIds })));
+
+    sock.on('tot:timer', ({ secondsLeft }) => setTotData(prev => ({ ...prev, secondsLeft })));
+    sock.on('tot:paused', ({ secondsLeft }) => setTotData(prev => ({ ...prev, paused: true, secondsLeft: secondsLeft ?? prev.secondsLeft })));
+    sock.on('tot:resumed', ({ secondsLeft }) => setTotData(prev => ({ ...prev, paused: false, secondsLeft: secondsLeft ?? prev.secondsLeft })));
+
+    sock.on('phase_timer', (data) => setPhaseTimer({ secondsLeft: data.secondsLeft, active: data.secondsLeft > 0, paused: !!data.paused }));
 
     sock.on('tot:results', (data) => {
       setTotData(prev => ({
@@ -2921,6 +2978,9 @@ export default function HostPage() {
     sock.on('selfie:drawing_phase', (data) => {
       setSelfieData(prev => ({ ...prev, phase: 'drawing', drawingCount: 0, totalDrawers: data.totalDrawers || 0, drawnPlayerIds: [], promptTemplate: data.promptTemplate || '' }));
       setStatus('selfie'); // Ensure host shows selfie panel even when photo phase was skipped
+    });
+    sock.on('selfie:prompt_updated', (data) => {
+      setSelfieData(prev => ({ ...prev, promptTemplate: data.prompt || prev.promptTemplate }));
     });
     sock.on('selfie:drawing_received', ({ drawingCount, totalDrawers, drawnPlayerIds }) => {
       setSelfieData(prev => ({ ...prev, drawingCount, totalDrawers, drawnPlayerIds: drawnPlayerIds || prev.drawnPlayerIds }));
@@ -3287,6 +3347,13 @@ export default function HostPage() {
     else sock.emit('mlt:pause', { code: gameInfo.code });
   };
 
+  const handleAnswerPauseResume = () => {
+    const sock = socketRef.current;
+    if (!sock) return;
+    if (phaseTimer?.paused) sock.emit('answer:resume', { code: gameInfo.code });
+    else sock.emit('answer:pause', { code: gameInfo.code });
+  };
+
   // "Change Question" in MLT replaces the current round's prompt without advancing the round counter
   const handleMltChangeQuestion = () => socketRef.current?.emit('mlt:change_question', { code: gameInfo.code });
   const handleMltSkip = () => socketRef.current?.emit('mlt:skip', { code: gameInfo.code });
@@ -3301,7 +3368,7 @@ export default function HostPage() {
     if (isTransitioning) return;
     setIsTransitioning(true);
     // If there's a next game in the playlist queue, advance to it
-    if (gameQueue && gameQueue.length > 1 && queueIndex + 1 < gameQueue.length) {
+    if (gameQueue && gameQueue.length > 0 && queueIndex + 1 < gameQueue.length) {
       handleNextQueueGame(true); // pass flag to bypass transitioning check inside
     } else {
       socketRef.current?.emit('skip_mini_game', { code: gameInfo.code });
@@ -3416,6 +3483,8 @@ export default function HostPage() {
   const joinBase = CLIENT_URL || window.location.origin;
   const joinUrl = `${joinBase}/?join=${gameInfo.code || roomCodeParam || ''}`;
   const headerRoomCode = gameInfo.code || roomCodeParam;
+  const isMltCoreView = status === 'mlt-voting';
+  const isTotCoreView = status === 'tot';
 
   const renderPanel = () => {
     switch (status) {
@@ -3449,7 +3518,7 @@ export default function HostPage() {
       case 'mlt-end':
         return <MltEndPanel mlt={{ ...mlt, gameName: gameInfo.gameName }} />;
       case 'question':
-        return <QuestionPanel questionData={questionData} players={players} />;
+        return <QuestionPanel questionData={questionData} players={players} paused={!!phaseTimer?.paused} />;
       case 'voting':
         return <VotingPanel votingData={votingData} players={players} />;
       case 'round-end':
@@ -3493,8 +3562,8 @@ export default function HostPage() {
   };
 
   return (
-    <div className="font-['Nunito'] min-h-screen bg-[#0D0D1A] text-[#F7F7F7] flex flex-col">
-      <div className="flex items-center justify-between px-6 py-3 bg-[#1A1A2E] border-b border-[#2D2D44] flex-shrink-0">
+    <div className="font-['Nunito'] h-screen bg-[#0D0D1A] text-[#F7F7F7] flex flex-col overflow-hidden">
+      {!isMltCoreView && !isTotCoreView && <div className="flex items-center justify-between px-6 py-3 bg-[#1A1A2E] border-b border-[#2D2D44] flex-shrink-0">
         <div className="flex items-center gap-3">
           <span className="text-xl font-['Fredoka_One'] text-[#FFE66D]">🎉 Party Pack</span>
           {gameInfo.gameName && (
@@ -3541,7 +3610,7 @@ export default function HostPage() {
             </button>
           )}
         </div>
-      </div>
+      </div>}
 
       {['game-end', 'mlt-end', 'tot-end', 'draw-end', 'fitb-end', 'selfie-results'].includes(status) && (
         <Confetti width={window.innerWidth} height={window.innerHeight} recycle={false} numberOfPieces={400} />
@@ -3683,22 +3752,40 @@ export default function HostPage() {
           </div>
         </div>
       )}
-      <div className="flex-1 flex items-center justify-center p-6 overflow-auto">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={status}
-            className="w-full flex justify-center"
-            initial={{ opacity: 0, y: 22, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -22, scale: 0.97 }}
-            transition={{ duration: 0.3, ease: [0.2, 0.8, 0.2, 1] }}
-          >
-            {renderPanel()}
-          </motion.div>
-        </AnimatePresence>
-      </div>
+      {isMltCoreView ? (
+        <MostLikelyToHostView
+          state={{ mlt, players, gameInfo, roomCode: headerRoomCode, joinUrl }}
+          socket={socketRef.current}
+          onOpenGamePicker={isRoomCreator ? () => setShowGamePicker(true) : null}
+          onOpenMainMenu={isRoomCreator ? () => setShowMainMenu(true) : null}
+            onSkipMiniGame={handleSkipMiniGame}
+          />
+      ) : isTotCoreView ? (
+        <ThisOrThatHostView
+          state={{ tot: totData, players, gameInfo, roomCode: headerRoomCode, joinUrl }}
+          socket={socketRef.current}
+          onOpenGamePicker={isRoomCreator ? () => setShowGamePicker(true) : null}
+          onOpenMainMenu={isRoomCreator ? () => setShowMainMenu(true) : null}
+          onSkipMiniGame={handleSkipMiniGame}
+        />
+      ) : (
+        <div className="flex-1 flex items-center justify-center p-6 overflow-auto">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={status}
+              className="w-full flex justify-center"
+              initial={{ opacity: 0, y: 22, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -22, scale: 0.97 }}
+              transition={{ duration: 0.3, ease: [0.2, 0.8, 0.2, 1] }}
+            >
+              {renderPanel()}
+            </motion.div>
+          </AnimatePresence>
+        </div>
+      )}
 
-      <HostControlBar
+      {!isMltCoreView && !isTotCoreView && <HostControlBar
         status={status}
         isRoomCreator={isRoomCreator}
         players={players}
@@ -3744,7 +3831,9 @@ export default function HostPage() {
         onCaptionSkipToVoting={() => socketRef.current?.emit('caption:skip_to_voting', { code: gameInfo.code })}
         onCaptionSkipToResults={() => socketRef.current?.emit('caption:skip_to_results', { code: gameInfo.code })}
         onCaptionNextRound={() => socketRef.current?.emit('caption:next_round', { code: gameInfo.code })}
-      />
+        onAnswerPauseResume={handleAnswerPauseResume}
+        answerPaused={!!phaseTimer?.paused}
+      />}
     </div>
   );
 }

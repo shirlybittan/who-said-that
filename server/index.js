@@ -56,9 +56,11 @@ const stopAnswerTimer = (room) => {
 const startAnswerTimer = (io, room, code, seconds, onExpire) => {
   stopAnswerTimer(room);
   room.answerSecondsLeft = seconds;
+  room.answerPaused = false;
   io.to(code).emit('phase_timer', { secondsLeft: seconds, phase: 'answering' });
   room.answerTimerRef = setInterval(() => {
     if (room.phase !== 'question') { stopAnswerTimer(room); return; }
+    if (room.answerPaused) return;
     room.answerSecondsLeft = Math.max(0, (room.answerSecondsLeft || 0) - 1);
     io.to(code).emit('phase_timer', { secondsLeft: room.answerSecondsLeft, phase: 'answering' });
     if (room.answerSecondsLeft <= 0) {
@@ -132,6 +134,36 @@ const resolveDrawVoting = (io, room, code) => {
     .map(p => ({ id: p.id, name: p.name, color: p.color, score: room.draw.scores[p.id] || 0 }))
     .sort((a, b) => b.score - a.score);
   io.to(code).emit('draw:results', { results, scores: room.draw.scores, roundScores, round: room.draw.round, totalRounds: room.draw.totalRounds, leaderboard, word: room.draw.word, mode: room.draw.mode || 'classic' });
+};
+
+// ─── ToT timer ───────────────────────────────────────────────────────────────
+
+const stopTotTimer = (room) => {
+  if (room.tot.timerRef) { clearTimeout(room.tot.timerRef); room.tot.timerRef = null; }
+};
+
+const startTotTimer = (io, room, code, seconds) => {
+  stopTotTimer(room);
+  let remaining = seconds;
+  room.tot.secondsLeft = remaining;
+  room.tot.paused = false;
+
+  const tick = () => {
+    if (room.phase !== 'tot' || room.tot.roundState !== 'voting' || room.tot.paused) {
+      room.tot.timerRef = null;
+      return;
+    }
+    room.tot.secondsLeft = remaining;
+    io.to(code).emit('tot:timer', { secondsLeft: remaining });
+    if (remaining === 0) {
+      closeTotRound(io, room, code);
+      return;
+    }
+    remaining--;
+    room.tot.timerRef = setTimeout(tick, 1000);
+  };
+
+  tick();
 };
 
 // ─── MLT helpers ─────────────────────────────────────────────────────────────
@@ -383,6 +415,8 @@ const emitTotQuestion = (io, room, code) => {
   room.tot.round = room.currentRound;
   room.tot.totalRounds = room.totalRounds;
 
+  const timeLimit = room.roomConfig?.roundDurationSecs || 30;
+
   io.to(code).emit('new_question', {
     question: q.text,
     round: room.currentRound,
@@ -390,7 +424,11 @@ const emitTotQuestion = (io, room, code) => {
     roundType: 'this-or-that',
     a: q.a,
     b: q.b,
+    timeLimit,
+    secondsLeft: timeLimit,
   });
+
+  startTotTimer(io, room, code, timeLimit);
 };
 
 // Emit the next question for ANY game type (used after round-end in WST/Sit/Mixed)
@@ -439,6 +477,7 @@ const emitNextQuestion = (io, room, code) => {
 
 // Close a ToT voting round and broadcast results
 const closeTotRound = (io, room, code) => {
+  stopTotTimer(room);
   room.tot.roundState = 'results';
 
   const connectedPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
@@ -559,6 +598,7 @@ function cancelAllTimers(room) {
   if (room.mlt?.timerRef) { clearTimeout(room.mlt.timerRef); room.mlt.timerRef = null; }
   if (room.draw?.timerRef) { clearInterval(room.draw.timerRef); room.draw.timerRef = null; }
   if (room.fitb?.timerRef) { clearTimeout(room.fitb.timerRef); room.fitb.timerRef = null; }
+  if (room.fitb?.answerTimerRef) { clearTimeout(room.fitb.answerTimerRef); room.fitb.answerTimerRef = null; }
   // Cancel all per-chain drawing timers for draw-telephone
   if (room.dt?.chains) {
     for (const chain of Object.values(room.dt.chains)) {
@@ -1138,9 +1178,48 @@ io.on('connection', (socket) => {
       return;
     }
 
+    stopTotTimer(room);
     room.currentRound++;
     room.currentQuestionIndex++;
     emitNextQuestion(io, room, code);
+  });
+
+  socket.on('tot:pause', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'tot' || room.tot.roundState !== 'voting') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+    stopTotTimer(room);
+    room.tot.paused = true;
+    io.to(code).emit('tot:paused', { secondsLeft: room.tot.secondsLeft });
+  });
+
+  socket.on('tot:resume', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'tot' || room.tot.roundState !== 'voting') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+    room.tot.paused = false;
+    io.to(code).emit('tot:resumed', { secondsLeft: room.tot.secondsLeft });
+    startTotTimer(io, room, code, room.tot.secondsLeft);
+  });
+
+  socket.on('answer:pause', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'question') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+    room.answerPaused = true;
+    io.to(code).emit('phase_timer', { secondsLeft: room.answerSecondsLeft, phase: 'answering', paused: true });
+  });
+
+  socket.on('answer:resume', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'question') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+    room.answerPaused = false;
+    io.to(code).emit('phase_timer', { secondsLeft: room.answerSecondsLeft, phase: 'answering', paused: false });
   });
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -1196,6 +1275,8 @@ io.on('connection', (socket) => {
           voteCount: Object.keys(room.tot.votesA || {}).length + Object.keys(room.tot.votesB || {}).length,
           totalVoters: playingPlayers.length,
           scores: room.tot.scores,
+          secondsLeft: room.tot.secondsLeft ?? 0,
+          paused: !!room.tot.paused,
         },
         sit: {
           question: room.currentQuestion || '',
@@ -1796,6 +1877,41 @@ io.on('connection', (socket) => {
     return q;
   };
 
+  // ── FitB answer-phase timer ────────────────────────────────────────────────
+  const stopFitbAnswerTimer = (room) => {
+    if (room.fitb?.answerTimerRef) {
+      clearTimeout(room.fitb.answerTimerRef);
+      room.fitb.answerTimerRef = null;
+    }
+  };
+
+  const startFitbAnswerTimer = (io, room, code, seconds) => {
+    stopFitbAnswerTimer(room);
+    room.fitb.answerSecondsLeft = seconds;
+    const tick = () => {
+      if (!room.fitb || room.fitb.phase !== 'answering') return;
+      io.to(code).emit('fitb:answer_timer', { secondsLeft: room.fitb.answerSecondsLeft });
+      if (room.fitb.answerSecondsLeft <= 0) {
+        // Auto-submit default answer for any player who hasn't answered yet
+        const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+        playingPlayers.forEach(p => {
+          if (!room.fitb.answers.find(a => a.playerId === p.id)) {
+            room.fitb.answers.push({
+              playerId: p.id, playerName: p.name, playerColor: p.color,
+              text: "I couldn't think of anything funny in time! 🕒",
+              votes: 0,
+            });
+          }
+        });
+        startFitbVoting(io, room, code);
+        return;
+      }
+      room.fitb.answerSecondsLeft--;
+      room.fitb.answerTimerRef = setTimeout(tick, 1000);
+    };
+    room.fitb.answerTimerRef = setTimeout(tick, 0);
+  };
+
   socket.on('fitb:start', ({ code, rounds }) => {
     const room = getRoom(code);
     if (!room) return;
@@ -1808,6 +1924,7 @@ io.on('connection', (socket) => {
 
     room.players.forEach(p => { p.joinedMidRound = false; });
     const totalRounds = Math.min(Math.max(parseInt(rounds) || room.totalRounds || 3, 1), 10);
+    const timeLimit = room.roomConfig?.roundDurationSecs || 30;
     const scores = {};
     playingPlayers.forEach(p => { scores[p.id] = 0; });
 
@@ -1822,6 +1939,8 @@ io.on('connection', (socket) => {
       usedQuestions: [],
       targetPlayerIndex: 0,
       scores,
+      answerTimerRef: null,
+      answerSecondsLeft: timeLimit,
     };
     room.fitb.question = pickFitbQuestion(room, room.players);
 
@@ -1831,7 +1950,9 @@ io.on('connection', (socket) => {
       round: 1,
       totalRounds,
       players,
+      timeLimit,
     });
+    startFitbAnswerTimer(io, room, code, timeLimit);
   });
 
   socket.on('fitb:answer', ({ code, text }) => {
@@ -1867,17 +1988,31 @@ io.on('connection', (socket) => {
 
   const startFitbVoting = (io, room, code) => {
     if (room.fitb.phase !== 'answering') return;
+    stopFitbAnswerTimer(room);
     room.fitb.phase = 'voting';
     // Shuffle answers so order doesn't reveal authorship
     const shuffled = [...room.fitb.answers].sort(() => Math.random() - 0.5);
     room.fitb.answers = shuffled;
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
-    // Send anonymous answers (no author info)
+    // Send anonymous answers (no author info) + tell each player which index is theirs
     const anonAnswers = shuffled.map((a, i) => ({ id: i, text: a.text }));
-    io.to(code).emit('fitb:voting_started', {
-      answers: anonAnswers,
-      question: room.fitb.question,
-      totalVoters: playingPlayers.length,
+    playingPlayers.forEach(p => {
+      const myAnswerIndex = shuffled.findIndex(a => a.playerId === p.id);
+      io.to(p.socketId).emit('fitb:voting_started', {
+        answers: anonAnswers,
+        question: room.fitb.question,
+        totalVoters: playingPlayers.length,
+        myAnswerIndex,
+      });
+    });
+    // Also notify spectators/host (no myAnswerIndex)
+    room.players.filter(p => !p.isPlaying || !p.isConnected).forEach(p => {
+      io.to(p.socketId).emit('fitb:voting_started', {
+        answers: anonAnswers,
+        question: room.fitb.question,
+        totalVoters: playingPlayers.length,
+        myAnswerIndex: -1,
+      });
     });
   };
 
@@ -1894,6 +2029,8 @@ io.on('connection', (socket) => {
     if (!room || room.phase !== 'fitb' || room.fitb.phase !== 'answering') return;
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isHost) return;
+    stopFitbAnswerTimer(room);
+    const timeLimit = room.roomConfig?.roundDurationSecs || 30;
     room.fitb.answers = [];
     room.fitb._votes = {};
     room.fitb.question = pickFitbQuestion(room, room.players);
@@ -1904,7 +2041,9 @@ io.on('connection', (socket) => {
       round: room.fitb.round,
       totalRounds: room.fitb.totalRounds,
       players,
+      timeLimit,
     });
+    startFitbAnswerTimer(io, room, code, timeLimit);
   });
 
   socket.on('fitb:vote', ({ code, answerId }) => {
@@ -1983,6 +2122,7 @@ io.on('connection', (socket) => {
     room.fitb.answers = [];
     room.fitb._votes = {};
     room.fitb.question = pickFitbQuestion(room, room.players);
+    const timeLimit = room.roomConfig?.roundDurationSecs || 30;
 
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
     const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
@@ -1991,7 +2131,9 @@ io.on('connection', (socket) => {
       round: room.fitb.round,
       totalRounds: room.fitb.totalRounds,
       players,
+      timeLimit,
     });
+    startFitbAnswerTimer(io, room, code, timeLimit);
   });
 
   socket.on('fitb:restart', ({ code }) => {
@@ -2256,6 +2398,13 @@ io.on('connection', (socket) => {
     room.selfie.phase = 'voting';
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
 
+    // Auto-fill empty strokes for drawers who never submitted (so all photos appear in voting)
+    Object.keys(room.selfie.assignments).forEach(drawerId => {
+      if (!room.selfie.strokes[drawerId]) {
+        room.selfie.strokes[drawerId] = [];
+      }
+    });
+
     // Build submissions: each drawer's photo + strokes + who the photo belongs to
     const submissions = Object.keys(room.selfie.strokes).map(drawerId => {
       const drawer = room.players.find(p => p.id === drawerId);
@@ -2287,7 +2436,13 @@ io.on('connection', (socket) => {
     if (!room || room.phase !== 'selfie' || room.selfie.phase !== 'drawing') return;
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isHost) return;
-    startSelfieVoting(io, room, code);
+    // Signal all clients to auto-submit their current drawings
+    io.to(code).emit('selfie:drawing_ending');
+    // Give clients 1.5 s to submit, then advance regardless
+    setTimeout(() => {
+      if (room.selfie.phase !== 'drawing') return; // already advanced
+      startSelfieVoting(io, room, code);
+    }, 1500);
   });
 
   socket.on('selfie:vote', ({ code, drawerId }) => {
@@ -2411,6 +2566,7 @@ io.on('connection', (socket) => {
       room.selfie.promptTemplate = promptObj.prompt;
       if (!room.selfie.usedPrompts) room.selfie.usedPrompts = [];
       room.selfie.usedPrompts.push(promptObj.prompt);
+      console.log(`[selfie_skip_question] Skipped question for room ${code}. New prompt assigned.`);
       // Clear strokes so drawers start fresh with the new prompt
       room.selfie.strokes = {};
       // Send each drawer the new prompt (keeping their existing photo assignment)
@@ -2425,6 +2581,10 @@ io.on('connection', (socket) => {
             promptTemplate: room.selfie.promptTemplate,
           });
         }
+      });
+      // also notify the host
+      io.to(socket.id).emit('selfie:prompt_updated', {
+        promptTemplate: room.selfie.promptTemplate,
       });
     } else {
       // In photo (or other) phase — reset everything and restart photo submission

@@ -12,9 +12,13 @@ export default function QuestionPage() {
   const t = translations[state.lang].question;
   const tSit = translations[state.lang].situational;
   const [answer, setAnswer] = useState('');
-  const [timeLeft, setTimeLeft] = useState(60);
   const [hasVotedSkip, setHasVotedSkip] = useState(false);
   const sounds = useSounds();
+
+  // Use server-driven timer (phaseTimer updated by phase_timer socket events)
+  const serverTimeLeft = state.phaseTimer?.secondsLeft ?? 0;
+  const timerActive = state.phaseTimer?.active ?? false;
+  const timerPaused = state.phaseTimer?.paused ?? false;
 
   const isSituational = state.currentRoundType === 'situational';
   const target = state.situationalTarget;
@@ -33,7 +37,6 @@ export default function QuestionPage() {
   });
 
   useEffect(() => {
-    setTimeLeft(60);
     setHasVotedSkip(false);
     sounds.reveal();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -42,29 +45,35 @@ export default function QuestionPage() {
   const autoSubmitRef = React.useRef({ answer });
   useEffect(() => { autoSubmitRef.current = { answer }; });
 
+  const timerWasActiveRef = React.useRef(false);
   useEffect(() => {
-    if (!state.isPlaying) return;   // cast screen never auto-submits
-    if (state.hasAnswered) return;
-    if (timeLeft <= 0) {
-      if (!state.hasAnswered) {
-        let textToSubmit = autoSubmitRef.current.answer.trim();
-        if (!textToSubmit) textToSubmit = "I couldn't think of anything funny in time! 🕒";
-        socket.emit('submit_answer', { code: state.roomCode, text: textToSubmit });
-        dispatch({ type: 'MARK_ANSWERED', payload: { myAnswer: textToSubmit } });
-        markConfirmed();
-      }
-      return;
+    if (timerActive) timerWasActiveRef.current = true;
+  }, [timerActive]);
+
+  // Auto-submit when server timer hits 0
+  useEffect(() => {
+    if (!state.isPlaying) return;
+    if (hasConfirmed) return;
+    if (state.phase !== 'question') return;
+    if (!timerWasActiveRef.current) return; // timer never started — don't fire
+    if (serverTimeLeft <= 0 && timerActive === false) {
+      // Timer just expired
+      let textToSubmit = autoSubmitRef.current.answer.trim();
+      if (!textToSubmit) textToSubmit = "I couldn't think of anything funny in time! 🕒";
+      socket.emit('submit_answer', { code: state.roomCode, text: textToSubmit });
+      dispatch({ type: 'MARK_ANSWERED', payload: { myAnswer: textToSubmit } });
+      markConfirmed();
     }
-    const timer = setInterval(() => {
-      setTimeLeft(prev => {
-        const next = prev - 1;
-        if (next > 0 && next <= 5) sounds.tickUrgent();
-        else if (next > 0 && next <= 15) sounds.tick();
-        return next;
-      });
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [timeLeft, state.hasAnswered, state.roomCode, dispatch, sounds, markConfirmed]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverTimeLeft, timerActive, hasConfirmed, state.isPlaying, state.phase]);
+
+  // Play tick sounds based on server timer
+  useEffect(() => {
+    if (!timerActive || timerPaused || hasConfirmed) return;
+    if (serverTimeLeft > 0 && serverTimeLeft <= 5) sounds.tickUrgent?.();
+    else if (serverTimeLeft > 0 && serverTimeLeft <= 15) sounds.tick?.();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverTimeLeft]);
 
   const handleSkip = () => {
     sounds.click();
@@ -87,7 +96,12 @@ export default function QuestionPage() {
           <h3 className="text-xl font-['Fredoka_One'] text-[#FFE66D] uppercase tracking-widest mb-2">
             {t.round} {state.currentRound} {t.of} {state.totalRounds}
           </h3>
-          {/* <p className="text-xl font-bold font-['Nunito'] text-red-400 mb-2">⏳ {timeLeft}s</p> */}
+          {/* Server-driven timer */}
+          {timerActive && !hasConfirmed && (
+            <p className={`text-xl font-bold font-['Nunito'] mb-2 ${serverTimeLeft <= 5 ? 'text-red-400 animate-pulse' : serverTimeLeft <= 15 ? 'text-orange-400' : 'text-gray-400'}`}>
+              ⏳ {serverTimeLeft}s
+            </p>
+          )}
 
         {/* Situational: target player badge */}
         {isSituational && target && (

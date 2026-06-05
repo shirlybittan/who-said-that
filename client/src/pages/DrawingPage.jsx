@@ -409,10 +409,20 @@ export default function DrawingPage() {
           })}
         </div>
 
+        {/* Voted confirmation or waiting state */}
+        {draw.hasVoted && (
+          <div className="w-full max-w-md mt-2 py-4 rounded-2xl bg-[#1A1A2E] border-2 border-[#FFE66D] text-center">
+            <p className="text-[#FFE66D] font-['Fredoka_One'] text-lg">✓ Vote locked in!</p>
+            <p className="text-gray-400 font-['Nunito'] text-sm mt-1">
+              {draw.voteCount || 0}/{draw.totalVoters || subs.length} voted — waiting for results
+            </p>
+          </div>
+        )}
+
         {isHost && (
           <button
             onClick={handleShowResults}
-            className="w-full max-w-md py-3 rounded-xl bg-[#C39BD3] text-black font-['Fredoka_One'] text-lg hover:bg-[#b089c2] transition"
+            className="w-full max-w-md mt-3 py-3 rounded-xl bg-[#C39BD3] text-black font-['Fredoka_One'] text-lg hover:bg-[#b089c2] transition"
           >
             {t.showResults}
           </button>

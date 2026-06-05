@@ -13,7 +13,7 @@ import GameEndPage from './pages/GameEndPage.jsx';
 import MostLikelyToVotingPage from './pages/MostLikelyToVotingPage.jsx';
 import MostLikelyToResultsPage from './pages/MostLikelyToResultsPage.jsx';
 import MostLikelyToEndPage from './pages/MostLikelyToEndPage.jsx';
-import ThisOrThatPage from './pages/ThisOrThatPage.jsx';
+import ThisOrThatPlayerView from './games/this-or-that/PlayerView.jsx';
 import ThisOrThatEndPage from './pages/ThisOrThatEndPage.jsx';
 import SituationalVotingPage from './pages/SituationalVotingPage.jsx';
 import DrawingPage from './pages/DrawingPage.jsx';
@@ -59,7 +59,7 @@ const AnimatedRoutes = () => {
         <Route path="/mlt-vote" element={<MostLikelyToVotingPage />} />
         <Route path="/mlt-results" element={<MostLikelyToResultsPage />} />
         <Route path="/mlt-end" element={<MostLikelyToEndPage />} />
-        <Route path="/tot" element={<ThisOrThatPage />} />
+        <Route path="/tot" element={<ThisOrThatPlayerView />} />
         <Route path="/tot-end" element={<ThisOrThatEndPage />} />
         <Route path="/sit-vote" element={<SituationalVotingPage />} />
         <Route path="/draw" element={<DrawingPage />} />

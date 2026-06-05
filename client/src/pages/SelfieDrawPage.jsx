@@ -110,6 +110,18 @@ export default function SelfieDrawPage() {
     dispatch({ type: 'SELFIE_MARK_DRAWING_SUBMITTED' });
   };
 
+  // Auto-submit when host signals the drawing phase is ending (skip to vote)
+  useEffect(() => {
+    const onDrawingEnding = () => {
+      if (!selfie.hasSubmittedDrawing) {
+        socket.emit('selfie:submit_drawing', { code: state.roomCode, strokes: strokesRef.current });
+        dispatch({ type: 'SELFIE_MARK_DRAWING_SUBMITTED' });
+      }
+    };
+    socket.on('selfie:drawing_ending', onDrawingEnding);
+    return () => socket.off('selfie:drawing_ending', onDrawingEnding);
+  }, [selfie.hasSubmittedDrawing, state.roomCode, dispatch]);
+
   const handleSkip = () => {
     sounds.click?.();
     socket.emit('selfie:skip_to_vote', { code: state.roomCode });

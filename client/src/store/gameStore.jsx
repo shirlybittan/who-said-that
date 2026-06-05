@@ -54,6 +54,10 @@ const initialState = {
     prevScores: {},
     scorePlayers: [],
     leaderboard: [],
+    secondsLeft: 0,
+    paused: false,
+    timeLimit: 30,
+    votedPlayerIds: [],
   },
   mlt: {
     totalRounds: 5,
@@ -101,6 +105,7 @@ const initialState = {
     hasAnswered: false,
     hasVoted: false,
     myAnswer: null,
+    myAnswerIndex: -1,
     myVote: null,
     answeredCount: 0,
     totalAnswerers: 0,
@@ -108,6 +113,8 @@ const initialState = {
     totalVoters: 0,
     scores: {},
     leaderboard: [],
+    answerTimeLeft: 30,
+    timeLimit: 30,
   },
   selfie: {
     phase: 'waiting',      // 'waiting' | 'photo' | 'drawing' | 'voting' | 'results'
@@ -430,6 +437,10 @@ export const gameReducer = (state, action) => {
           resultsVisible: false,
           majorityChoice: null,
           voteDetails: [],
+          votedPlayerIds: [],
+          secondsLeft: action.payload.secondsLeft ?? action.payload.timeLimit ?? 30,
+          timeLimit: action.payload.timeLimit ?? 30,
+          paused: false,
         },
       };
     case 'TOT_VOTE_RECEIVED':
@@ -439,6 +450,7 @@ export const gameReducer = (state, action) => {
           ...state.tot,
           voteCount: action.payload.voteCount,
           totalVoters: action.payload.totalVoters,
+          votedPlayerIds: action.payload.votedPlayerIds || state.tot.votedPlayerIds,
         },
       };
     case 'TOT_MARK_VOTED':
@@ -469,6 +481,12 @@ export const gameReducer = (state, action) => {
         phase: 'totEnd',
         tot: { ...state.tot, leaderboard: action.payload.leaderboard, resultsVisible: true },
       };
+    case 'TOT_SET_TIMER':
+      return { ...state, tot: { ...state.tot, secondsLeft: action.payload.secondsLeft } };
+    case 'TOT_SET_PAUSED':
+      return { ...state, tot: { ...state.tot, paused: true, secondsLeft: action.payload?.secondsLeft ?? state.tot.secondsLeft } };
+    case 'TOT_SET_RESUMED':
+      return { ...state, tot: { ...state.tot, paused: false, secondsLeft: action.payload?.secondsLeft ?? state.tot.secondsLeft } };
     // ────────────────────────────────────────────────────────────────────────
     // ─── Most Likely To actions ──────────────────────────────────────────────
     case 'MLT_SET_PROMPT':
@@ -557,6 +575,7 @@ export const gameReducer = (state, action) => {
       return {
         ...state,
         phase: 'fitb',
+        phaseTimer: { secondsLeft: 0, active: false, paused: false },
         fitb: {
           ...state.fitb,
           phase: 'answering',
@@ -568,17 +587,25 @@ export const gameReducer = (state, action) => {
           hasAnswered: false,
           hasVoted: false,
           myAnswer: null,
+          myAnswerIndex: -1,
           myVote: null,
           answeredCount: 0,
           totalAnswerers: (action.payload.players || state.fitb.players).length,
           voteCount: 0,
           totalVoters: 0,
+          answerTimeLeft: action.payload.timeLimit ?? state.fitb.timeLimit ?? 30,
+          timeLimit: action.payload.timeLimit ?? state.fitb.timeLimit ?? 30,
         },
       };
     case 'FITB_ANSWER_RECEIVED':
       return {
         ...state,
         fitb: { ...state.fitb, answeredCount: action.payload.answeredCount, totalAnswerers: action.payload.totalPlayers },
+      };
+    case 'FITB_ANSWER_TIMER':
+      return {
+        ...state,
+        fitb: { ...state.fitb, answerTimeLeft: action.payload.secondsLeft },
       };
     case 'FITB_MARK_ANSWERED':
       return {
@@ -597,6 +624,7 @@ export const gameReducer = (state, action) => {
           hasVoted: false,
           myVote: null,
           voteCount: 0,
+          myAnswerIndex: action.payload.myAnswerIndex ?? -1,
         },
       };
     case 'FITB_VOTE_RECEIVED':
@@ -703,17 +731,24 @@ export const gameReducer = (state, action) => {
         ...state,
         selfie: { ...state.selfie, hasSubmittedDrawing: true },
       };
-    case 'SELFIE_UPDATE_PROMPT':
-      // Prompt changed by host — keep existing photo, only update prompt text
+    case 'SELFIE_UPDATE_PROMPT': {
+      const updatedSelfie = {
+        ...state.selfie,
+        assignedPrompt: action.payload.prompt,
+        promptTemplate: action.payload.promptTemplate || action.payload.prompt || state.selfie.promptTemplate,
+        hasSubmittedDrawing: false,
+      };
+      if (updatedSelfie.currentTurn) {
+        updatedSelfie.currentTurn = { ...updatedSelfie.currentTurn, prompt: action.payload.prompt };
+      }
+      if (updatedSelfie.turn) {
+        updatedSelfie.turn = { ...updatedSelfie.turn, prompt: action.payload.prompt };
+      }
       return {
         ...state,
-        selfie: {
-          ...state.selfie,
-          assignedPrompt: action.payload.prompt,
-          promptTemplate: action.payload.promptTemplate || state.selfie.promptTemplate,
-          hasSubmittedDrawing: false,
-        },
+        selfie: updatedSelfie,
       };
+    }
     case 'SELFIE_RETAKE_READY':
       // Player requested a retake — reset photo-submitted flag so they can capture again
       return {
@@ -769,6 +804,7 @@ export const gameReducer = (state, action) => {
       return {
         ...state,
         phase: 'drawing',
+        phaseTimer: { secondsLeft: 0, active: false, paused: false },
         draw: {
           ...state.draw,
           phase: 'drawing',
@@ -880,6 +916,7 @@ export const gameReducer = (state, action) => {
         phaseTimer: {
           secondsLeft: action.payload.secondsLeft,
           active: action.payload.secondsLeft > 0,
+          paused: !!action.payload.paused,
         },
       };
     case 'PHASE_TIMER_STOP':
