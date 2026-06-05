@@ -29,6 +29,20 @@ describe('getRouteForPhase', () => {
     expect(getRouteForPhase('dt', { phase: 'drawing', currentTurn: { promptId: 'x' } })).toBe('/draw-tel-draw');
     expect(getRouteForPhase('dt', { phase: 'drawing', currentTurn: null })).toBe('/draw-tel-wait');
   });
+
+  it('routes mlt and mltEnd to the correct pages', () => {
+    expect(getRouteForPhase('mlt', null)).toBe('/mlt-vote');
+    expect(getRouteForPhase('mltEnd', null)).toBe('/mlt-end');
+  });
+
+  it('routes totEnd to the results page', () => {
+    expect(getRouteForPhase('totEnd', null)).toBe('/tot-end');
+  });
+
+  it('returns lobby for unknown phases', () => {
+    expect(getRouteForPhase('unknown', null)).toBe('/lobby');
+    expect(getRouteForPhase(null, null)).toBe('/lobby');
+  });
 });
 
 describe('buildJoinRestorePlan', () => {
@@ -148,5 +162,201 @@ describe('buildJoinRestorePlan', () => {
       'DT_PROMPT_RECEIVED',
       'DT_MARK_PROMPT_SUBMITTED',
     ]);
+  });
+
+  it('restores MLT voting state including own vote and timer', () => {
+    const room = {
+      ...baseRoom,
+      phase: 'mlt',
+      gameName: 'Fun Night',
+      mlt: {
+        roundState: 'voting',
+        currentPrompt: 'Most likely to forget their keys',
+        round: 2,
+        totalRounds: 5,
+        votes: { p1: 'p3', p3: 'p1' },
+        scores: { p1: 1, p2: 0, p3: 0 },
+        totalVotes: {},
+        wins: {},
+        jokers: { p1: 2, p2: 1, p3: 2 },
+        jokersThisRound: {},
+        secondsLeft: 18,
+        paused: false,
+      },
+    };
+
+    const plan = buildJoinRestorePlan({ room, playerId: 'p2', isRejoin: true, miniGameState: null });
+
+    expect(plan.route).toBe('/mlt-vote');
+    const types = plan.actions.map((a) => a.type);
+    expect(types).toContain('MLT_SET_PROMPT');
+    expect(types).toContain('MLT_VOTE_RECEIVED');
+    expect(types).toContain('MLT_SET_TIMER');
+    // p2 has not voted
+    expect(types).not.toContain('MLT_MARK_VOTED');
+    // Not paused
+    expect(types).not.toContain('MLT_SET_PAUSED');
+
+    const promptAction = plan.actions.find((a) => a.type === 'MLT_SET_PROMPT');
+    expect(promptAction.payload.prompt).toBe('Most likely to forget their keys');
+    expect(promptAction.payload.round).toBe(2);
+    expect(promptAction.payload.jokersLeft).toBe(1);
+
+    const voteAction = plan.actions.find((a) => a.type === 'MLT_VOTE_RECEIVED');
+    expect(voteAction.payload.voteCount).toBe(2);
+  });
+
+  it('restores MLT voting state and marks own vote when present', () => {
+    const room = {
+      ...baseRoom,
+      phase: 'mlt',
+      mlt: {
+        roundState: 'voting',
+        currentPrompt: 'Most likely to win a cooking show',
+        round: 1,
+        totalRounds: 5,
+        votes: { p2: 'p3' },
+        scores: {},
+        totalVotes: {},
+        wins: {},
+        jokers: { p1: 2, p2: 2, p3: 2 },
+        jokersThisRound: {},
+        secondsLeft: 25,
+        paused: false,
+      },
+    };
+
+    const plan = buildJoinRestorePlan({ room, playerId: 'p2', isRejoin: true, miniGameState: null });
+
+    const types = plan.actions.map((a) => a.type);
+    expect(types).toContain('MLT_MARK_VOTED');
+    const markVotedAction = plan.actions.find((a) => a.type === 'MLT_MARK_VOTED');
+    expect(markVotedAction.payload.votedPlayerId).toBe('p3');
+  });
+
+  it('restores MLT results state with recomputed vote tallies', () => {
+    const room = {
+      ...baseRoom,
+      phase: 'mlt',
+      mlt: {
+        roundState: 'results',
+        currentPrompt: 'Most likely to be famous',
+        round: 3,
+        totalRounds: 5,
+        votes: { p1: 'p2', p2: 'p2', p3: 'p1' },
+        scores: { p1: 1, p2: 2, p3: 1 },
+        totalVotes: { p2: 2, p1: 1 },
+        wins: { p2: 1 },
+        jokers: { p1: 2, p2: 2, p3: 2 },
+        jokersThisRound: {},
+        secondsLeft: 0,
+        paused: false,
+      },
+    };
+
+    const plan = buildJoinRestorePlan({ room, playerId: 'p1', isRejoin: true, miniGameState: null });
+
+    expect(plan.route).toBe('/mlt-vote');
+    const types = plan.actions.map((a) => a.type);
+    expect(types).toContain('MLT_SET_RESULTS');
+
+    const resultsAction = plan.actions.find((a) => a.type === 'MLT_SET_RESULTS');
+    // p2 got 2 votes → majority
+    expect(resultsAction.payload.majorityPlayerIds).toContain('p2');
+    expect(resultsAction.payload.scores).toEqual({ p1: 1, p2: 2, p3: 1 });
+    const p2result = resultsAction.payload.results.find((r) => r.playerId === 'p2');
+    expect(p2result.count).toBe(2);
+  });
+
+  it('restores mltEnd leaderboard for reconnecting players', () => {
+    const room = {
+      ...baseRoom,
+      phase: 'mltEnd',
+      mlt: {
+        roundState: 'end',
+        scores: { p1: 3, p2: 5, p3: 1 },
+        totalVotes: { p1: 4, p2: 6, p3: 2 },
+        wins: { p1: 1, p2: 2, p3: 0 },
+        jokers: {},
+        jokersThisRound: {},
+      },
+    };
+
+    const plan = buildJoinRestorePlan({ room, playerId: 'p1', isRejoin: true, miniGameState: null });
+
+    expect(plan.route).toBe('/mlt-end');
+    expect(plan.actions).toHaveLength(1);
+    expect(plan.actions[0].type).toBe('MLT_SET_END');
+
+    const { leaderboard } = plan.actions[0].payload;
+    expect(leaderboard[0].playerId).toBe('p2');
+    expect(leaderboard[0].score).toBe(5);
+    expect(leaderboard[0].wins).toBe(2);
+  });
+
+  it('restores totEnd leaderboard for reconnecting players', () => {
+    const room = {
+      ...baseRoom,
+      phase: 'totEnd',
+      tot: {
+        scores: { p1: 4, p2: 2, p3: 3 },
+      },
+    };
+
+    const plan = buildJoinRestorePlan({ room, playerId: 'p2', isRejoin: true, miniGameState: null });
+
+    expect(plan.route).toBe('/tot-end');
+    expect(plan.actions).toHaveLength(1);
+    expect(plan.actions[0].type).toBe('TOT_SET_END');
+
+    const { leaderboard } = plan.actions[0].payload;
+    expect(leaderboard[0].playerId).toBe('p1');
+    expect(leaderboard[0].score).toBe(4);
+    expect(leaderboard[1].score).toBe(3);
+  });
+
+  it('restores classic WST question phase with answered state', () => {
+    const room = {
+      ...baseRoom,
+      phase: 'question',
+      currentQuestion: 'What is your biggest fear?',
+      currentRound: 2,
+      totalRounds: 3,
+      questions: [{ id: 'q1', text: 'What is your biggest fear?', type: 'wst' }],
+      currentQuestionIndex: 0,
+      answers: [
+        { playerId: 'p1', text: 'Spiders', playerName: 'Alice' },
+        { playerId: 'p3', text: 'Heights', playerName: 'Cara' },
+      ],
+    };
+
+    const plan = buildJoinRestorePlan({ room, playerId: 'p1', isRejoin: true, miniGameState: null });
+
+    expect(plan.route).toBe('/question');
+    const types = plan.actions.map((a) => a.type);
+    expect(types).toContain('SET_QUESTION');
+    expect(types).toContain('MARK_ANSWERED');
+
+    const markedAction = plan.actions.find((a) => a.type === 'MARK_ANSWERED');
+    expect(markedAction.payload.myAnswer).toBe('Spiders');
+  });
+
+  it('restores classic WST voting phase', () => {
+    const room = {
+      ...baseRoom,
+      phase: 'voting',
+      answers: [
+        { playerId: 'p1', text: 'Spiders' },
+        { playerId: 'p2', text: 'Public speaking' },
+      ],
+      currentAnswerIndex: 1,
+    };
+
+    const plan = buildJoinRestorePlan({ room, playerId: 'p3', isRejoin: true, miniGameState: null });
+
+    expect(plan.route).toBe('/vote');
+    expect(plan.actions[0].type).toBe('SET_ANSWERS');
+    expect(plan.actions[0].payload.answers).toHaveLength(2);
+    expect(plan.actions[0].payload.currentIndex).toBe(1);
   });
 });

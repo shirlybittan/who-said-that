@@ -47,8 +47,14 @@ export const getRouteForPhase = (phase, snapshot) => {
       return '/round-end';
     case 'gameEnd':
       return '/game-end';
+    case 'mlt':
+      return '/mlt-vote';
+    case 'mltEnd':
+      return '/mlt-end';
     case 'tot':
       return '/tot';
+    case 'totEnd':
+      return '/tot-end';
     case 'drawing':
       return '/draw';
     case 'drawEnd':
@@ -188,6 +194,94 @@ const buildClassicRestore = (room, playerId) => {
         totalRounds: room.totalRounds,
       },
     }];
+  }
+
+  if (phase === 'totEnd') {
+    const activePlayers = getPlayers(room).filter((player) => player.isConnected && player.isPlaying);
+    const leaderboard = activePlayers
+      .map((player) => ({
+        playerId: player.id,
+        name: player.name,
+        color: player.color,
+        score: room.tot?.scores?.[player.id] || 0,
+      }))
+      .sort((a, b) => b.score - a.score);
+    return [{ type: 'TOT_SET_END', payload: { leaderboard } }];
+  }
+
+  if (phase === 'mlt') {
+    const activePlayers = getPlayers(room).filter((player) => player.isConnected && player.isPlaying);
+    const actions = [{
+      type: 'MLT_SET_PROMPT',
+      payload: {
+        prompt: room.mlt?.currentPrompt || '',
+        round: room.mlt?.round || 1,
+        totalRounds: room.mlt?.totalRounds || 5,
+        players: activePlayers.map((player) => ({ id: player.id, name: player.name, color: player.color })),
+        jokersLeft: room.mlt?.jokers?.[playerId] ?? 2,
+        gameName: room.gameName || '',
+      },
+    }];
+
+    const voteCount = Object.keys(room.mlt?.votes || {}).length;
+    const totalVoters = activePlayers.length;
+    actions.push({ type: 'MLT_VOTE_RECEIVED', payload: { voteCount, totalVoters } });
+
+    const myVote = room.mlt?.votes?.[playerId];
+    if (myVote) actions.push({ type: 'MLT_MARK_VOTED', payload: { votedPlayerId: myVote } });
+
+    if (room.mlt?.paused) actions.push({ type: 'MLT_SET_PAUSED' });
+    else actions.push({ type: 'MLT_SET_TIMER', payload: { secondsLeft: room.mlt?.secondsLeft ?? 0 } });
+
+    if (room.mlt?.roundState === 'results') {
+      // Recompute per-round results from stored votes
+      const voteCounts = {};
+      activePlayers.forEach((player) => { voteCounts[player.id] = 0; });
+      Object.values(room.mlt?.votes || {}).forEach((targetId) => {
+        if (voteCounts[targetId] !== undefined) voteCounts[targetId]++;
+      });
+      const totalVotesCount = Object.keys(room.mlt?.votes || {}).length;
+      const results = activePlayers
+        .map((player) => ({
+          playerId: player.id,
+          name: player.name,
+          color: player.color,
+          count: voteCounts[player.id] || 0,
+          pct: totalVotesCount > 0 ? Math.round((voteCounts[player.id] || 0) / totalVotesCount * 100) : 0,
+        }))
+        .sort((a, b) => b.count - a.count);
+      const maxVotes = results[0]?.count || 0;
+      const majorityPlayerIds = maxVotes > 0 ? results.filter((r) => r.count === maxVotes).map((r) => r.playerId) : [];
+
+      actions.push({
+        type: 'MLT_SET_RESULTS',
+        payload: {
+          results,
+          majorityPlayerIds,
+          jokersUsed: Object.keys(room.mlt?.jokersThisRound || {}),
+          scores: room.mlt?.scores || {},
+          players: activePlayers.map((player) => ({ id: player.id, name: player.name, color: player.color })),
+        },
+      });
+    }
+
+    return actions;
+  }
+
+  if (phase === 'mltEnd') {
+    const activePlayers = getPlayers(room).filter((player) => player.isConnected && player.isPlaying);
+    const leaderboard = activePlayers
+      .map((player) => ({
+        playerId: player.id,
+        name: player.name,
+        color: player.color,
+        score: room.mlt?.scores?.[player.id] || 0,
+        totalVotes: room.mlt?.totalVotes?.[player.id] || 0,
+        wins: room.mlt?.wins?.[player.id] || 0,
+        title: null,
+      }))
+      .sort((a, b) => b.score - a.score);
+    return [{ type: 'MLT_SET_END', payload: { leaderboard } }];
   }
 
   return [];
