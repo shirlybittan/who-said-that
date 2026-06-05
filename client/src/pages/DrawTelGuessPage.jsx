@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
@@ -30,22 +30,29 @@ export default function DrawTelGuessPage() {
     resetKey: guessTurn?.promptId,
   });
 
+  // Capture mutable values in a ref so they don't need to be in the timer's deps
+  const autoSubmitRef = useRef({ guessText, guessTurn, roomCode });
+  useEffect(() => { autoSubmitRef.current = { guessText, guessTurn, roomCode }; });
+
+  // Effect 1: countdown — only re-runs when confirmed state changes
   useEffect(() => {
     if (hasConfirmed) return;
-    if (secondsLeft <= 0) {
-      if (guessTurn) {
-        let textToSubmit = guessText.trim();
-        if (!textToSubmit) textToSubmit = "I had absolutely no idea 🤦‍♂️";
-        sounds.answer?.();
-        socket.emit('dt:submit_guess', { code: roomCode, promptId: guessTurn.promptId, guessText: textToSubmit });
-        dispatch({ type: 'DT_MARK_GUESSED' });
-      }
-      markConfirmed();
-      return;
-    }
     const id = setInterval(() => setSecondsLeft(s => Math.max(0, s - 1)), 1000);
     return () => clearInterval(id);
-  }, [secondsLeft, hasConfirmed, guessText, guessTurn, roomCode, sounds, dispatch, markConfirmed]);
+  }, [hasConfirmed]);
+
+  // Effect 2: auto-submit when the timer reaches zero
+  useEffect(() => {
+    if (hasConfirmed || secondsLeft > 0) return;
+    const { guessText: text, guessTurn: turn, roomCode: code } = autoSubmitRef.current;
+    if (turn) {
+      let textToSubmit = text.trim();
+      if (!textToSubmit) textToSubmit = 'I had absolutely no idea 🤦‍♂️';
+      socket.emit('dt:submit_guess', { code, promptId: turn.promptId, guessText: textToSubmit });
+      dispatch({ type: 'DT_MARK_GUESSED' });
+    }
+    markConfirmed();
+  }, [secondsLeft, hasConfirmed, dispatch, markConfirmed]);
 
   if (!guessTurn) {
     return (

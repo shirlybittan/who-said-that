@@ -127,6 +127,71 @@ export const useSocket = () => {
           }
         });
         navigate('/tot');
+      } else if (phase === 'mlt') {
+        // Restore Most Likely To voting state from room snapshot
+        if (room.mlt?.currentPrompt) {
+          const mltPlayers = room.players
+            .filter(p => p.isPlaying && p.id !== playerId)
+            .map(p => ({ id: p.id, name: p.name, color: p.color }));
+          dispatch({
+            type: 'MLT_SET_PROMPT',
+            payload: {
+              prompt: room.mlt.currentPrompt,
+              round: room.mlt.round || 1,
+              totalRounds: room.mlt.totalRounds || 5,
+              players: mltPlayers,
+              gameName: room.gameName,
+              jokersLeft: room.mlt.jokers?.[playerId] ?? 2,
+            },
+          });
+          if (room.mlt.votes?.[playerId] !== undefined) {
+            dispatch({ type: 'MLT_MARK_VOTED', payload: { votedPlayerId: room.mlt.votes[playerId] } });
+          }
+        }
+        navigate('/mlt-vote');
+      } else if (phase === 'mltEnd') {
+        navigate('/mlt-end');
+      } else if (phase === 'drawing') {
+        // Drawing canvas state can't be restored; server will re-emit on next phase
+        navigate('/lobby');
+      } else if (phase === 'drawEnd') {
+        navigate('/draw-end');
+      } else if (phase === 'fitb') {
+        // Restore Fill-in-the-Blank answering state from room snapshot
+        if (room.fitb?.question) {
+          const fitbPlayers = room.players
+            .filter(p => p.isPlaying)
+            .map(p => ({ id: p.id, name: p.name, color: p.color }));
+          dispatch({
+            type: 'FITB_ROUND_START',
+            payload: {
+              question: room.fitb.question,
+              round: room.fitb.round || 1,
+              totalRounds: room.fitb.totalRounds || 3,
+              players: fitbPlayers,
+            },
+          });
+          const myFitbAnswer = room.fitb.answers?.find(a => a.playerId === playerId);
+          if (myFitbAnswer) {
+            dispatch({ type: 'FITB_MARK_ANSWERED', payload: { myAnswer: myFitbAnswer.text } });
+          }
+        }
+        navigate('/fitb');
+      } else if (phase === 'fitbEnd') {
+        navigate('/fitb-end');
+      } else if (phase === 'selfie' || phase === 'selfieEnd') {
+        // Navigate to selfie photo phase; server will re-emit draw/vote assignments
+        navigate('/selfie-photo');
+      } else if (phase === 'caption') {
+        // Navigate to caption start; server will re-emit write/vote phase if needed
+        navigate('/caption-photo');
+      } else if (phase === 'photovote') {
+        navigate('/photo-vote-photo');
+      } else if (phase === 'dt' || phase === 'dtEnd') {
+        // Draw Telephone — complex sub-phases; wait page is safe for all of them
+        navigate(phase === 'dtEnd' ? '/draw-tel-end' : '/draw-tel-wait');
+      } else if (phase === 'totEnd') {
+        navigate('/tot-end');
       } else {
         navigate('/lobby');
       }

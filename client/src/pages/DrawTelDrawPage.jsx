@@ -157,13 +157,14 @@ export default function DrawTelDrawPage() {
   const handleSubmit = useCallback(() => {
     if (submitted || strokesRef.current.length === 0) return;
     sounds.answer?.();
-    socket.emit('dt:submit_drawing', {
+    socket.emit('dt:submit_strokes', {
       code: roomCode,
       promptId: turn.promptId,
       strokes: strokesRef.current,
     });
+    dispatch({ type: 'DT_MARK_TURN_SUBMITTED' });
     setSubmitted(true);
-  }, [submitted, roomCode, turn?.promptId, sounds]);
+  }, [submitted, roomCode, turn?.promptId, sounds, dispatch]);
 
   // Auto-submit at ≤1 second (belt-and-suspenders alongside dt:time_up)
   useEffect(() => {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
@@ -27,21 +27,26 @@ export default function DrawTelPromptPage() {
     resetKey: dt.round,
   });
 
+  // Capture mutable values in a ref so they don't need to be in the timer's deps
+  const autoSubmitRef = useRef({ promptText, hasName, roomCode });
+  useEffect(() => { autoSubmitRef.current = { promptText, hasName, roomCode }; });
+
+  // Effect 1: countdown — only re-runs when confirmed state changes
   useEffect(() => {
     if (hasConfirmed) return;
-    if (secondsLeft <= 0) {
-      let textToSubmit = promptText.trim();
-      if (!hasName || textToSubmit.length <= 3) {
-        textToSubmit = "[name] doing absolutely nothing";
-      }
-      sounds.answer?.();
-      socket.emit('dt:submit_prompt', { code: roomCode, templateText: textToSubmit });
-      markConfirmed();
-      return;
-    }
     const id = setInterval(() => setSecondsLeft(s => Math.max(0, s - 1)), 1000);
     return () => clearInterval(id);
-  }, [secondsLeft, hasConfirmed, promptText, hasName, roomCode, sounds, markConfirmed]);
+  }, [hasConfirmed]);
+
+  // Effect 2: auto-submit when the timer reaches zero
+  useEffect(() => {
+    if (hasConfirmed || secondsLeft > 0) return;
+    const { promptText: text, hasName: hn, roomCode: code } = autoSubmitRef.current;
+    let textToSubmit = text.trim();
+    if (!hn || textToSubmit.length <= 3) textToSubmit = '[name] doing absolutely nothing';
+    socket.emit('dt:submit_prompt', { code, templateText: textToSubmit });
+    markConfirmed();
+  }, [secondsLeft, hasConfirmed, markConfirmed]);
 
   return (
     <motion.div

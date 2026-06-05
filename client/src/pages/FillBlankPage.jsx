@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
@@ -12,25 +12,50 @@ export default function FillBlankPage() {
   const fitb = state.fitb;
   const sounds = useSounds();
   const [answerText, setAnswerText] = useState('');
+  const [pendingVote, setPendingVote] = useState(null);
+  const [answerTimeLeft, setAnswerTimeLeft] = useState(60);
 
   const doSubmitAnswer = () => {
-    const trimmed = answerText.trim();
-    if (!trimmed) return;
+    let textToSubmit = answerText.trim();
+    if (!textToSubmit) textToSubmit = "I couldn't think of anything funny in time! 🕒";
     sounds.answer?.();
-    socket.emit('fitb:answer', { code: state.roomCode, text: trimmed });
-    dispatch({ type: 'FITB_MARK_ANSWERED', payload: { myAnswer: trimmed } });
+    socket.emit('fitb:answer', { code: state.roomCode, text: textToSubmit });
+    dispatch({ type: 'FITB_MARK_ANSWERED', payload: { myAnswer: textToSubmit } });
   };
 
-  const { hasConfirmed, confirm, editResponse } = useMiniGameLifecycle({
+  const { hasConfirmed, confirm, editResponse, markConfirmed } = useMiniGameLifecycle({
     onSubmit: doSubmitAnswer,
     resetKey: fitb.question,
+    initialConfirmed: fitb.hasAnswered,
   });
+
+  useEffect(() => {
+    if (fitb.phase !== 'answering') return;
+    if (hasConfirmed) return;
+    if (answerTimeLeft <= 0) {
+      let textToSubmit = answerText.trim();
+      if (!textToSubmit) textToSubmit = "I couldn't think of anything funny in time! 🕒";
+      socket.emit('fitb:answer', { code: state.roomCode, text: textToSubmit });
+      dispatch({ type: 'FITB_MARK_ANSWERED', payload: { myAnswer: textToSubmit } });
+      markConfirmed();
+      return;
+    }
+    const id = setInterval(() => setAnswerTimeLeft(s => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(id);
+  }, [answerTimeLeft, hasConfirmed, answerText, fitb.phase, state.roomCode, dispatch, markConfirmed]);
 
   const handleVote = (id) => {
     if (fitb.hasVoted) return;
     sounds.vote?.();
     socket.emit('fitb:vote', { code: state.roomCode, answerId: id });
     dispatch({ type: 'FITB_MARK_VOTED', payload: { answerId: id } });
+  };
+
+  const handleVoteConfirm = () => {
+    if (pendingVote !== null) {
+      handleVote(pendingVote);
+      setPendingVote(null);
+    }
   };
 
   const handleSkipToVote = () => {
@@ -60,8 +85,9 @@ export default function FillBlankPage() {
         className="flex flex-col items-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6"
         initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}
       >
-        <div className="w-full max-w-md mt-6 mb-4 flex items-center justify-between text-sm text-gray-500 font-['Nunito']">
+        <div className="w-full max-w-md mt-16 mb-4 flex items-center justify-between text-sm text-gray-500 font-['Nunito']">
           <span>Round {fitb.round} / {fitb.totalRounds}</span>
+          <span className="text-red-400 font-bold tracking-widest tabular-nums">⏳ {answerTimeLeft}s</span>
           <span className="text-[#4ECDC4]">Fill in the Blank</span>
         </div>
 
@@ -131,16 +157,34 @@ export default function FillBlankPage() {
         >
           {fitb.answers.map((ans) => {
             const isOwn = ans.text === fitb.myAnswer;
-            const selected = fitb.myVote === ans.id;
+            const selected = pendingVote === ans.id || fitb.myVote === ans.id;
+            
+            if (selected && !fitb.hasVoted) {
+              return (
+                <motion.div
+                  key={ans.id}
+                  className="w-full rounded-2xl p-4 border-2 font-['Nunito'] transition border-[#4ECDC4] bg-[#4ECDC4]/10"
+                  layoutId="selected-vote"
+                >
+                   <p className="text-xl text-white mb-4">{ans.text}</p>
+                   <div className="flex gap-2">
+                     <button onClick={() => setPendingVote(null)} className="flex-1 py-2 rounded-xl text-gray-400 bg-[#1A1A2E] hover:text-white transition">Cancel</button>
+                     <button onClick={handleVoteConfirm} className="flex-1 py-2 rounded-xl text-[#0D0D1A] bg-[#4ECDC4] font-bold hover:bg-[#3dbdb4] transition">Confirm Vote</button>
+                   </div>
+                </motion.div>
+              );
+            }
+
             return (
               <motion.button
                 key={ans.id}
-                onClick={() => !fitb.hasVoted && !isOwn && handleVote(ans.id)}
-                disabled={fitb.hasVoted || isOwn}
+                onClick={() => !fitb.hasVoted && !isOwn && setPendingVote(ans.id)}
+                disabled={fitb.hasVoted || isOwn || (pendingVote !== null && pendingVote !== ans.id)}
                 className={`w-full text-left rounded-2xl p-4 border-2 font-['Nunito'] transition
                   ${selected ? 'border-[#FF6B6B] bg-[#FF6B6B]/10' : 'border-[#2D2D44] bg-[#1A1A2E]'}
                   ${fitb.hasVoted || isOwn ? 'cursor-default' : 'hover:border-[#FF6B6B]/60 cursor-pointer'}
-                  ${isOwn ? 'opacity-50' : ''}`}
+                  ${isOwn ? 'opacity-50' : ''}
+                  ${pendingVote !== null && pendingVote !== ans.id && !fitb.hasVoted ? 'hidden' : 'block'}`}
                 variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { duration: 0.25 } } }}
               >
                 <span className="text-white">{ans.text}</span>

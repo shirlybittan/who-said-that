@@ -355,7 +355,8 @@ const emitWstQuestion = (io, room, code) => {
       room.phase = 'voting';
       room.currentAnswerIndex = 0;
       const mappedAnswers = room.answers.map(a => ({ text: a.text }));
-      const expectedVotes = connectedPlayersCount - 1;
+      const expectedVotes = connectedPlayersCount;
+      io.to(code).emit('phase_timer', { secondsLeft: 0 }); // clear answering timer
       io.to(code).emit('voting_started', { answers: mappedAnswers, currentIndex: 0, totalPlayers: expectedVotes });
       room.answers.forEach((answer, idx) => {
         const authorPlayer = room.players.find(p => p.id === answer.playerId);
@@ -907,7 +908,8 @@ io.on('connection', (socket) => {
         room.phase = 'voting';
         room.currentAnswerIndex = 0;
         const mappedAnswers = room.answers.map(a => ({ text: a.text }));
-        const expectedVotes = connectedPlayersCount - 1;
+        const expectedVotes = connectedPlayersCount;
+        io.to(code).emit('phase_timer', { secondsLeft: 0 }); // clear answering timer
         io.to(code).emit('voting_started', { answers: mappedAnswers, currentIndex: 0, totalPlayers: expectedVotes });
         room.answers.forEach((answer, idx) => {
           const authorPlayer = room.players.find(p => p.id === answer.playerId);
