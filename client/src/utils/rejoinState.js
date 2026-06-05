@@ -714,10 +714,6 @@ const buildMiniGameRestore = (room, snapshot) => {
 export const buildJoinRestorePlan = ({ room, playerId, isRejoin, miniGameState }) => {
   const roomPayload = getBaseRoomPayload(room, playerId, isRejoin);
 
-  if (roomPayload.joinedMidRound) {
-    return { roomPayload, actions: [], route: '/lobby' };
-  }
-
   const route = getRouteForPhase(room.phase, miniGameState);
   const actions = miniGameState
     ? buildMiniGameRestore(room, miniGameState)

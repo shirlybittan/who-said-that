@@ -1122,6 +1122,15 @@ function DrawingHostPanel({ drawData, players, status }) {
 function DtHostPanel({ dtData, players, status, onRevealNext }) {
   const { phase, promptsSubmittedCount, totalPrompts, totalChains, chainsCompletedCount, chainProgress, guessedCount, totalGuessers, reveal, leaderboard } = dtData;
 
+  // Countdown for prompting phase
+  const [promptSecs, setPromptSecs] = useState(dtData.promptSecondsLeft || 60);
+  useEffect(() => {
+    if (status !== 'dt-prompting') return;
+    setPromptSecs(dtData.promptSecondsLeft || 60);
+    const id = setInterval(() => setPromptSecs(s => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(id);
+  }, [status]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Vote countdown for reveal step 2 (guess+vote — auto-advances)
   const isRevealVoteStep = status === 'dt-reveal' && (reveal?.step ?? 0) === 2;
   const [hostVoteSecs, setHostVoteSecs] = useState(30);
@@ -1142,6 +1151,7 @@ function DtHostPanel({ dtData, players, status, onRevealNext }) {
           <h1 className="text-4xl font-['Fredoka_One'] text-[#FF6B6B]">Drawing in Chain</h1>
           <p className="text-xl text-gray-300 font-['Nunito'] mt-1">Players are writing prompts…</p>
         </motion.div>
+        <TimerRing secondsLeft={promptSecs} total={dtData.promptTimeTotal || 60} paused={false} size={100} />
         <div className="w-full bg-[#1A1A2E] rounded-2xl p-6 border border-[#FF6B6B]/30">
           <div className="flex justify-between items-center mb-3">
             <span className="text-gray-400 font-['Nunito']">Prompts submitted</span>
@@ -1546,6 +1556,9 @@ function FitbHostPanel({ fitbData, players, onSkipToVote, onShowResults, onNextR
         <h1 className="text-3xl font-['Fredoka_One'] text-[#F9CA24]">Fill in the Blank</h1>
         <p className="text-sm font-['Nunito'] text-gray-400 mt-1">Round {fitbData.round} of {fitbData.totalRounds}</p>
       </div>
+      {fitbData.answerTimeLeft > 0 && (
+        <TimerRing secondsLeft={fitbData.answerTimeLeft} total={fitbData.answerTimeTotal || 30} paused={false} size={100} />
+      )}
       <div className="w-full bg-[#1A1A2E] border-2 border-[#F9CA24]/50 rounded-3xl p-8 text-center">
         <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-3">Complete the sentence</p>
         <h2 className="text-3xl font-['Fredoka_One'] text-[#FFE66D] leading-snug">{fitbData.question}</h2>
@@ -2947,8 +2960,13 @@ export default function HostPage() {
         ...prev, phase: 'answering', round: data.round, totalRounds: data.totalRounds,
         question: data.question, answeredCount: 0, totalAnswerers: data.totalAnswerers || 0,
         voteCount: 0, totalVoters: 0, answers: [],
+        answerTimeLeft: data.timeLimit || 30, answerTimeTotal: data.timeLimit || 30,
       }));
       setStatus('fitb');
+    });
+    sock.on('fitb:answer_timer', ({ secondsLeft }) => {
+      if (!isActiveSock()) return;
+      setFitbData(prev => ({ ...prev, answerTimeLeft: secondsLeft }));
     });
     sock.on('fitb:answer_received', ({ answeredCount, totalAnswerers, answeredPlayerIds }) => {
       setFitbData(prev => ({ ...prev, answeredCount, totalAnswerers, answeredPlayerIds: answeredPlayerIds || prev.answeredPlayerIds }));
@@ -3101,10 +3119,10 @@ export default function HostPage() {
       if (!isActiveSock()) return;
       setDtData(prev => ({ ...prev, selfiePhotoCount: photoCount, selfieTotalPhotographers: totalPhotographers, selfieSubmittedPlayerIds: submittedPlayerIds || prev.selfieSubmittedPlayerIds }));
     });
-    sock.on('dt:prompt_phase', ({ players: p, totalPrompts }) => {
+    sock.on('dt:prompt_phase', ({ players: p, totalPrompts, secondsLeft }) => {
       if (!isActiveSock()) return;
       if (p && p.length > 0) setPlayers(p);
-      setDtData(prev => ({ ...DT_INITIAL, phase: 'prompting', totalPrompts }));
+      setDtData(prev => ({ ...DT_INITIAL, phase: 'prompting', totalPrompts, promptSecondsLeft: secondsLeft || 60, promptTimeTotal: secondsLeft || 60 }));
       setStatus('dt-prompting');
     });
     sock.on('dt:prompt_received', ({ submittedCount, totalPrompts, submittedPlayerIds }) => {

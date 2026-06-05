@@ -34,9 +34,19 @@ export default function FillBlankPage() {
   const autoSubmitRef = useRef({ answerText });
   useEffect(() => { autoSubmitRef.current = { answerText }; });
 
-  // Auto-submit when server timer hits 0 (server also auto-submits as fallback)
+  // Send draft to server as user types so server can use it on timer expiry
   useEffect(() => {
+    if (fitb.hasAnswered || hasConfirmed) return;
     if (fitb.phase !== 'answering') return;
+    const timeout = setTimeout(() => {
+      socket.emit('fitb:draft', { code: state.roomCode, text: answerText });
+    }, 300);
+    return () => clearTimeout(timeout);
+  }, [answerText, fitb.hasAnswered, hasConfirmed, fitb.phase, state.roomCode]);
+
+  // Auto-submit when server timer hits 0 (server also auto-submits via stored draft as fallback)
+  useEffect(() => {
+    if (fitb.hasAnswered) return;
     if (hasConfirmed) return;
     if (answerTimeLeft <= 0) {
       let textToSubmit = autoSubmitRef.current.answerText.trim();
@@ -45,7 +55,7 @@ export default function FillBlankPage() {
       dispatch({ type: 'FITB_MARK_ANSWERED', payload: { myAnswer: textToSubmit } });
       markConfirmed();
     }
-  }, [answerTimeLeft, hasConfirmed, fitb.phase, state.roomCode, dispatch, markConfirmed]);
+  }, [answerTimeLeft, fitb.hasAnswered, hasConfirmed, state.roomCode, dispatch, markConfirmed]);
 
   const handleVote = (id) => {
     if (fitb.hasVoted) return;

@@ -423,6 +423,14 @@ export const useSocket = () => {
     // ────────────────────────────────────────────────────────────────────────
 
     socket.on('connect', onConnect);
+
+    // If the socket is already connected when this effect runs (e.g. page reload after
+    // the socket auto-reconnected, or hot reload), trigger the rejoin immediately since
+    // the 'connect' event won't fire again for an already-established connection.
+    if (socket.connected) {
+      onConnect();
+    }
+
     socket.on('room_created', onRoomCreated);
     socket.on('join_success', onJoinSuccess);
     socket.on('player_joined', onPlayerJoined);

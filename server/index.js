@@ -1892,13 +1892,14 @@ io.on('connection', (socket) => {
       if (!room.fitb || room.fitb.phase !== 'answering') return;
       io.to(code).emit('fitb:answer_timer', { secondsLeft: room.fitb.answerSecondsLeft });
       if (room.fitb.answerSecondsLeft <= 0) {
-        // Auto-submit default answer for any player who hasn't answered yet
+        // Auto-submit: use player's typed draft if available, otherwise default
         const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
         playingPlayers.forEach(p => {
           if (!room.fitb.answers.find(a => a.playerId === p.id)) {
+            const draftText = (room.fitb.drafts || {})[p.id] || '';
             room.fitb.answers.push({
               playerId: p.id, playerName: p.name, playerColor: p.color,
-              text: "I couldn't think of anything funny in time! 🕒",
+              text: draftText || "I couldn't think of anything funny in time! 🕒",
               votes: 0,
             });
           }
@@ -1936,6 +1937,7 @@ io.on('connection', (socket) => {
       totalRounds,
       question: '',
       answers: [],
+      drafts: {},
       usedQuestions: [],
       targetPlayerIndex: 0,
       scores,
@@ -1953,6 +1955,15 @@ io.on('connection', (socket) => {
       timeLimit,
     });
     startFitbAnswerTimer(io, room, code, timeLimit);
+  });
+
+  socket.on('fitb:draft', ({ code, text }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'fitb' || room.fitb.phase !== 'answering') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isPlaying || !player.isConnected) return;
+    room.fitb.drafts = room.fitb.drafts || {};
+    room.fitb.drafts[player.id] = String(text || '').slice(0, 120);
   });
 
   socket.on('fitb:answer', ({ code, text }) => {
@@ -2120,6 +2131,7 @@ io.on('connection', (socket) => {
     room.fitb.round++;
     room.fitb.phase = 'answering';
     room.fitb.answers = [];
+    room.fitb.drafts = {};
     room.fitb._votes = {};
     room.fitb.question = pickFitbQuestion(room, room.players);
     const timeLimit = room.roomConfig?.roundDurationSecs || 30;
