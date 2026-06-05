@@ -8,6 +8,7 @@ import TimerRing from '../components/game/TimerRing';
 import VoteCoin from '../components/game/VoteCoin';
 import ReplayCanvas from '../components/game/ReplayCanvas';
 import { QUEUE_GAME_LABELS } from '../config/hostControls';
+import MostLikelyToHostView from '../games/most-likely-to/HostView.jsx';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
 const CLIENT_URL = (import.meta.env.VITE_CLIENT_URL || '').replace(/\/$/, '') || null;
@@ -3416,6 +3417,7 @@ export default function HostPage() {
   const joinBase = CLIENT_URL || window.location.origin;
   const joinUrl = `${joinBase}/?join=${gameInfo.code || roomCodeParam || ''}`;
   const headerRoomCode = gameInfo.code || roomCodeParam;
+  const isMltCoreView = status === 'mlt-voting';
 
   const renderPanel = () => {
     switch (status) {
@@ -3494,7 +3496,7 @@ export default function HostPage() {
 
   return (
     <div className="font-['Nunito'] min-h-screen bg-[#0D0D1A] text-[#F7F7F7] flex flex-col">
-      <div className="flex items-center justify-between px-6 py-3 bg-[#1A1A2E] border-b border-[#2D2D44] flex-shrink-0">
+      {!isMltCoreView && <div className="flex items-center justify-between px-6 py-3 bg-[#1A1A2E] border-b border-[#2D2D44] flex-shrink-0">
         <div className="flex items-center gap-3">
           <span className="text-xl font-['Fredoka_One'] text-[#FFE66D]">🎉 Party Pack</span>
           {gameInfo.gameName && (
@@ -3541,7 +3543,7 @@ export default function HostPage() {
             </button>
           )}
         </div>
-      </div>
+      </div>}
 
       {['game-end', 'mlt-end', 'tot-end', 'draw-end', 'fitb-end', 'selfie-results'].includes(status) && (
         <Confetti width={window.innerWidth} height={window.innerHeight} recycle={false} numberOfPieces={400} />
@@ -3683,22 +3685,31 @@ export default function HostPage() {
           </div>
         </div>
       )}
-      <div className="flex-1 flex items-center justify-center p-6 overflow-auto">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={status}
-            className="w-full flex justify-center"
-            initial={{ opacity: 0, y: 22, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -22, scale: 0.97 }}
-            transition={{ duration: 0.3, ease: [0.2, 0.8, 0.2, 1] }}
-          >
-            {renderPanel()}
-          </motion.div>
-        </AnimatePresence>
-      </div>
+      {isMltCoreView ? (
+        <MostLikelyToHostView
+          state={{ mlt, players, gameInfo, roomCode: headerRoomCode, joinUrl }}
+          socket={socketRef.current}
+          onOpenGamePicker={isRoomCreator ? () => setShowGamePicker(true) : null}
+          onOpenMainMenu={isRoomCreator ? () => setShowMainMenu(true) : null}
+        />
+      ) : (
+        <div className="flex-1 flex items-center justify-center p-6 overflow-auto">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={status}
+              className="w-full flex justify-center"
+              initial={{ opacity: 0, y: 22, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -22, scale: 0.97 }}
+              transition={{ duration: 0.3, ease: [0.2, 0.8, 0.2, 1] }}
+            >
+              {renderPanel()}
+            </motion.div>
+          </AnimatePresence>
+        </div>
+      )}
 
-      <HostControlBar
+      {!isMltCoreView && <HostControlBar
         status={status}
         isRoomCreator={isRoomCreator}
         players={players}
@@ -3744,10 +3755,9 @@ export default function HostPage() {
         onCaptionSkipToVoting={() => socketRef.current?.emit('caption:skip_to_voting', { code: gameInfo.code })}
         onCaptionSkipToResults={() => socketRef.current?.emit('caption:skip_to_results', { code: gameInfo.code })}
         onCaptionNextRound={() => socketRef.current?.emit('caption:next_round', { code: gameInfo.code })}
-      />
+      />}
     </div>
   );
 }
-
 
 
