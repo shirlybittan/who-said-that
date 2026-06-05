@@ -35,50 +35,32 @@ export default function DrawTelGuessPage() {
   const autoSubmitRef = useRef({ guessText, guessTurn, roomCode });
   useEffect(() => { autoSubmitRef.current = { guessText, guessTurn, roomCode }; });
 
-  // Effect 1: countdown — only re-runs when confirmed state changes
+  // Reset text and timer when a new guess prompt arrives
   useEffect(() => {
-<<<<<<< HEAD
-    if (hasConfirmed) return;
-    const id = setInterval(() => setSecondsLeft(s => Math.max(0, s - 1)), 1000);
-    return () => clearInterval(id);
-  }, [hasConfirmed]);
-
-  // Effect 2: auto-submit when the timer reaches zero
-  useEffect(() => {
-    if (hasConfirmed || secondsLeft > 0) return;
-    const { guessText: text, guessTurn: turn, roomCode: code } = autoSubmitRef.current;
-    if (turn) {
-      let textToSubmit = text.trim();
-      if (!textToSubmit) textToSubmit = 'I had absolutely no idea 🤦‍♂️';
-      socket.emit('dt:submit_guess', { code, promptId: turn.promptId, guessText: textToSubmit });
-      dispatch({ type: 'DT_MARK_GUESSED' });
-    }
-    markConfirmed();
-  }, [secondsLeft, hasConfirmed, dispatch, markConfirmed]);
-=======
     setGuessText('');
     setSecondsLeft(dt.guessSecondsLeft || 60);
   }, [guessTurn?.promptId, dt.guessSecondsLeft]);
 
+  // Auto-submit when timer reaches zero (uses ref to avoid stale closures)
   useEffect(() => {
-    if (secondsLeft <= 0) {
-      if (!hasConfirmed && guessTurn) {
-        let textToSubmit = guessText.trim();
-        if (!textToSubmit) textToSubmit = "I had absolutely no idea 🤦‍♂️";
-        sounds.answer?.();
-        socket.emit('dt:submit_guess', { code: roomCode, promptId: guessTurn.promptId, guessText: textToSubmit });
-        dispatch({ type: 'DT_MARK_GUESSED' });
-      }
-      markConfirmed();
+    if (secondsLeft > 0 || hasConfirmed) return;
+    const { guessText: text, guessTurn: turn, roomCode: code } = autoSubmitRef.current;
+    if (turn) {
+      let textToSubmit = text.trim();
+      if (!textToSubmit) textToSubmit = 'I had absolutely no idea 🤦‍♂️';
+      sounds.answer?.();
+      socket.emit('dt:submit_guess', { code, promptId: turn.promptId, guessText: textToSubmit });
+      dispatch({ type: 'DT_MARK_GUESSED' });
     }
-  }, [secondsLeft, hasConfirmed, guessText, guessTurn, roomCode, sounds, dispatch, markConfirmed]);
+    markConfirmed();
+  }, [secondsLeft, hasConfirmed, sounds, dispatch, markConfirmed]);
 
+  // Countdown — only runs while player hasn't confirmed and has a turn
   useEffect(() => {
     if (hasConfirmed || !guessTurn || secondsLeft <= 0) return;
     const id = setInterval(() => setSecondsLeft(s => Math.max(0, s - 1)), 1000);
     return () => clearInterval(id);
   }, [secondsLeft, hasConfirmed, guessTurn]);
->>>>>>> 6c55a1a1b5659af3becef5a4465127581423cdd1
 
   if (!guessTurn) {
     return (

@@ -33,48 +33,29 @@ export default function DrawTelPromptPage() {
   const autoSubmitRef = useRef({ promptText, hasName, roomCode });
   useEffect(() => { autoSubmitRef.current = { promptText, hasName, roomCode }; });
 
-  // Effect 1: countdown — only re-runs when confirmed state changes
+  // Reset timer when prompt changes
   useEffect(() => {
-<<<<<<< HEAD
-    if (hasConfirmed) return;
-    const id = setInterval(() => setSecondsLeft(s => Math.max(0, s - 1)), 1000);
-    return () => clearInterval(id);
-  }, [hasConfirmed]);
-
-  // Effect 2: auto-submit when the timer reaches zero
-  useEffect(() => {
-    if (hasConfirmed || secondsLeft > 0) return;
-    const { promptText: text, hasName: hn, roomCode: code } = autoSubmitRef.current;
-    let textToSubmit = text.trim();
-    if (!hn || textToSubmit.length <= 3) textToSubmit = '[name] doing absolutely nothing';
-    socket.emit('dt:submit_prompt', { code, templateText: textToSubmit });
-    markConfirmed();
-  }, [secondsLeft, hasConfirmed, markConfirmed]);
-=======
     setSecondsLeft(dt.promptSecondsLeft || 60);
   }, [dt.promptSecondsLeft, dt.totalPrompts]);
 
+  // Auto-submit when timer reaches zero (uses ref to avoid stale closures)
   useEffect(() => {
-    if (secondsLeft <= 0) {
-      if (!hasConfirmed) {
-        let textToSubmit = promptText.trim();
-        if (!hasName || textToSubmit.length <= 3) {
-          textToSubmit = "[name] doing absolutely nothing";
-        }
-        sounds.answer?.();
-        socket.emit('dt:submit_prompt', { code: roomCode, templateText: textToSubmit });
-        dispatch({ type: 'DT_MARK_PROMPT_SUBMITTED' });
-      }
-      markConfirmed();
-    }
-  }, [secondsLeft, hasConfirmed, promptText, hasName, roomCode, sounds, markConfirmed, dispatch]);
+    if (secondsLeft > 0 || hasConfirmed) return;
+    const { promptText: text, hasName: hn, roomCode: code } = autoSubmitRef.current;
+    let textToSubmit = text.trim();
+    if (!hn || textToSubmit.length <= 3) textToSubmit = '[name] doing absolutely nothing';
+    sounds.answer?.();
+    socket.emit('dt:submit_prompt', { code, templateText: textToSubmit });
+    dispatch({ type: 'DT_MARK_PROMPT_SUBMITTED' });
+    markConfirmed();
+  }, [secondsLeft, hasConfirmed, sounds, dispatch, markConfirmed]);
 
+  // Countdown — only runs while player hasn't confirmed
   useEffect(() => {
     if (hasConfirmed || secondsLeft <= 0) return;
     const id = setInterval(() => setSecondsLeft(s => Math.max(0, s - 1)), 1000);
     return () => clearInterval(id);
   }, [secondsLeft, hasConfirmed]);
->>>>>>> 6c55a1a1b5659af3becef5a4465127581423cdd1
 
   return (
     <motion.div
