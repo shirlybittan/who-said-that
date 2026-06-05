@@ -962,7 +962,7 @@ function DrawingHostPanel({ drawData, players, status }) {
                   {isSecretMode && (
                     <p className="text-[#FFE66D] font-['Fredoka_One'] text-lg">{sub.word}</p>
                   )}
-                  <p className="text-white font-['Fredoka_One'] text-base">{sub.name}</p>
+                  <p className="text-white font-['Fredoka_One'] text-base">{status === 'voting' ? '???' : sub.name}</p>
                 </div>
               </motion.div>
             ))}

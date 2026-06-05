@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
@@ -28,24 +28,39 @@ export default function DrawTelGuessPage() {
   const { hasConfirmed, confirm, editResponse, markConfirmed } = useMiniGameLifecycle({
     onSubmit: doSubmit,
     resetKey: guessTurn?.promptId,
+    initialConfirmed: dt.hasGuessed,
   });
 
+  // Capture mutable values in a ref so they don't need to be in the timer's deps
+  const autoSubmitRef = useRef({ guessText, guessTurn, roomCode });
+  useEffect(() => { autoSubmitRef.current = { guessText, guessTurn, roomCode }; });
+
+  // Reset text and timer when a new guess prompt arrives
   useEffect(() => {
-    if (hasConfirmed) return;
-    if (secondsLeft <= 0) {
-      if (guessTurn) {
-        let textToSubmit = guessText.trim();
-        if (!textToSubmit) textToSubmit = "I had absolutely no idea 🤦‍♂️";
-        sounds.answer?.();
-        socket.emit('dt:submit_guess', { code: roomCode, promptId: guessTurn.promptId, guessText: textToSubmit });
-        dispatch({ type: 'DT_MARK_GUESSED' });
-      }
-      markConfirmed();
-      return;
+    setGuessText('');
+    setSecondsLeft(dt.guessSecondsLeft || 60);
+  }, [guessTurn?.promptId, dt.guessSecondsLeft]);
+
+  // Auto-submit when timer reaches zero (uses ref to avoid stale closures)
+  useEffect(() => {
+    if (secondsLeft > 0 || hasConfirmed) return;
+    const { guessText: text, guessTurn: turn, roomCode: code } = autoSubmitRef.current;
+    if (turn) {
+      let textToSubmit = text.trim();
+      if (!textToSubmit) textToSubmit = 'I had absolutely no idea 🤦‍♂️';
+      sounds.answer?.();
+      socket.emit('dt:submit_guess', { code, promptId: turn.promptId, guessText: textToSubmit });
+      dispatch({ type: 'DT_MARK_GUESSED' });
     }
+    markConfirmed();
+  }, [secondsLeft, hasConfirmed, sounds, dispatch, markConfirmed]);
+
+  // Countdown — only runs while player hasn't confirmed and has a turn
+  useEffect(() => {
+    if (hasConfirmed || !guessTurn || secondsLeft <= 0) return;
     const id = setInterval(() => setSecondsLeft(s => Math.max(0, s - 1)), 1000);
     return () => clearInterval(id);
-  }, [secondsLeft, hasConfirmed, guessText, guessTurn, roomCode, sounds, dispatch, markConfirmed]);
+  }, [secondsLeft, hasConfirmed, guessTurn]);
 
   if (!guessTurn) {
     return (

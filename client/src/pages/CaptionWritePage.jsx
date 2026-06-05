@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
@@ -28,7 +28,23 @@ export default function CaptionWritePage() {
   const { hasConfirmed, confirm, editResponse } = useMiniGameLifecycle({
     onSubmit: doSubmit,
     resetKey: caption.round,
+    initialConfirmed: caption.hasWrittenCaption,
   });
+
+  const autoSubmitRef = useRef({ text, hasConfirmed, state, dispatch });
+  useEffect(() => { autoSubmitRef.current = { text, hasConfirmed, state, dispatch }; });
+
+  useEffect(() => {
+    return () => {
+      const { text: currText, hasConfirmed: currConfirmed, state: currState } = autoSubmitRef.current;
+      if (!currConfirmed) {
+        const trimmed = currText.trim();
+        if (trimmed) {
+          socket.emit('caption:submit_caption', { code: currState.roomCode, text: trimmed });
+        }
+      }
+    };
+  }, []);
 
   return (
     <GamePageWrapper>

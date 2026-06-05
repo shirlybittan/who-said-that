@@ -190,6 +190,7 @@ export default function DrawingPage() {
   const { hasConfirmed, confirm, editResponse, markConfirmed } = useMiniGameLifecycle({
     onSubmit: handleSubmit,
     resetKey: draw.round,
+    initialConfirmed: draw.hasSubmitted,
   });
 
   // Auto-submit when timer is about to expire to capture the latest drawing.

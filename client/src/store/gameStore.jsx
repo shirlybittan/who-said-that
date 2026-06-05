@@ -1113,6 +1113,14 @@ export const gameReducer = (state, action) => {
           totalPrompts: action.payload.totalPrompts,
         },
       };
+    case 'DT_MARK_PROMPT_SUBMITTED':
+      return {
+        ...state,
+        dt: {
+          ...state.dt,
+          hasSubmittedPrompt: true,
+        },
+      };
     case 'DT_DRAWING_PHASE':
       return {
         ...state,

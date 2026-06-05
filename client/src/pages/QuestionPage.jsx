@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { translations } from '../locales/translations';
@@ -29,6 +29,7 @@ export default function QuestionPage() {
   const { hasConfirmed, confirm, editResponse, markConfirmed } = useMiniGameLifecycle({
     onSubmit: doSubmitAnswer,
     resetKey: state.currentQuestion,
+    initialConfirmed: state.hasAnswered,
   });
 
   useEffect(() => {
@@ -38,14 +39,18 @@ export default function QuestionPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.currentQuestion]);
 
+  const autoSubmitRef = React.useRef({ answer });
+  useEffect(() => { autoSubmitRef.current = { answer }; });
+
   useEffect(() => {
     if (!state.isPlaying) return;   // cast screen never auto-submits
     if (state.hasAnswered) return;
     if (timeLeft <= 0) {
       if (!state.hasAnswered) {
-        const defaultAnswer = "I couldn't think of anything funny in time! 🕒";
-        socket.emit('submit_answer', { code: state.roomCode, text: defaultAnswer });
-        dispatch({ type: 'MARK_ANSWERED', payload: { myAnswer: defaultAnswer } });
+        let textToSubmit = autoSubmitRef.current.answer.trim();
+        if (!textToSubmit) textToSubmit = "I couldn't think of anything funny in time! 🕒";
+        socket.emit('submit_answer', { code: state.roomCode, text: textToSubmit });
+        dispatch({ type: 'MARK_ANSWERED', payload: { myAnswer: textToSubmit } });
         markConfirmed();
       }
       return;
@@ -78,11 +83,11 @@ export default function QuestionPage() {
       className="flex flex-col items-center justify-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 text-center shadow-lg"
       initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}
     >
-      <div className="mb-8 w-full max-w-lg">
-        <h3 className="text-xl font-['Fredoka_One'] text-[#FFE66D] uppercase tracking-widest mb-2">
-          {t.round} {state.currentRound} {t.of} {state.totalRounds}
-        </h3>
-        <p className="text-xl font-bold font-['Nunito'] text-red-400 mb-2">⏳ {timeLeft}s</p>
+<div className="mt-16 mb-8 w-full max-w-lg">
+          <h3 className="text-xl font-['Fredoka_One'] text-[#FFE66D] uppercase tracking-widest mb-2">
+            {t.round} {state.currentRound} {t.of} {state.totalRounds}
+          </h3>
+          {/* <p className="text-xl font-bold font-['Nunito'] text-red-400 mb-2">⏳ {timeLeft}s</p> */}
 
         {/* Situational: target player badge */}
         {isSituational && target && (

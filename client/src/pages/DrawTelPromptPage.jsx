@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
@@ -7,7 +7,7 @@ import MiniGameWrapper from '../components/MiniGameWrapper.jsx';
 import { useMiniGameLifecycle } from '../hooks/useMiniGameLifecycle.js';
 
 export default function DrawTelPromptPage() {
-  const { state } = useGame();
+  const { state, dispatch } = useGame();
   const { dt, roomCode } = state;
   const sounds = useSounds();
   const [promptText, setPromptText] = useState('');
@@ -20,28 +20,42 @@ export default function DrawTelPromptPage() {
     if (!canSubmit) return;
     sounds.answer?.();
     socket.emit('dt:submit_prompt', { code: roomCode, templateText: promptText.trim() });
+    dispatch({ type: 'DT_MARK_PROMPT_SUBMITTED' });
   };
 
   const { hasConfirmed, confirm, editResponse, markConfirmed } = useMiniGameLifecycle({
     onSubmit: doSubmit,
     resetKey: dt.round,
+    initialConfirmed: dt.hasSubmittedPrompt,
   });
 
+  // Capture mutable values in a ref so they don't need to be in the timer's deps
+  const autoSubmitRef = useRef({ promptText, hasName, roomCode });
+  useEffect(() => { autoSubmitRef.current = { promptText, hasName, roomCode }; });
+
+  // Reset timer when prompt changes
   useEffect(() => {
-    if (hasConfirmed) return;
-    if (secondsLeft <= 0) {
-      let textToSubmit = promptText.trim();
-      if (!hasName || textToSubmit.length <= 3) {
-        textToSubmit = "[name] doing absolutely nothing";
-      }
-      sounds.answer?.();
-      socket.emit('dt:submit_prompt', { code: roomCode, templateText: textToSubmit });
-      markConfirmed();
-      return;
-    }
+    setSecondsLeft(dt.promptSecondsLeft || 60);
+  }, [dt.promptSecondsLeft, dt.totalPrompts]);
+
+  // Auto-submit when timer reaches zero (uses ref to avoid stale closures)
+  useEffect(() => {
+    if (secondsLeft > 0 || hasConfirmed) return;
+    const { promptText: text, hasName: hn, roomCode: code } = autoSubmitRef.current;
+    let textToSubmit = text.trim();
+    if (!hn || textToSubmit.length <= 3) textToSubmit = '[name] doing absolutely nothing';
+    sounds.answer?.();
+    socket.emit('dt:submit_prompt', { code, templateText: textToSubmit });
+    dispatch({ type: 'DT_MARK_PROMPT_SUBMITTED' });
+    markConfirmed();
+  }, [secondsLeft, hasConfirmed, sounds, dispatch, markConfirmed]);
+
+  // Countdown — only runs while player hasn't confirmed
+  useEffect(() => {
+    if (hasConfirmed || secondsLeft <= 0) return;
     const id = setInterval(() => setSecondsLeft(s => Math.max(0, s - 1)), 1000);
     return () => clearInterval(id);
-  }, [secondsLeft, hasConfirmed, promptText, hasName, roomCode, sounds, markConfirmed]);
+  }, [secondsLeft, hasConfirmed]);
 
   return (
     <motion.div
