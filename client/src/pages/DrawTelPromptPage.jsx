@@ -3,31 +3,45 @@ import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
+import MiniGameWrapper from '../components/MiniGameWrapper.jsx';
+import { useMiniGameLifecycle } from '../hooks/useMiniGameLifecycle.js';
 
 export default function DrawTelPromptPage() {
   const { state } = useGame();
   const { dt, roomCode } = state;
   const sounds = useSounds();
   const [promptText, setPromptText] = useState('');
-  const [submitted, setSubmitted] = useState(false);
   const [secondsLeft, setSecondsLeft] = useState(dt.promptSecondsLeft || 60);
 
-  useEffect(() => {
-    if (submitted) return;
-    const id = setInterval(() => setSecondsLeft(s => Math.max(0, s - 1)), 1000);
-    return () => clearInterval(id);
-  }, [submitted]);
-
   const hasName = promptText.toLowerCase().includes('[name]');
-  const canSubmit = hasName && promptText.trim().length > 3 && !submitted;
+  const canSubmit = hasName && promptText.trim().length > 3;
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
+  const doSubmit = () => {
     if (!canSubmit) return;
     sounds.answer?.();
     socket.emit('dt:submit_prompt', { code: roomCode, templateText: promptText.trim() });
-    setSubmitted(true);
   };
+
+  const { hasConfirmed, confirm, editResponse, markConfirmed } = useMiniGameLifecycle({
+    onSubmit: doSubmit,
+    resetKey: dt.round,
+  });
+
+  useEffect(() => {
+    if (hasConfirmed) return;
+    if (secondsLeft <= 0) {
+      let textToSubmit = promptText.trim();
+      if (!hasName || textToSubmit.length <= 3) {
+        textToSubmit = "[name] doing absolutely nothing";
+      }
+      sounds.answer?.();
+      socket.emit('dt:submit_prompt', { code: roomCode, templateText: textToSubmit });
+      markConfirmed();
+      return;
+    }
+    const id = setInterval(() => setSecondsLeft(s => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(id);
+  }, [secondsLeft, hasConfirmed, promptText, hasName, roomCode, sounds, markConfirmed]);
 
   return (
     <motion.div
@@ -62,7 +76,7 @@ export default function DrawTelPromptPage() {
         ].map((ex, i) => (
           <button
             key={i}
-            onClick={() => { if (!submitted) setPromptText(ex); }}
+            onClick={() => { if (!hasConfirmed) setPromptText(ex); }}
             className="block w-full text-left text-sm text-gray-300 hover:text-white font-['Nunito'] py-1.5 px-2 rounded hover:bg-[#0D0D1A] transition mb-1"
           >
             "{ex}"
@@ -70,8 +84,8 @@ export default function DrawTelPromptPage() {
         ))}
       </div>
 
-      {submitted ? (
-        <div className="w-full max-w-md bg-[#1A1A2E] rounded-2xl border border-[#2D2D44] p-6 text-center">
+      {hasConfirmed ? (
+        <div className="w-full max-w-md bg-[#1A1A2E] rounded-2xl border border-[#2D2D44] p-6 text-center shadow-lg">
           <p className="text-[#FF6B6B] font-['Fredoka_One'] text-2xl mb-2">Prompt in! ✓</p>
           <p className="text-gray-400 font-['Nunito'] text-sm mb-4">
             Waiting for others… ({dt.promptsSubmittedCount}/{dt.totalPrompts})
@@ -85,9 +99,15 @@ export default function DrawTelPromptPage() {
               />
             ))}
           </div>
+          <button
+            onClick={editResponse}
+            className="w-full py-3 mt-6 rounded-2xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF6B6B] hover:text-[#FF6B6B] transition active:scale-95"
+          >
+            ✏️ Edit Prompt
+          </button>
         </div>
       ) : (
-        <form onSubmit={handleSubmit} className="w-full max-w-md space-y-3">
+        <div className="w-full max-w-md space-y-3">
           <div className="relative">
             <input
               type="text"
@@ -97,6 +117,12 @@ export default function DrawTelPromptPage() {
               className="w-full bg-[#1A1A2E] border-2 border-[#2D2D44] focus:border-[#FF6B6B] outline-none rounded-xl px-4 py-3 text-white font-['Nunito'] text-base placeholder-gray-600 transition"
               maxLength={150}
               autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  confirm();
+                }
+              }}
             />
             <span className="absolute right-3 bottom-3 text-xs text-gray-600 font-['Nunito']">
               {promptText.length}/150
@@ -115,13 +141,13 @@ export default function DrawTelPromptPage() {
           )}
 
           <button
-            type="submit"
+            onClick={confirm}
             disabled={!canSubmit}
             className="w-full bg-[#FF6B6B] disabled:opacity-30 text-white font-['Fredoka_One'] text-lg py-3 rounded-xl transition hover:bg-[#ff5252]"
           >
             Submit Prompt
           </button>
-        </form>
+        </div>
       )}
     </motion.div>
   );

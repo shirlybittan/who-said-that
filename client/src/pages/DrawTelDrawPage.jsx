@@ -6,6 +6,7 @@ import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
 import { CANVAS_W, CANVAS_H, redrawCanvas, redrawOverlay, drawStroke } from '../utils/canvasUtils';
 import TimerRing from '../components/game/TimerRing';
+import GamePageWrapper from '../components/GamePageWrapper.jsx';
 
 const COLORS = [
   '#000000', '#FFFFFF', '#EF4444', '#F97316', '#EAB308',
@@ -27,6 +28,11 @@ export default function DrawTelDrawPage() {
   const turn = dt.currentTurn;
   const selfieData = turn?.originalSelfieData || null;
   const sounds = useSounds();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (!turn) navigate('/draw-tel-wait', { replace: true });
+  }, [turn, navigate]);
 
   const canvasRef = useRef(null);
   const strokesRef = useRef([]);
@@ -100,57 +106,64 @@ export default function DrawTelDrawPage() {
     const pts = curStroke.current.points;
     pts.push({ x, y });
     const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    ctx.beginPath();
-    if (curStroke.current.type === 'eraser') {
-      ctx.globalCompositeOperation = 'destination-out';
-      ctx.strokeStyle = 'rgba(0,0,0,1)';
-    } else {
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.strokeStyle = curStroke.current.color;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      ctx.beginPath();
+      if (curStroke.current.type === 'eraser') {
+        ctx.globalCompositeOperation = 'destination-out';
+        ctx.strokeStyle = 'rgba(0,0,0,1)';
+      } else {
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.strokeStyle = curStroke.current.color;
+      }
+      ctx.lineWidth = curStroke.current.width;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.moveTo(pts[pts.length - 2].x, pts[pts.length - 2].y);
+      ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
+      ctx.stroke();
+      ctx.restore();
     }
-    ctx.lineWidth = curStroke.current.width;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-    ctx.moveTo(pts[pts.length - 2].x, pts[pts.length - 2].y);
-    ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
-    ctx.stroke();
-    ctx.globalCompositeOperation = 'source-over';
-  }, []);
+  }, [color, width, tool]);
 
   const endDraw = useCallback(() => {
     if (!isDrawing.current) return;
     isDrawing.current = false;
-    if (curStroke.current?.points.length > 0) {
+    if (curStroke.current && curStroke.current.points.length > 1) {
       strokesRef.current.push(curStroke.current);
-      setStrokeCount(c => c + 1);
+      setStrokeCount(strokesRef.current.length);
     }
     curStroke.current = null;
   }, []);
 
-  const handleUndo = () => {
-    strokesRef.current.pop();
-    setStrokeCount(c => Math.max(0, c - 1));
-    redrawAll([...(turn?.existingStrokes || []), ...strokesRef.current]);
-  };
+  const handleUndo = useCallback(() => {
+    if (strokesRef.current.length > 0) {
+      sounds.undo?.();
+      strokesRef.current.pop();
+      setStrokeCount(strokesRef.current.length);
+      redrawAll(strokesRef.current);
+    }
+  }, [redrawAll, sounds]);
 
-  const handleClear = () => {
-    strokesRef.current = [];
-    setStrokeCount(0);
-    redrawAll(turn?.existingStrokes || []);
-  };
+  const handleClear = useCallback(() => {
+    if (strokesRef.current.length > 0) {
+      sounds.clear?.();
+      strokesRef.current = [];
+      setStrokeCount(0);
+      redrawAll([]);
+    }
+  }, [redrawAll, sounds]);
 
-  const handleSubmit = () => {
-    if (submitted || !turn) return;
-    socket.emit('dt:submit_strokes', {
+  const handleSubmit = useCallback(() => {
+    if (submitted || strokesRef.current.length === 0) return;
+    sounds.answer?.();
+    socket.emit('dt:submit_drawing', {
       code: roomCode,
       promptId: turn.promptId,
       strokes: strokesRef.current,
     });
-    dispatch({ type: 'DT_MARK_TURN_SUBMITTED' });
     setSubmitted(true);
-  };
+  }, [submitted, roomCode, turn?.promptId, sounds]);
 
   // Auto-submit at ≤1 second (belt-and-suspenders alongside dt:time_up)
   useEffect(() => {
@@ -174,144 +187,176 @@ export default function DrawTelDrawPage() {
     return () => socket.off('dt:time_up', onTimeUp);
   }, [submitted, turn, roomCode, dispatch]);
 
-  // Mouse handlers
-  const onMouseDown = (e) => { const pos = getPos(e.currentTarget, e.clientX, e.clientY); startDraw(pos.x, pos.y); };
-  const onMouseMove = (e) => { if (!isDrawing.current) return; const pos = getPos(e.currentTarget, e.clientX, e.clientY); moveDraw(pos.x, pos.y); };
-  const onMouseUp = () => endDraw();
-  const onMouseLeave = () => endDraw();
-
   // Touch handlers
-  const onTouchStart = (e) => { e.preventDefault(); const t = e.touches[0]; const pos = getPos(e.currentTarget, t.clientX, t.clientY); startDraw(pos.x, pos.y); };
-  const onTouchMove = (e) => { e.preventDefault(); const t = e.touches[0]; const pos = getPos(e.currentTarget, t.clientX, t.clientY); moveDraw(pos.x, pos.y); };
-  const onTouchEnd = (e) => { e.preventDefault(); endDraw(); };
+  const onTouchStart = (e) => {
+    e.preventDefault();
+    const { x, y } = getPos(canvasRef.current, e.touches[0].clientX, e.touches[0].clientY);
+    startDraw(x, y);
+  };
+  const onTouchMove = (e) => {
+    e.preventDefault();
+    const { x, y } = getPos(canvasRef.current, e.touches[0].clientX, e.touches[0].clientY);
+    moveDraw(x, y);
+  };
 
-  const navigate = useNavigate();
-  const turnExists = !!turn;
-
-  // No turn at all → return to wait page (shouldn't normally happen in regular flow)
-  useEffect(() => {
-    if (!turnExists) {
-      navigate('/draw-tel-wait');
-    }
-  }, [turnExists, navigate]);
-
-  if (!turn) return null;
+  // Mouse handlers
+  const onMouseDown = (e) => {
+    const { x, y } = getPos(canvasRef.current, e.clientX, e.clientY);
+    startDraw(x, y);
+  };
+  const onMouseMove = (e) => {
+    const { x, y } = getPos(canvasRef.current, e.clientX, e.clientY);
+    moveDraw(x, y);
+  };
 
   return (
-    <motion.div
-      className="flex flex-col items-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-3 pb-4 select-none"
-      initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}
-    >
-      {/* Header */}
-      <div className="flex items-center justify-between w-full max-w-md mb-2">
-        <div>
-          <p className="text-xs text-gray-400 font-['Nunito'] uppercase tracking-widest">
-            📞 Draw Telephone — step {turn.position} of {turn.totalPositions}
-          </p>
-          <div className="flex items-center gap-2 mt-1">
-            <span className="text-xs font-['Nunito'] text-[#FF6B6B] uppercase tracking-wider">Draw:</span>
-            <span className="text-lg font-['Fredoka_One'] text-[#FFE66D]">{turn.finalText}</span>
-          </div>
-        </div>
-        <TimerRing secondsLeft={turn.secondsLeft} total={45} />
-      </div>
+    <GamePageWrapper>
+      <motion.div
+        className="flex flex-col items-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-4"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+      >
+        <div className="w-full max-w-4xl mx-auto flex flex-col lg:flex-row gap-4">
+          {/* Left: Prompt + Info */}
+          <div className="flex-1 flex flex-col gap-3">
+            <div className="bg-[#1A1A2E] rounded-2xl p-4 border border-[#FF6B6B]/30">
+              <p className="text-xs text-gray-400 font-['Nunito'] uppercase tracking-widest mb-1">
+                Step {turn?.step} of {turn?.totalSteps}
+              </p>
+              <p className="text-lg text-white font-['Nunito']">
+                Draw what you see in the previous step!
+              </p>
+            </div>
 
-      {/* Canvas */}
-      <div className="relative w-full max-w-md overflow-hidden rounded-xl border-4 border-[#FF6B6B]" style={{ aspectRatio: '4/3', backgroundColor: selfieData ? 'transparent' : '#FFFFFF' }}>
-        {selfieData && (
-          <img
-            src={selfieData}
-            alt=""
-            className="absolute inset-0 w-full h-full object-cover"
-            draggable={false}
-          />
-        )}
-        <canvas
-          ref={canvasRef}
-          width={CANVAS_W}
-          height={CANVAS_H}
-          className="absolute inset-0 w-full h-full touch-none"
-          style={{ cursor: tool === 'eraser' ? 'cell' : 'crosshair', display: 'block' }}
-          onMouseDown={onMouseDown}
-          onMouseMove={onMouseMove}
-          onMouseUp={onMouseUp}
-          onMouseLeave={onMouseLeave}
-          onTouchStart={onTouchStart}
-          onTouchMove={onTouchMove}
-          onTouchEnd={onTouchEnd}
-        />
-        {(submitted || dt.hasSubmittedTurn) && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/60 rounded-xl">
-            <p className="text-white font-['Fredoka_One'] text-2xl text-center px-4">Submitted! Waiting…</p>
+            {/* Previous step content */}
+            <div className="bg-[#1A1A2E] rounded-2xl p-4 border border-[#FF6B6B]/30 flex-1">
+              <p className="text-xs text-gray-400 font-['Nunito'] uppercase tracking-widest mb-2">Previous Step</p>
+              {turn?.type === 'drawing' && turn.existingStrokes && (
+                <div className="bg-white rounded-xl overflow-hidden">
+                  <canvas
+                    ref={r => {
+                      if (r) redrawCanvas(r, turn.existingStrokes);
+                    }}
+                    width={CANVAS_W}
+                    height={CANVAS_H}
+                    className="w-full h-auto"
+                  />
+                </div>
+              )}
+              {turn?.type === 'text' && (
+                <div className="h-full flex items-center justify-center">
+                  <p className="text-3xl font-['Fredoka_One'] text-[#FFE66D] text-center">
+                    ""{turn.prompt}""
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
-        )}
-      </div>
 
-      {/* Toolbar */}
-      <div className="w-full max-w-md mt-3 bg-[#1A1A2E] rounded-2xl p-3 space-y-3">
-        <div className="flex gap-2 flex-wrap justify-center">
-          {COLORS.map(c => (
+          {/* Right: Canvas + Controls */}
+          <div className="lg:w-[420px] flex flex-col gap-3">
+            <div className="relative w-full" style={{ aspectRatio: `${CANVAS_W}/${CANVAS_H}` }}>
+              <canvas
+                ref={canvasRef}
+                width={CANVAS_W}
+                height={CANVAS_H}
+                className="absolute inset-0 w-full h-full bg-white rounded-2xl"
+                style={{ touchAction: 'none' }}
+                onTouchStart={onTouchStart}
+                onTouchMove={onTouchMove}
+                onTouchEnd={endDraw}
+                onMouseDown={onMouseDown}
+                onMouseMove={onMouseMove}
+                onMouseUp={endDraw}
+                onMouseLeave={endDraw}
+              />
+              {selfieData && (
+                <img
+                  src={selfieData}
+                  className="absolute inset-0 w-full h-full object-cover rounded-2xl pointer-events-none opacity-30"
+                  alt="selfie background"
+                />
+              )}
+              {submitted && (
+                <div className="absolute inset-0 bg-black/70 rounded-2xl flex flex-col items-center justify-center gap-2">
+                  <p className="text-3xl">✅</p>
+                  <p className="text-white font-['Fredoka_One'] text-xl">Drawing Submitted!</p>
+                  <p className="text-gray-400 font-['Nunito'] text-sm">Waiting for others...</p>
+                </div>
+              )}
+            </div>
+
+            {/* Toolbar */}
+            <div className="bg-[#1A1A2E] rounded-2xl p-3 border border-[#2D2D44] flex flex-col gap-2">
+              {/* Colors */}
+              <div className="flex justify-between">
+                {COLORS.map(c => (
+                  <button
+                    key={c}
+                    onClick={() => {
+                      setTool('pen');
+                      setColor(c);
+                    }}
+                    className={`w-7 h-7 rounded-full border-2 transition ${
+                      tool === 'pen' && color === c ? 'border-white scale-110' : 'border-transparent'
+                    }`}
+                    style={{ backgroundColor: c }}
+                  />
+                ))}
+                <button
+                  onClick={() => setTool('eraser')}
+                  className={`w-7 h-7 rounded-full border-2 transition flex items-center justify-center ${
+                    tool === 'eraser' ? 'border-white scale-110 bg-gray-400' : 'border-transparent bg-gray-600'
+                  }`}
+                >
+                  <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                </button>
+              </div>
+              {/* Widths */}
+              <div className="flex items-center gap-3 bg-[#0D0D1A] rounded-lg p-2">
+                {WIDTHS.map(w => (
+                  <button
+                    key={w}
+                    onClick={() => setWidth(w)}
+                    className={`flex-1 h-8 rounded-md flex items-center justify-center transition ${
+                      width === w ? 'bg-[#FF6B6B]' : 'bg-[#2D2D44] hover:bg-gray-600'
+                    }`}
+                  >
+                    <div className="bg-white rounded-full" style={{ width: w, height: w }} />
+                  </button>
+                ))}
+              </div>
+              {/* Actions */}
+              <div className="flex gap-2">
+                <button
+                  onClick={handleUndo}
+                  disabled={strokeCount === 0 || submitted}
+                  className="flex-1 py-2 rounded-lg bg-[#2D2D44] text-white font-['Nunito'] disabled:opacity-50"
+                >
+                  Undo
+                </button>
+                <button
+                  onClick={handleClear}
+                  disabled={strokeCount === 0 || submitted}
+                  className="flex-1 py-2 rounded-lg bg-[#2D2D44] text-white font-['Nunito'] disabled:opacity-50"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+
             <button
-              key={c}
-              onClick={() => { setTool('pen'); setColor(c); }}
-              className="rounded-full border-4 transition-transform"
-              style={{
-                width: 28, height: 28,
-                backgroundColor: c,
-                borderColor: color === c && tool === 'pen' ? '#FFE66D' : c === '#FFFFFF' ? '#555' : c,
-                transform: color === c && tool === 'pen' ? 'scale(1.25)' : 'scale(1)',
-                boxShadow: c === '#FFFFFF' ? '0 0 0 1px #555' : 'none',
-              }}
-            />
-          ))}
-        </div>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            {WIDTHS.map(w => (
-              <button
-                key={w}
-                onClick={() => { setTool('pen'); setWidth(w); }}
-                className="rounded-full bg-gray-700 flex items-center justify-center border-2 transition-all"
-                style={{
-                  width: w + 18, height: w + 18,
-                  borderColor: width === w && tool === 'pen' ? '#FFE66D' : 'transparent',
-                }}
-              >
-                <div className="rounded-full bg-white" style={{ width: w, height: w }} />
-              </button>
-            ))}
+              onClick={handleSubmit}
+              disabled={submitted || strokeCount === 0}
+              className="w-full py-3 rounded-2xl bg-[#FF6B6B] text-white font-['Fredoka_One'] text-xl disabled:bg-gray-600"
+            >
+              {submitted ? 'Submitted!' : 'Submit Drawing'}
+            </button>
           </div>
-          <button
-            onClick={() => setTool(t => t === 'eraser' ? 'pen' : 'eraser')}
-            className="px-3 py-1.5 rounded-lg text-sm font-['Nunito'] border-2 transition"
-            style={{ borderColor: tool === 'eraser' ? '#FFE66D' : '#2D2D44', color: tool === 'eraser' ? '#FFE66D' : '#9CA3AF' }}
-          >
-            Eraser
-          </button>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={handleUndo}
-            disabled={strokeCount === 0}
-            className="flex-1 py-2 rounded-xl text-sm font-['Nunito'] bg-[#2D2D44] text-gray-300 disabled:opacity-30 hover:bg-[#3D3D54] transition"
-          >
-            Undo
-          </button>
-          <button
-            onClick={handleClear}
-            className="flex-1 py-2 rounded-xl text-sm font-['Nunito'] bg-[#2D2D44] text-gray-300 hover:bg-[#3D3D54] transition"
-          >
-            Clear
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={submitted}
-            className="flex-1 py-2 rounded-xl text-sm font-['Fredoka_One'] bg-[#FF6B6B] text-white disabled:opacity-40 hover:bg-[#ff5252] transition"
-          >
-            {submitted ? 'Done ✓' : 'Submit'}
-          </button>
-        </div>
-      </div>
-    </motion.div>
+      </motion.div>
+    </GamePageWrapper>
   );
 }

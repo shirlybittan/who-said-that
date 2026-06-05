@@ -706,6 +706,7 @@ io.on('connection', (socket) => {
       room.tot.roundState = 'voting';
       room.phase = 'tot';
       emitTotQuestion(io, room, code);
+      io.to(code).emit('question_changed', { code });
     } else if (qType === 'situational' && (room.phase === 'question' || room.phase === 'sit-voting' || room.phase === 'sit-results')) {
       stopAnswerTimer(room);
       const [replacement] = selectSituationalQuestions(1);
@@ -715,6 +716,7 @@ io.on('connection', (socket) => {
       room.skipVotes = [];
       room.phase = 'question';
       emitWstQuestion(io, room, code);
+      io.to(code).emit('question_changed', { code });
     } else if (qType === 'wst' && (room.phase === 'question' || room.phase === 'voting')) {
       stopAnswerTimer(room);
       const [replacement] = selectQuestions(room.mode, 1, room.customQuestions);
@@ -723,6 +725,7 @@ io.on('connection', (socket) => {
       room.skipVotes = [];
       room.phase = 'question';
       emitWstQuestion(io, room, code);
+      io.to(code).emit('question_changed', { code });
     }
   });
 
@@ -969,16 +972,17 @@ io.on('connection', (socket) => {
     if (!player || !player.isConnected || !player.isPlaying) return;
 
     const currentAnswer = room.answers[room.currentAnswerIndex];
-    if (!currentAnswer) return;      if (player.id === currentAnswer.playerId) return; // Prevent author from voting
+    if (!currentAnswer) return;      const connectedPlayersCount = activePlayers(room).length;
+    const expectedVotes = connectedPlayersCount; 
+
+    // allow author to fake vote, record it so they look identical to others
     if (!currentAnswer.votes.find(v => v.voterId === player.id)) {
       currentAnswer.votes.push({
         voterId: player.id,
-        votedForId: votedPlayerId
+        votedForId: votedPlayerId,
+        isAuthorFakeVote: player.id === currentAnswer.playerId
       });
     }
-
-    const connectedPlayersCount = activePlayers(room).length;
-    const expectedVotes = connectedPlayersCount - 1; // Author doesn't vote
 
     io.to(code).emit('vote_received', { votedCount: currentAnswer.votes.length, totalPlayers: expectedVotes, votedPlayerIds: currentAnswer.votes.map(v => v.voterId) });
 
@@ -2560,7 +2564,7 @@ io.on('connection', (socket) => {
       featuredOwnerId: room.caption.featuredOwnerId,
       featuredOwnerName: owner?.name || '?',
       featuredPhotoData: room.caption.photos[room.caption.featuredOwnerId],
-      writers: playingPlayers.map(p => ({ id: p.id, name: p.name })),
+      writers: playingPlayers.filter(p => p.id !== room.caption.featuredOwnerId).map(p => ({ id: p.id, name: p.name })),
     });
   }
 
@@ -2569,20 +2573,25 @@ io.on('connection', (socket) => {
     if (!room || room.phase !== 'caption' || room.caption.phase !== 'writing') return;
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
-    if (room.caption.captions[player.id]) return; // already submitted
 
     if (!text || typeof text !== 'string') return;
     const sanitized = text.trim().slice(0, 200);
     if (!sanitized) return;
 
-    const captionId = `cap_${player.id}_${Date.now()}`;
-    room.caption.captions[player.id] = { id: captionId, playerId: player.id, text: sanitized };
+    const isUpdate = !!room.caption.captions[player.id];
+    if (isUpdate) {
+      // Allow the player to edit their caption before voting starts
+      room.caption.captions[player.id].text = sanitized;
+    } else {
+      const captionId = `cap_${player.id}_${Date.now()}`;
+      room.caption.captions[player.id] = { id: captionId, playerId: player.id, text: sanitized };
+    }
 
     const writers = room.players.filter(p => p.isConnected && p.isPlaying);
     const submittedCount = Object.keys(room.caption.captions).length;
     io.to(code).emit('caption:caption_submitted', { playerId: player.id, submittedCount, totalCount: writers.length });
 
-    if (submittedCount >= writers.length) {
+    if (!isUpdate && submittedCount >= writers.length) {
       startCaptionVotingPhase(io, room, code);
     }
   });
@@ -3776,6 +3785,12 @@ io.on('connection', (socket) => {
     room.gameType = newGameType;
     room.phase = 'lobby';
     room.players.forEach(p => { p.isReady = false; });
+    // Flush WST-specific per-round state
+    room.answers = [];
+    room.scores = {};
+    room.currentRound = 0;
+    room.questions = [];
+    room.currentQuestionIndex = 0;
     // When switching to mixed, reset selectedSubGames to defaults so all types are active
     if (newGameType === 'mixed') {
       room.selectedSubGames = ['who-said-that', 'situational', 'this-or-that', 'drawing'];

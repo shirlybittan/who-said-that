@@ -89,7 +89,7 @@ export function buildHostControls({
     color: '#FF8B94',
   };
 
-  const hasNextInQueue = gameQueue.length > 1 && queueIndex < gameQueue.length - 1;
+  const hasNextInQueue = gameQueue.length > 0 && queueIndex < gameQueue.length - 1;
   const nextGame = hasNextInQueue ? gameQueue[queueIndex + 1] : null;
 
   const fitbPhase = fitbData?.phase;
@@ -212,6 +212,9 @@ export function buildHostControls({
     'draw-end': buildEndButtons({ onPlayAgain, onNextQueueGame, onNewPartyPack, hasNextInQueue, nextGame }),
     'fitb-end': buildEndButtons({ onPlayAgain, onNextQueueGame, onNewPartyPack, hasNextInQueue, nextGame }),
     'selfie-results': buildEndButtons({ onPlayAgain, onNextQueueGame, onNewPartyPack, hasNextInQueue, nextGame }),
+    'dt-end': buildEndButtons({ onPlayAgain, onNextQueueGame, onNewPartyPack, hasNextInQueue, nextGame }),
+    'caption-end': buildEndButtons({ onPlayAgain, onNextQueueGame, onNewPartyPack, hasNextInQueue, nextGame }),
+    'photovote-end': buildEndButtons({ onPlayAgain, onNextQueueGame, onNewPartyPack, hasNextInQueue, nextGame }),
   };
 }
 

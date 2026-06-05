@@ -923,17 +923,24 @@ export const gameReducer = (state, action) => {
           writers: action.payload.writers || [],
           totalWriters: (action.payload.writers || []).length,
           captionSubmittedCount: 0,
+          captionSubmittedPlayerIds: [],
           hasWrittenCaption: false,
         },
       };
-    case 'CAPTION_CAPTION_SUBMITTED':
+    case 'CAPTION_CAPTION_SUBMITTED': {
+      const prevIds = state.caption.captionSubmittedPlayerIds || [];
+      const newIds = action.payload.playerId && !prevIds.includes(action.payload.playerId)
+        ? [...prevIds, action.payload.playerId]
+        : prevIds;
       return {
         ...state,
         caption: {
           ...state.caption,
           captionSubmittedCount: action.payload.submittedCount,
+          captionSubmittedPlayerIds: newIds,
         },
       };
+    }
     case 'CAPTION_MARK_CAPTION_WRITTEN':
       return { ...state, caption: { ...state.caption, hasWrittenCaption: true } };
     case 'CAPTION_VOTING_PHASE':

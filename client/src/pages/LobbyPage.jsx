@@ -67,6 +67,15 @@ export default function LobbyPage() {
     } else if (state.gameType === 'draw-telephone') {
       socket.emit('dt:start', { code: state.roomCode });
       return;
+    } else if (state.gameType === 'pmatch') {
+      socket.emit('pmatch:start', { code: state.roomCode });
+      return;
+    } else if (state.gameType === 'selfie-roast') {
+      socket.emit('selfie:start_game', { code: state.roomCode });
+      return;
+    } else if (state.gameType === 'caption') {
+      socket.emit('caption:start_game', { code: state.roomCode });
+      return;
     } else {
       if (state.gameType === 'who-said-that' && state.mode === 'custom' && (!state.customQuestions || state.customQuestions.length < state.totalRounds)) {
         return alert(t.needCustom.replace('{count}', state.totalRounds));

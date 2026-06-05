@@ -4,6 +4,8 @@ import { socket } from '../socket';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
 import VoteCoin from '../components/game/VoteCoin';
+import MiniGameWrapper from '../components/MiniGameWrapper.jsx';
+import { useMiniGameLifecycle } from '../hooks/useMiniGameLifecycle.js';
 
 export default function FillBlankPage() {
   const { state, dispatch } = useGame();
@@ -11,14 +13,18 @@ export default function FillBlankPage() {
   const sounds = useSounds();
   const [answerText, setAnswerText] = useState('');
 
-  const handleSubmitAnswer = () => {
+  const doSubmitAnswer = () => {
     const trimmed = answerText.trim();
     if (!trimmed) return;
     sounds.answer?.();
     socket.emit('fitb:answer', { code: state.roomCode, text: trimmed });
     dispatch({ type: 'FITB_MARK_ANSWERED', payload: { myAnswer: trimmed } });
-    if (!fitb.hasAnswered) setAnswerText('');
   };
+
+  const { hasConfirmed, confirm, editResponse } = useMiniGameLifecycle({
+    onSubmit: doSubmitAnswer,
+    resetKey: fitb.question,
+  });
 
   const handleVote = (id) => {
     if (fitb.hasVoted) return;
@@ -65,45 +71,26 @@ export default function FillBlankPage() {
           </p>
         </div>
 
-        {fitb.hasAnswered ? (
-          <div className="w-full max-w-md space-y-3">
-            <p className="text-xs text-[#4ECDC4] font-['Nunito'] text-center">✓ Submitted — you can still edit</p>
-            <input
-              className="w-full bg-[#1A1A2E] border-2 border-[#4ECDC4]/60 focus:border-[#4ECDC4] outline-none rounded-xl px-4 py-3 text-white font-['Nunito'] text-base placeholder-gray-500 transition"
-              placeholder="Update your answer…"
-              value={answerText}
-              onChange={(e) => setAnswerText(e.target.value.slice(0, 120))}
-              onKeyDown={(e) => e.key === 'Enter' && handleSubmitAnswer()}
-              maxLength={120}
-            />
-            <button
-              onClick={handleSubmitAnswer}
-              disabled={!answerText.trim()}
-              className="w-full bg-[#4ECDC4] disabled:opacity-40 text-black font-['Fredoka_One'] text-lg py-3 rounded-xl transition hover:bg-[#3DBDB4]"
-            >
-              ↑ Update
-            </button>
-          </div>
-        ) : (
-          <div className="w-full max-w-md space-y-3">
+        <div className="w-full max-w-md">
+          <MiniGameWrapper
+            hasConfirmed={hasConfirmed}
+            onConfirm={confirm}
+            onEditResponse={editResponse}
+            confirmLabel={fitb.hasAnswered ? '↑ Update' : 'Submit'}
+            disableConfirm={!answerText.trim()}
+            isHost={state.isHost}
+          >
             <input
               className="w-full bg-[#1A1A2E] border-2 border-[#2D2D44] focus:border-[#4ECDC4] outline-none rounded-xl px-4 py-3 text-white font-['Nunito'] text-base placeholder-gray-500 transition"
-              placeholder="Type your funniest answer…"
+              placeholder={fitb.hasAnswered ? 'Update your answer…' : 'Type your funniest answer…'}
               value={answerText}
               onChange={(e) => setAnswerText(e.target.value.slice(0, 120))}
-              onKeyDown={(e) => e.key === 'Enter' && handleSubmitAnswer()}
+              onKeyDown={(e) => e.key === 'Enter' && confirm()}
               maxLength={120}
-              autoFocus
+              autoFocus={!fitb.hasAnswered}
             />
-            <button
-              onClick={handleSubmitAnswer}
-              disabled={!answerText.trim()}
-              className="w-full bg-[#4ECDC4] disabled:opacity-40 text-black font-['Fredoka_One'] text-lg py-3 rounded-xl transition hover:bg-[#3DBDB4]"
-            >
-              Submit
-            </button>
-          </div>
-        )}
+          </MiniGameWrapper>
+        </div>
 
         {state.isHost && fitb.hasAnswered && (
           <button

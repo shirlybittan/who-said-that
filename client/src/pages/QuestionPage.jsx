@@ -4,6 +4,8 @@ import { socket } from '../socket';
 import { translations } from '../locales/translations';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
+import MiniGameWrapper from '../components/MiniGameWrapper.jsx';
+import { useMiniGameLifecycle } from '../hooks/useMiniGameLifecycle.js';
 
 export default function QuestionPage() {
   const { state, dispatch } = useGame();
@@ -16,6 +18,18 @@ export default function QuestionPage() {
 
   const isSituational = state.currentRoundType === 'situational';
   const target = state.situationalTarget;
+
+  const doSubmitAnswer = () => {
+    if (!answer.trim()) return;
+    sounds.success();
+    socket.emit('submit_answer', { code: state.roomCode, text: answer.trim() });
+    dispatch({ type: 'MARK_ANSWERED', payload: { myAnswer: answer.trim() } });
+  };
+
+  const { hasConfirmed, confirm, editResponse, markConfirmed } = useMiniGameLifecycle({
+    onSubmit: doSubmitAnswer,
+    resetKey: state.currentQuestion,
+  });
 
   useEffect(() => {
     setTimeLeft(60);
@@ -32,6 +46,7 @@ export default function QuestionPage() {
         const defaultAnswer = "I couldn't think of anything funny in time! 🕒";
         socket.emit('submit_answer', { code: state.roomCode, text: defaultAnswer });
         dispatch({ type: 'MARK_ANSWERED', payload: { myAnswer: defaultAnswer } });
+        markConfirmed();
       }
       return;
     }
@@ -44,15 +59,7 @@ export default function QuestionPage() {
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, [timeLeft, state.hasAnswered, state.roomCode, dispatch, sounds]);
-
-  const submitAnswer = (e) => {
-    e.preventDefault();
-    if (!answer.trim()) return;
-    sounds.success();
-    socket.emit('submit_answer', { code: state.roomCode, text: answer.trim() });
-    dispatch({ type: 'MARK_ANSWERED', payload: { myAnswer: answer.trim() } });
-  };
+  }, [timeLeft, state.hasAnswered, state.roomCode, dispatch, sounds, markConfirmed]);
 
   const handleSkip = () => {
     sounds.click();
@@ -119,48 +126,45 @@ export default function QuestionPage() {
               style={{ width: (state.totalPlayers || state.players.filter(p => p.isPlaying).length) > 0 ? `${(state.answeredCount / (state.totalPlayers || state.players.filter(p => p.isPlaying).length)) * 100}%` : '0%' }}
             />
           </div>
+          {state.isHost && (
+            <button
+              onClick={handleSkip}
+              className="mt-6 text-gray-500 hover:text-white underline font-['Nunito'] transition block w-full"
+            >
+              {t.skipHost}
+            </button>
+          )}
         </div>
       ) : (
-        <form onSubmit={submitAnswer} className="w-full max-w-md">
-          {state.hasAnswered && (
-            <p className="text-xs text-[#4ECDC4] font-['Nunito'] mb-2 text-center">✓ Submitted — you can still edit</p>
-          )}
-          <textarea
-            value={answer}
-            onChange={(e) => setAnswer(e.target.value)}
-            placeholder={isSituational && target ? `What would ${target.name} say?` : t.typeAnswerPlaceholder}
-            className="w-full p-4 rounded-xl text-black bg-white focus:bg-[#FFF] font-['Nunito'] text-[16px] border-4 border-transparent focus:border-[#FFE66D] focus:outline-none resize-none h-32 mb-6"
-            maxLength={150}
-          />
-          <button
-            type="submit"
-            disabled={!answer.trim()}
-            className={`w-full font-bold py-4 px-6 rounded-xl transition transform active:scale-95 text-xl font-['Fredoka_One'] uppercase shadow-lg ${answer.trim() ? 'bg-[#FFE66D] text-black hover:bg-[#ffdd33]' : 'bg-gray-600 text-gray-400 cursor-not-allowed'}`}
+        <div className="w-full max-w-md">
+          <MiniGameWrapper
+            hasConfirmed={hasConfirmed}
+            onConfirm={confirm}
+            onEditResponse={editResponse}
+            onChangePrompt={state.isHost ? handleSkip : undefined}
+            confirmLabel={state.hasAnswered ? '↑ Update' : t.submitBtn}
+            disableConfirm={!answer.trim()}
+            isHost={state.isHost}
           >
-            {state.hasAnswered ? '↑ Update' : t.submitBtn}
-          </button>
+            <textarea
+              value={answer}
+              onChange={(e) => setAnswer(e.target.value)}
+              placeholder={isSituational && target ? `What would ${target.name} say?` : t.typeAnswerPlaceholder}
+              className="w-full p-4 rounded-xl text-black bg-white focus:bg-[#FFF] font-['Nunito'] text-[16px] border-4 border-transparent focus:border-[#FFE66D] focus:outline-none resize-none h-32"
+              maxLength={150}
+            />
+          </MiniGameWrapper>
           <p className="text-xs text-gray-500 font-['Nunito'] mt-3 text-center">
             {state.answeredCount} / {state.totalPlayers || state.players.length} {t.answered}
           </p>
-        </form>
-      )}
-
-      {!state.isPlaying && state.isHost && (
-        <button
-          onClick={handleSkip}
-          className="mt-12 text-gray-500 hover:text-white underline font-['Nunito'] transition block w-full"
-        >
-          {t.skipHost}
-        </button>
-      )}
-      {state.isPlaying && (
-        <button
-          onClick={handleVoteSkip}
-          disabled={hasVotedSkip}
-          className={`mt-4 text-gray-400 font-['Nunito'] transition ${hasVotedSkip ? 'opacity-50 cursor-not-allowed' : 'hover:text-white underline block w-full'}`}
-        >
-          {hasVotedSkip ? t.votedSkip : t.voteSkip}
-        </button>
+          <button
+            onClick={handleVoteSkip}
+            disabled={hasVotedSkip}
+            className={`mt-4 text-gray-400 font-['Nunito'] transition ${hasVotedSkip ? 'opacity-50 cursor-not-allowed' : 'hover:text-white underline block w-full'}`}
+          >
+            {hasVotedSkip ? t.votedSkip : t.voteSkip}
+          </button>
+        </div>
       )}
     </motion.div>
   );

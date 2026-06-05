@@ -1,4 +1,4 @@
-const { calculateScores } = require('./gameLogic');
+const { calculateScores, selectMixedQuestions } = require('./gameLogic');
 
 describe('calculateScores', () => {
   it('should calculate scores correctly for multiple answers', () => {
@@ -31,5 +31,26 @@ describe('calculateScores', () => {
     expect(newScores['voter2']).toBe(-1);
     expect(newScores['author1']).toBe(0);
     expect(newScores['author2']).toBe(1);
+  });
+});
+
+describe('selectMixedQuestions', () => {
+  const VALID_TYPES = ['wst', 'situational', 'this-or-that', 'drawing'];
+
+  it('returns the requested number of questions', () => {
+    const count = 5;
+    const questions = selectMixedQuestions(count);
+    expect(questions).toHaveLength(count);
+  });
+
+  it('returns only valid question types', () => {
+    const questions = selectMixedQuestions(10);
+    questions.forEach(q => {
+      expect(VALID_TYPES).toContain(q.type);
+    });
+  });
+
+  it('returns an empty array when count is 0', () => {
+    expect(selectMixedQuestions(0)).toEqual([]);
   });
 });

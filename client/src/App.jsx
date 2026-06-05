@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import { GameProvider, useGame } from './store/gameStore.jsx';
+import TimerRing from './components/game/TimerRing';
 import { soundManager } from './sounds/SoundManager';
 import HomePage from './pages/HomePage';
 import LobbyPage from './pages/LobbyPage';
@@ -87,6 +88,18 @@ const AnimatedRoutes = () => {
   );
 };
 
+const GlobalTimerOverlay = () => {
+  const { state } = useGame();
+  const timer = state.phaseTimer;
+  if (!timer?.active || timer.secondsLeft <= 0) return null;
+  const total = state.roomConfig?.roundDurationSecs || 60;
+  return (
+    <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 pointer-events-none">
+      <TimerRing secondsLeft={timer.secondsLeft} total={total} size={64} />
+    </div>
+  );
+};
+
 const RoomCodeBadge = () => {
   const { state } = useGame();
   if (!state.roomCode || !state.phase || state.phase === 'game_end') return null;
@@ -153,6 +166,7 @@ function App() {
                 <SoundToggle />
                 <LangSwitcher />
                 <RoomCodeBadge />
+                <GlobalTimerOverlay />
                 <AnimatedRoutes />
               </div>
             </SocketHandler>

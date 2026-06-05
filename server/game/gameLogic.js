@@ -97,6 +97,8 @@ const calculateScores = (answers, currentScores, numPlayers) => {
     if (newScores[actualAuthorId] === undefined) newScores[actualAuthorId] = 0;
 
     answer.votes.forEach(vote => {
+      if (vote.isAuthorFakeVote) return;
+      
       const voterId = vote.voterId;
       const guessedId = vote.votedForId;
       

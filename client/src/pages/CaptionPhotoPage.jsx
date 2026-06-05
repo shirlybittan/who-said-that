@@ -4,6 +4,7 @@ import { socket } from '../socket';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
 import { compressPhoto } from '../utils/imageUtils';
+import GamePageWrapper from '../components/GamePageWrapper.jsx';
 
 export default function CaptionPhotoPage() {
   const { state, dispatch } = useGame();
@@ -56,76 +57,80 @@ export default function CaptionPhotoPage() {
   };
 
   return (
-    <motion.div
-      className="flex flex-col items-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6"
-      initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}
-    >
-      <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8] mt-6 mb-2">Caption Me! 💬</h1>
-      <p className="text-gray-400 font-['Nunito'] text-sm text-center mb-2">
-        Round {caption.round} of {caption.totalRounds}
-      </p>
-      <p className="text-gray-400 font-['Nunito'] text-sm text-center mb-6">
-        Take a selfie — everyone else will write a caption for it!
-      </p>
+    <GamePageWrapper>
+      <motion.div
+        className="flex flex-col items-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6"
+        initial={{ opacity: 0, y: 24 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3, ease: 'easeOut' }}
+      >
+        <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8] mt-6 mb-2">Caption Me! 💬</h1>
+        <p className="text-gray-400 font-['Nunito'] text-sm text-center mb-2">
+          Round {caption.round} of {caption.totalRounds}
+        </p>
+        <p className="text-gray-400 font-['Nunito'] text-sm text-center mb-6">
+          Take a selfie — everyone else will write a caption for it!
+        </p>
 
-      {!caption.hasSubmittedPhoto ? (
-        <div className="w-full max-w-sm flex flex-col items-center gap-4">
-          {preview ? (
-            <>
-              {usingSaved && (
-                <div className="w-full py-2 px-3 rounded-xl bg-[#FD79A8]/15 border border-[#FD79A8]/40 text-center">
-                  <span className="text-[#FD79A8] font-['Fredoka_One'] text-sm">✅ Using your saved selfie</span>
-                </div>
-              )}
-              <img src={preview} className="w-64 h-64 object-cover rounded-2xl border-2 border-[#FD79A8]" alt="preview" />
-              <div className="flex gap-3 w-full">
-                <button
-                  onClick={handleRetake}
-                  className="flex-1 py-3 rounded-2xl bg-gray-700 text-white font-['Fredoka_One'] text-lg"
-                >
-                  {usingSaved ? '📷 New Photo' : 'Retake 🔄'}
-                </button>
-                <button
-                  onClick={handleSubmit}
-                  className="flex-1 py-3 rounded-2xl bg-[#FD79A8] text-white font-['Fredoka_One'] text-lg"
-                >
-                  {usingSaved ? 'Use This ✓' : 'Submit! ✅'}
-                </button>
-              </div>
-            </>
-          ) : (
-            <>
-              <div
-                className="w-64 h-64 rounded-2xl border-2 border-dashed border-gray-600 flex items-center justify-center cursor-pointer hover:border-[#FD79A8] transition-colors"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                {processing ? (
-                  <span className="text-gray-400 font-['Nunito']">Processing…</span>
-                ) : (
-                  <span className="text-gray-500 font-['Nunito'] text-center px-4">Tap to choose or take a photo 📸</span>
+        {!caption.hasSubmittedPhoto ? (
+          <div className="w-full max-w-sm flex flex-col items-center gap-4">
+            {preview ? (
+              <>
+                {usingSaved && (
+                  <div className="w-full py-2 px-3 rounded-xl bg-[#FD79A8]/15 border border-[#FD79A8]/40 text-center">
+                    <span className="text-[#FD79A8] font-['Fredoka_One'] text-sm">✅ Using your saved selfie</span>
+                  </div>
                 )}
-              </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                capture="user"
-                className="hidden"
-                onChange={handleFileChange}
-              />
-            </>
-          )}
-        </div>
-      ) : (
-        <div className="flex flex-col items-center gap-4">
-          <div className="text-6xl">✅</div>
-          <p className="text-[#FD79A8] font-['Fredoka_One'] text-xl">Photo submitted!</p>
-          <p className="text-gray-400 font-['Nunito'] text-sm text-center">
-            {caption.photoSubmittedCount} / {caption.totalPhotographers} photos in
-          </p>
-          <p className="text-gray-500 font-['Nunito'] text-xs">Waiting for everyone…</p>
-        </div>
-      )}
-    </motion.div>
+                <img src={preview} className="w-64 h-64 object-cover rounded-2xl border-2 border-[#FD79A8]" alt="preview" />
+                <div className="flex gap-3 w-full">
+                  <button
+                    onClick={handleRetake}
+                    className="flex-1 py-3 rounded-2xl bg-gray-700 text-white font-['Fredoka_One'] text-lg"
+                  >
+                    {usingSaved ? '📷 New Photo' : 'Retake 🔄'}
+                  </button>
+                  <button
+                    onClick={handleSubmit}
+                    className="flex-1 py-3 rounded-2xl bg-[#FD79A8] text-white font-['Fredoka_One'] text-lg"
+                  >
+                    {usingSaved ? 'Use This ✓' : 'Submit! ✅'}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div
+                  className="w-64 h-64 rounded-2xl border-2 border-dashed border-gray-600 flex items-center justify-center cursor-pointer hover:border-[#FD79A8] transition-colors"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  {processing ? (
+                    <span className="text-gray-400 font-['Nunito']">Processing…</span>
+                  ) : (
+                    <span className="text-gray-500 font-['Nunito'] text-center px-4">Tap to choose or take a photo 📸</span>
+                  )}
+                </div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  capture="user"
+                  className="hidden"
+                  onChange={handleFileChange}
+                />
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-4">
+            <div className="text-6xl">✅</div>
+            <p className="text-[#FD79A8] font-['Fredoka_One'] text-xl">Photo submitted!</p>
+            <p className="text-gray-400 font-['Nunito'] text-sm text-center">
+              {caption.photoSubmittedCount} / {caption.totalPhotographers} photos in
+            </p>
+            <p className="text-gray-500 font-['Nunito'] text-sm mt-4">Waiting for other players to submit their photos...</p>
+          </div>
+        )}
+      </motion.div>
+    </GamePageWrapper>
   );
 }
