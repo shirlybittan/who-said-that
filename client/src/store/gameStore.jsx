@@ -105,6 +105,7 @@ const initialState = {
     hasAnswered: false,
     hasVoted: false,
     myAnswer: null,
+    myAnswerIndex: -1,
     myVote: null,
     answeredCount: 0,
     totalAnswerers: 0,
@@ -112,6 +113,8 @@ const initialState = {
     totalVoters: 0,
     scores: {},
     leaderboard: [],
+    answerTimeLeft: 30,
+    timeLimit: 30,
   },
   selfie: {
     phase: 'waiting',      // 'waiting' | 'photo' | 'drawing' | 'voting' | 'results'
@@ -572,6 +575,7 @@ export const gameReducer = (state, action) => {
       return {
         ...state,
         phase: 'fitb',
+        phaseTimer: { secondsLeft: 0, active: false, paused: false },
         fitb: {
           ...state.fitb,
           phase: 'answering',
@@ -583,17 +587,25 @@ export const gameReducer = (state, action) => {
           hasAnswered: false,
           hasVoted: false,
           myAnswer: null,
+          myAnswerIndex: -1,
           myVote: null,
           answeredCount: 0,
           totalAnswerers: (action.payload.players || state.fitb.players).length,
           voteCount: 0,
           totalVoters: 0,
+          answerTimeLeft: action.payload.timeLimit ?? state.fitb.timeLimit ?? 30,
+          timeLimit: action.payload.timeLimit ?? state.fitb.timeLimit ?? 30,
         },
       };
     case 'FITB_ANSWER_RECEIVED':
       return {
         ...state,
         fitb: { ...state.fitb, answeredCount: action.payload.answeredCount, totalAnswerers: action.payload.totalPlayers },
+      };
+    case 'FITB_ANSWER_TIMER':
+      return {
+        ...state,
+        fitb: { ...state.fitb, answerTimeLeft: action.payload.secondsLeft },
       };
     case 'FITB_MARK_ANSWERED':
       return {
@@ -612,6 +624,7 @@ export const gameReducer = (state, action) => {
           hasVoted: false,
           myVote: null,
           voteCount: 0,
+          myAnswerIndex: action.payload.myAnswerIndex ?? -1,
         },
       };
     case 'FITB_VOTE_RECEIVED':

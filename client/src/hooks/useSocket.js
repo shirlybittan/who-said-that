@@ -272,6 +272,10 @@ export const useSocket = () => {
       dispatch({ type: 'FITB_ANSWER_RECEIVED', payload: data });
     };
 
+    const onFitbAnswerTimer = (data) => {
+      dispatch({ type: 'FITB_ANSWER_TIMER', payload: data });
+    };
+
     const onFitbVotingStarted = (data) => {
       dispatch({ type: 'FITB_VOTING_STARTED', payload: data });
     };
@@ -471,6 +475,7 @@ export const useSocket = () => {
     socket.on('draw:word_changed', onDrawWordChanged);
     socket.on('fitb:round_start', onFitbRoundStart);
     socket.on('fitb:answer_received', onFitbAnswerReceived);
+    socket.on('fitb:answer_timer', onFitbAnswerTimer);
     socket.on('fitb:voting_started', onFitbVotingStarted);
     socket.on('fitb:vote_received', onFitbVoteReceived);
     socket.on('fitb:results', onFitbResults);
@@ -659,6 +664,7 @@ export const useSocket = () => {
       socket.off('draw:word_changed', onDrawWordChanged);
       socket.off('fitb:round_start', onFitbRoundStart);
       socket.off('fitb:answer_received', onFitbAnswerReceived);
+      socket.off('fitb:answer_timer', onFitbAnswerTimer);
       socket.off('fitb:voting_started', onFitbVotingStarted);
       socket.off('fitb:vote_received', onFitbVoteReceived);
       socket.off('fitb:results', onFitbResults);

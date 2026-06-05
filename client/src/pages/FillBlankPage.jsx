@@ -13,7 +13,9 @@ export default function FillBlankPage() {
   const sounds = useSounds();
   const [answerText, setAnswerText] = useState('');
   const [pendingVote, setPendingVote] = useState(null);
-  const [answerTimeLeft, setAnswerTimeLeft] = useState(60);
+
+  // Server-driven answer timer (from fitb.answerTimeLeft in store)
+  const answerTimeLeft = fitb.answerTimeLeft ?? 30;
 
   const doSubmitAnswer = () => {
     let textToSubmit = answerText.trim();
@@ -32,6 +34,7 @@ export default function FillBlankPage() {
   const autoSubmitRef = useRef({ answerText });
   useEffect(() => { autoSubmitRef.current = { answerText }; });
 
+  // Auto-submit when server timer hits 0 (server also auto-submits as fallback)
   useEffect(() => {
     if (fitb.phase !== 'answering') return;
     if (hasConfirmed) return;
@@ -41,10 +44,7 @@ export default function FillBlankPage() {
       socket.emit('fitb:answer', { code: state.roomCode, text: textToSubmit });
       dispatch({ type: 'FITB_MARK_ANSWERED', payload: { myAnswer: textToSubmit } });
       markConfirmed();
-      return;
     }
-    const id = setInterval(() => setAnswerTimeLeft(s => Math.max(0, s - 1)), 1000);
-    return () => clearInterval(id);
   }, [answerTimeLeft, hasConfirmed, fitb.phase, state.roomCode, dispatch, markConfirmed]);
 
   const handleVote = (id) => {
@@ -159,7 +159,7 @@ export default function FillBlankPage() {
           variants={{ hidden: {}, show: { transition: { staggerChildren: 0.08, delayChildren: 0.1 } } }}
         >
           {fitb.answers.map((ans) => {
-            const isOwn = ans.text === fitb.myAnswer;
+            const isOwn = fitb.myAnswerIndex >= 0 && ans.id === fitb.myAnswerIndex;
             const selected = pendingVote === ans.id || fitb.myVote === ans.id;
             
             if (selected && !fitb.hasVoted) {

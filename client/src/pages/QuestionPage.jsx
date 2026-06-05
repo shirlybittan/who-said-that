@@ -44,15 +44,13 @@ export default function QuestionPage() {
 
   useEffect(() => {
     if (!state.isPlaying) return;   // cast screen never auto-submits
-    if (state.hasAnswered) return;
+    if (hasConfirmed) return;        // timer paused while waiting; resumes if player clicks Edit
     if (timeLeft <= 0) {
-      if (!state.hasAnswered) {
-        let textToSubmit = autoSubmitRef.current.answer.trim();
-        if (!textToSubmit) textToSubmit = "I couldn't think of anything funny in time! 🕒";
-        socket.emit('submit_answer', { code: state.roomCode, text: textToSubmit });
-        dispatch({ type: 'MARK_ANSWERED', payload: { myAnswer: textToSubmit } });
-        markConfirmed();
-      }
+      let textToSubmit = autoSubmitRef.current.answer.trim();
+      if (!textToSubmit) textToSubmit = "I couldn't think of anything funny in time! 🕒";
+      socket.emit('submit_answer', { code: state.roomCode, text: textToSubmit });
+      dispatch({ type: 'MARK_ANSWERED', payload: { myAnswer: textToSubmit } });
+      markConfirmed();
       return;
     }
     const timer = setInterval(() => {
@@ -64,7 +62,7 @@ export default function QuestionPage() {
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, [timeLeft, state.hasAnswered, state.roomCode, dispatch, sounds, markConfirmed]);
+  }, [timeLeft, hasConfirmed, state.isPlaying, state.roomCode, dispatch, sounds, markConfirmed]);
 
   const handleSkip = () => {
     sounds.click();
