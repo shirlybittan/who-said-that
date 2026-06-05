@@ -2583,7 +2583,7 @@ io.on('connection', (socket) => {
 
   socket.on('caption:submit_caption', ({ code, text }) => {
     const room = getRoom(code);
-    if (!room || room.phase !== 'caption' || room.caption.phase !== 'writing') return;
+    if (!room || room.phase !== 'caption' || (room.caption.phase !== 'writing' && room.caption.phase !== 'voting')) return;
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
 

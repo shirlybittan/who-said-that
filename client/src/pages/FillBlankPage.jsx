@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
@@ -29,11 +29,14 @@ export default function FillBlankPage() {
     initialConfirmed: fitb.hasAnswered,
   });
 
+  const autoSubmitRef = useRef({ answerText });
+  useEffect(() => { autoSubmitRef.current = { answerText }; });
+
   useEffect(() => {
     if (fitb.phase !== 'answering') return;
     if (hasConfirmed) return;
     if (answerTimeLeft <= 0) {
-      let textToSubmit = answerText.trim();
+      let textToSubmit = autoSubmitRef.current.answerText.trim();
       if (!textToSubmit) textToSubmit = "I couldn't think of anything funny in time! 🕒";
       socket.emit('fitb:answer', { code: state.roomCode, text: textToSubmit });
       dispatch({ type: 'FITB_MARK_ANSWERED', payload: { myAnswer: textToSubmit } });
@@ -42,7 +45,7 @@ export default function FillBlankPage() {
     }
     const id = setInterval(() => setAnswerTimeLeft(s => Math.max(0, s - 1)), 1000);
     return () => clearInterval(id);
-  }, [answerTimeLeft, hasConfirmed, answerText, fitb.phase, state.roomCode, dispatch, markConfirmed]);
+  }, [answerTimeLeft, hasConfirmed, fitb.phase, state.roomCode, dispatch, markConfirmed]);
 
   const handleVote = (id) => {
     if (fitb.hasVoted) return;

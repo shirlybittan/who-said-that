@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { translations } from '../locales/translations';
@@ -39,12 +39,15 @@ export default function QuestionPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.currentQuestion]);
 
+  const autoSubmitRef = React.useRef({ answer });
+  useEffect(() => { autoSubmitRef.current = { answer }; });
+
   useEffect(() => {
     if (!state.isPlaying) return;   // cast screen never auto-submits
     if (state.hasAnswered) return;
     if (timeLeft <= 0) {
       if (!state.hasAnswered) {
-        let textToSubmit = answer.trim();
+        let textToSubmit = autoSubmitRef.current.answer.trim();
         if (!textToSubmit) textToSubmit = "I couldn't think of anything funny in time! 🕒";
         socket.emit('submit_answer', { code: state.roomCode, text: textToSubmit });
         dispatch({ type: 'MARK_ANSWERED', payload: { myAnswer: textToSubmit } });
