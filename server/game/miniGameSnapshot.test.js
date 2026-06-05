@@ -96,6 +96,72 @@ describe('buildMiniGameSnapshot', () => {
     expect(snapshot.drawingCount).toBe(1);
   });
 
+  it('builds caption voting snapshots with own caption id and vote state', () => {
+    const room = {
+      phase: 'caption',
+      players,
+      caption: {
+        phase: 'voting',
+        currentRound: 2,
+        totalRounds: 3,
+        currentPrompt: 'Caption this awkward photo',
+        featuredOwnerId: 'p1',
+        photos: { p1: 'photo-a' },
+        captions: {
+          p2: { id: 'cap-2', playerId: 'p2', text: 'When Monday hits' },
+          p3: { id: 'cap-3', playerId: 'p3', text: 'Totally fine' },
+        },
+        votes: { p3: 'cap-2' },
+        scores: { p2: 1, p3: 0 },
+      },
+    };
+
+    const snapshot = buildMiniGameSnapshot(room, 'p2');
+
+    expect(snapshot.type).toBe('caption');
+    expect(snapshot.phase).toBe('voting');
+    expect(snapshot.featuredOwnerId).toBe('p1');
+    expect(snapshot.featuredPhotoData).toBe('photo-a');
+    expect(snapshot.captions).toHaveLength(2);
+    expect(snapshot.myOwnCaptionId).toBe('cap-2');
+    expect(snapshot.hasWrittenCaption).toBe(true);
+    expect(snapshot.voteCount).toBe(1);
+    expect(snapshot.hasVoted).toBe(false);
+    expect(snapshot.captionResults[0].id).toBe('cap-2');
+    expect(snapshot.captionResults[0].voteCount).toBe(1);
+  });
+
+  it('builds photovote voting snapshots with per-player vote state', () => {
+    const room = {
+      phase: 'photovote',
+      players,
+      photoVote: {
+        phase: 'voting',
+        subType: 'pmatch',
+        currentRound: 1,
+        totalRounds: 5,
+        currentPrompt: 'Best superhero landing',
+        photos: { p1: 'photo-a', p2: 'photo-b', p3: 'photo-c' },
+        votes: { p2: 'p1', p3: 'p1' },
+        scores: { p1: 2, p2: 0, p3: 0 },
+      },
+    };
+
+    const snapshot = buildMiniGameSnapshot(room, 'p3');
+
+    expect(snapshot.type).toBe('photovote');
+    expect(snapshot.phase).toBe('voting');
+    expect(snapshot.subType).toBe('pmatch');
+    expect(snapshot.prompt).toBe('Best superhero landing');
+    expect(snapshot.photos).toHaveLength(3);
+    expect(snapshot.voteCount).toBe(2);
+    expect(snapshot.hasVoted).toBe(true);
+    expect(snapshot.myVote).toBe('p1');
+    expect(snapshot.voteResults[0].playerId).toBe('p1');
+    expect(snapshot.voteResults[0].voteCount).toBe(2);
+    expect(snapshot.voteResults[0].isWinner).toBe(true);
+  });
+
   it('builds draw-telephone reveal snapshots with the current chain state', () => {
     const now = Date.now();
     const room = {

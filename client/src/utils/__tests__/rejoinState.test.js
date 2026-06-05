@@ -359,4 +359,208 @@ describe('buildJoinRestorePlan', () => {
     expect(plan.actions[0].payload.answers).toHaveLength(2);
     expect(plan.actions[0].payload.currentIndex).toBe(1);
   });
+
+  it('restores situational voting phase with vote when already cast', () => {
+    const room = {
+      ...baseRoom,
+      phase: 'sit-voting',
+      currentQuestion: 'Who would survive a zombie apocalypse?',
+      answers: [
+        { playerId: 'p1', text: 'p1', playerName: 'Alice' },
+        { playerId: 'p2', text: 'p2', playerName: 'Bob' },
+      ],
+      sit: { votes: { p3: 'p1' } },
+    };
+
+    const plan = buildJoinRestorePlan({ room, playerId: 'p3', isRejoin: true, miniGameState: null });
+
+    expect(plan.route).toBe('/sit-vote');
+    const types = plan.actions.map((a) => a.type);
+    expect(types).toContain('SIT_VOTING_STARTED');
+    expect(types).toContain('SIT_MARK_VOTED');
+
+    const markAction = plan.actions.find((a) => a.type === 'SIT_MARK_VOTED');
+    expect(markAction.payload.answerId).toBe('p1');
+  });
+
+  it('restores situational results phase with computed winners', () => {
+    const room = {
+      ...baseRoom,
+      phase: 'sit-results',
+      currentQuestion: 'Who would survive a zombie apocalypse?',
+      answers: [
+        { playerId: 'p1', text: 'p1', playerName: 'Alice' },
+        { playerId: 'p2', text: 'p2', playerName: 'Bob' },
+      ],
+      sit: { votes: { p1: 'p2', p3: 'p2' } },
+      scores: { p1: 0, p2: 1 },
+    };
+
+    const plan = buildJoinRestorePlan({ room, playerId: 'p1', isRejoin: true, miniGameState: null });
+
+    expect(plan.route).toBe('/sit-vote');
+    const types = plan.actions.map((a) => a.type);
+    expect(types).toContain('SIT_VOTING_STARTED');
+    expect(types).toContain('SIT_SET_RESULTS');
+
+    const resultsAction = plan.actions.find((a) => a.type === 'SIT_SET_RESULTS');
+    expect(resultsAction.payload.winners).toContain('p2');
+  });
+
+  it('restores round-end phase', () => {
+    const room = {
+      ...baseRoom,
+      phase: 'roundEnd',
+      scores: { p1: 3, p2: 1, p3: 2 },
+      answers: [{ playerId: 'p1', text: 'Spiders' }],
+    };
+
+    const plan = buildJoinRestorePlan({ room, playerId: 'p2', isRejoin: true, miniGameState: null });
+
+    expect(plan.route).toBe('/round-end');
+    expect(plan.actions[0].type).toBe('SET_ROUND_ENDED');
+    expect(plan.actions[0].payload.scores).toEqual({ p1: 3, p2: 1, p3: 2 });
+  });
+
+  it('restores game-end phase', () => {
+    const room = { ...baseRoom, phase: 'gameEnd' };
+
+    const plan = buildJoinRestorePlan({ room, playerId: 'p1', isRejoin: true, miniGameState: null });
+
+    expect(plan.route).toBe('/game-end');
+    expect(plan.actions[0].type).toBe('SET_GAME_ENDED');
+  });
+
+  it('restores this-or-that question phase', () => {
+    const room = {
+      ...baseRoom,
+      phase: 'tot',
+      currentRound: 2,
+      totalRounds: 5,
+      currentQuestion: 'Cats or dogs?',
+      questions: [{ id: 'tot-1', text: 'Cats or dogs?', a: 'Cats 🐱', b: 'Dogs 🐶' }],
+      currentQuestionIndex: 0,
+    };
+
+    const plan = buildJoinRestorePlan({ room, playerId: 'p1', isRejoin: true, miniGameState: null });
+
+    expect(plan.route).toBe('/tot');
+    expect(plan.actions[0].type).toBe('SET_TOT_QUESTION');
+    expect(plan.actions[0].payload.a).toBe('Cats 🐱');
+    expect(plan.actions[0].payload.b).toBe('Dogs 🐶');
+    expect(plan.actions[0].payload.round).toBe(2);
+  });
+
+  it('restores selfie photo phase with submitted state', () => {
+    const selfieState = {
+      type: 'selfie',
+      phase: 'photo',
+      round: 1,
+      totalRounds: 2,
+      players: players.map(({ id, name, color }) => ({ id, name, color })),
+      photoCount: 2,
+      totalPhotographers: 3,
+      hasSubmittedPhoto: true,
+    };
+
+    const room = { ...baseRoom, phase: 'selfie' };
+    const plan = buildJoinRestorePlan({ room, playerId: 'p1', isRejoin: true, miniGameState: selfieState });
+
+    expect(plan.route).toBe('/selfie-photo');
+    const types = plan.actions.map((a) => a.type);
+    expect(types).toContain('SELFIE_PHOTO_PHASE');
+    expect(types).toContain('SELFIE_PHOTO_RECEIVED');
+    expect(types).toContain('SELFIE_MARK_PHOTO_SUBMITTED');
+
+    const receivedAction = plan.actions.find((a) => a.type === 'SELFIE_PHOTO_RECEIVED');
+    expect(receivedAction.payload.photoCount).toBe(2);
+    expect(receivedAction.payload.totalPlayers).toBe(3);
+  });
+
+  it('restores selfie voting phase with own vote marked', () => {
+    const selfieState = {
+      type: 'selfie',
+      phase: 'voting',
+      round: 1,
+      totalRounds: 2,
+      players: players.map(({ id, name, color }) => ({ id, name, color })),
+      submissions: [{ drawerId: 'p3', drawerName: 'Cara', drawerColor: '#00f', ownerName: 'Bob', photoData: null, strokes: [], votes: 2 }],
+      voteCount: 2,
+      totalVoters: 3,
+      hasVoted: true,
+      myVote: 'p3',
+    };
+
+    const room = { ...baseRoom, phase: 'selfie' };
+    const plan = buildJoinRestorePlan({ room, playerId: 'p1', isRejoin: true, miniGameState: selfieState });
+
+    expect(plan.route).toBe('/selfie-vote');
+    const types = plan.actions.map((a) => a.type);
+    expect(types).toContain('SELFIE_VOTING_STARTED');
+    expect(types).toContain('SELFIE_VOTE_RECEIVED');
+    expect(types).toContain('SELFIE_MARK_VOTED');
+
+    const markAction = plan.actions.find((a) => a.type === 'SELFIE_MARK_VOTED');
+    expect(markAction.payload.drawerId).toBe('p3');
+  });
+
+  it('restores fitb answering phase with own answer', () => {
+    const fitbState = {
+      type: 'fitb',
+      phase: 'answering',
+      round: 1,
+      totalRounds: 3,
+      question: 'The worst thing about Mondays is ___.',
+      players: players.map(({ id, name, color }) => ({ id, name, color })),
+      answeredCount: 2,
+      totalAnswerers: 3,
+      hasAnswered: true,
+      myAnswer: 'getting out of bed',
+    };
+
+    const room = { ...baseRoom, phase: 'fitb' };
+    const plan = buildJoinRestorePlan({ room, playerId: 'p2', isRejoin: true, miniGameState: fitbState });
+
+    expect(plan.route).toBe('/fitb');
+    const types = plan.actions.map((a) => a.type);
+    expect(types).toContain('FITB_ROUND_START');
+    expect(types).toContain('FITB_ANSWER_RECEIVED');
+    expect(types).toContain('FITB_MARK_ANSWERED');
+
+    const markAction = plan.actions.find((a) => a.type === 'FITB_MARK_ANSWERED');
+    expect(markAction.payload.myAnswer).toBe('getting out of bed');
+  });
+
+  it('restores fitb voting phase with own vote', () => {
+    const fitbState = {
+      type: 'fitb',
+      phase: 'voting',
+      round: 2,
+      totalRounds: 3,
+      question: 'The worst thing about Mondays is ___.',
+      players: players.map(({ id, name, color }) => ({ id, name, color })),
+      answers: [{ id: 0, text: 'getting out of bed' }, { id: 1, text: 'traffic' }],
+      answeredCount: 3,
+      totalAnswerers: 3,
+      hasAnswered: true,
+      myAnswer: 'getting out of bed',
+      voteCount: 1,
+      totalVoters: 3,
+      hasVoted: true,
+      myVote: 1,
+    };
+
+    const room = { ...baseRoom, phase: 'fitb' };
+    const plan = buildJoinRestorePlan({ room, playerId: 'p1', isRejoin: true, miniGameState: fitbState });
+
+    expect(plan.route).toBe('/fitb');
+    const types = plan.actions.map((a) => a.type);
+    expect(types).toContain('FITB_ROUND_START');
+    expect(types).toContain('FITB_VOTING_STARTED');
+    expect(types).toContain('FITB_VOTE_RECEIVED');
+    expect(types).toContain('FITB_MARK_VOTED');
+
+    const markAction = plan.actions.find((a) => a.type === 'FITB_MARK_VOTED');
+    expect(markAction.payload.answerId).toBe(1);
+  });
 });
