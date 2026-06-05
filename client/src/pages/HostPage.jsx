@@ -2980,7 +2980,7 @@ export default function HostPage() {
       setStatus('selfie'); // Ensure host shows selfie panel even when photo phase was skipped
     });
     sock.on('selfie:prompt_updated', (data) => {
-      setSelfieData(prev => ({ ...prev, promptTemplate: data.prompt || prev.promptTemplate }));
+      setSelfieData(prev => ({ ...prev, promptTemplate: data.promptTemplate || prev.promptTemplate }));
     });
     sock.on('selfie:drawing_received', ({ drawingCount, totalDrawers, drawnPlayerIds }) => {
       setSelfieData(prev => ({ ...prev, drawingCount, totalDrawers, drawnPlayerIds: drawnPlayerIds || prev.drawnPlayerIds }));

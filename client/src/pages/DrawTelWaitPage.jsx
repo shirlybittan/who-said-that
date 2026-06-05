@@ -15,6 +15,13 @@ export default function DrawTelWaitPage() {
     }
   }, [dt.currentTurn, dt.hasSubmittedTurn, dt.phase, navigate]);
 
+  // If a guess turn arrives while waiting on the guess phase, go guess immediately
+  useEffect(() => {
+    if (dt.phase === 'guessing' && dt.guessTurn && !dt.hasGuessed) {
+      navigate('/draw-tel-guess');
+    }
+  }, [dt.phase, dt.guessTurn, dt.hasGuessed, navigate]);
+
   const phase = dt.phase;
 
   const title =

@@ -2927,6 +2927,7 @@ io.on('connection', (socket) => {
     if (!['pmatch', 'photoassoc'].includes(subType)) return;
 
     cancelAllTimers(room);
+    const pvPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
     let prompts;
     if (subType === 'pmatch') {
       const { pmatchPrompts } = require('./questions/pmatchPrompts');
