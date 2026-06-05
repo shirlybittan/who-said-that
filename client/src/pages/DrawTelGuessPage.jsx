@@ -28,6 +28,7 @@ export default function DrawTelGuessPage() {
   const { hasConfirmed, confirm, editResponse, markConfirmed } = useMiniGameLifecycle({
     onSubmit: doSubmit,
     resetKey: guessTurn?.promptId,
+    initialConfirmed: dt.hasGuessed,
   });
 
   // Capture mutable values in a ref so they don't need to be in the timer's deps
@@ -36,6 +37,7 @@ export default function DrawTelGuessPage() {
 
   // Effect 1: countdown — only re-runs when confirmed state changes
   useEffect(() => {
+<<<<<<< HEAD
     if (hasConfirmed) return;
     const id = setInterval(() => setSecondsLeft(s => Math.max(0, s - 1)), 1000);
     return () => clearInterval(id);
@@ -53,6 +55,30 @@ export default function DrawTelGuessPage() {
     }
     markConfirmed();
   }, [secondsLeft, hasConfirmed, dispatch, markConfirmed]);
+=======
+    setGuessText('');
+    setSecondsLeft(dt.guessSecondsLeft || 60);
+  }, [guessTurn?.promptId, dt.guessSecondsLeft]);
+
+  useEffect(() => {
+    if (secondsLeft <= 0) {
+      if (!hasConfirmed && guessTurn) {
+        let textToSubmit = guessText.trim();
+        if (!textToSubmit) textToSubmit = "I had absolutely no idea 🤦‍♂️";
+        sounds.answer?.();
+        socket.emit('dt:submit_guess', { code: roomCode, promptId: guessTurn.promptId, guessText: textToSubmit });
+        dispatch({ type: 'DT_MARK_GUESSED' });
+      }
+      markConfirmed();
+    }
+  }, [secondsLeft, hasConfirmed, guessText, guessTurn, roomCode, sounds, dispatch, markConfirmed]);
+
+  useEffect(() => {
+    if (hasConfirmed || !guessTurn || secondsLeft <= 0) return;
+    const id = setInterval(() => setSecondsLeft(s => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(id);
+  }, [secondsLeft, hasConfirmed, guessTurn]);
+>>>>>>> 6c55a1a1b5659af3becef5a4465127581423cdd1
 
   if (!guessTurn) {
     return (

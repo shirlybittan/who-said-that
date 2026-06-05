@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { socket } from '../socket';
 import { useGame } from '../store/gameStore.jsx';
 import { useNavigate } from 'react-router-dom';
+import { buildJoinRestorePlan } from '../utils/rejoinState.js';
 
 export const useSocket = () => {
   const { state, dispatch } = useGame();
@@ -26,38 +27,15 @@ export const useSocket = () => {
       navigate('/lobby');
     };
 
-    const onJoinSuccess = ({ room, playerId, isRejoin }) => {
+    const onJoinSuccess = ({ room, playerId, isRejoin, miniGameState }) => {
       localStorage.setItem('wst_roomCode', room.code);
       const myPlayer = room.players.find(p => p.id === playerId);
       if (myPlayer?.name) localStorage.setItem('wst_playerName', myPlayer.name);
-      const isPlaying = myPlayer?.isPlaying ?? true;
-      const isHost = room.host === playerId;
-      const phase = room.phase;
-      const joinedMidRound = !isRejoin && phase && phase !== 'lobby';
+      const { roomPayload, actions, route } = buildJoinRestorePlan({ room, playerId, isRejoin, miniGameState });
 
-      dispatch({
-        type: 'SET_ROOM',
-        payload: {
-          roomCode: room.code,
-          phase: room.phase,
-          players: room.players,
-          mode: room.mode,
-          totalRounds: room.totalRounds,
-          currentRound: room.currentRound || 0,
-          isHost,
-          isPlaying,
-          joinedMidRound: !!joinedMidRound,
-          gameType: room.gameType || 'who-said-that',
-          selectedSubGames: room.selectedSubGames || [],
-          gameName: room.gameName || '',
-          scores: room.scores || {},
-          mlt: {
-            totalRounds: room.mlt?.totalRounds ?? 5,
-            allowSelfVote: room.mlt?.allowSelfVote ?? false,
-          },
-        } 
-      });
+      dispatch({ type: 'SET_ROOM', payload: roomPayload });
       dispatch({ type: 'SET_PLAYER_ID', payload: playerId });
+<<<<<<< HEAD
 
       // Brand-new player joining mid-game — hold in lobby until next round
       if (joinedMidRound) {
@@ -195,6 +173,10 @@ export const useSocket = () => {
       } else {
         navigate('/lobby');
       }
+=======
+      actions.forEach(action => dispatch(action));
+      navigate(route);
+>>>>>>> 6c55a1a1b5659af3becef5a4465127581423cdd1
     };
 
     const onPlayerJoined = ({ players }) => {
@@ -209,7 +191,7 @@ export const useSocket = () => {
       dispatch({ type: 'UPDATE_CUSTOM_QUESTIONS', payload: customQuestions });
     };
 
-    const onPlayerDisconnected = ({ playerId, playerName }) => {
+    const onPlayerDisconnected = () => {
       // Logic for disconnect goes here if needed
     };
 
@@ -330,7 +312,7 @@ export const useSocket = () => {
       dispatch({ type: 'MLT_SET_RESUMED', payload: data });
     };
 
-    const onMltRestarted = ({ code, gameName, players, gameType }) => {
+    const onMltRestarted = ({ gameName, players, gameType }) => {
       dispatch({ type: 'MLT_RESTARTED', payload: { gameName, players, gameType } });
       navigate('/lobby');
     };
@@ -558,7 +540,7 @@ export const useSocket = () => {
       navigate('/lobby');
     };
 
-    const onGameChanged = ({ code, gameType, players, gameName }) => {
+    const onGameChanged = ({ gameType, players, gameName }) => {
       dispatch({ type: 'GAME_SWITCHED', payload: { gameType, players, gameName } });
       navigate('/lobby');
     };

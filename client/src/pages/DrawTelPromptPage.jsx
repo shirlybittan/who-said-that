@@ -7,7 +7,7 @@ import MiniGameWrapper from '../components/MiniGameWrapper.jsx';
 import { useMiniGameLifecycle } from '../hooks/useMiniGameLifecycle.js';
 
 export default function DrawTelPromptPage() {
-  const { state } = useGame();
+  const { state, dispatch } = useGame();
   const { dt, roomCode } = state;
   const sounds = useSounds();
   const [promptText, setPromptText] = useState('');
@@ -20,11 +20,13 @@ export default function DrawTelPromptPage() {
     if (!canSubmit) return;
     sounds.answer?.();
     socket.emit('dt:submit_prompt', { code: roomCode, templateText: promptText.trim() });
+    dispatch({ type: 'DT_MARK_PROMPT_SUBMITTED' });
   };
 
   const { hasConfirmed, confirm, editResponse, markConfirmed } = useMiniGameLifecycle({
     onSubmit: doSubmit,
     resetKey: dt.round,
+    initialConfirmed: dt.hasSubmittedPrompt,
   });
 
   // Capture mutable values in a ref so they don't need to be in the timer's deps
@@ -33,6 +35,7 @@ export default function DrawTelPromptPage() {
 
   // Effect 1: countdown — only re-runs when confirmed state changes
   useEffect(() => {
+<<<<<<< HEAD
     if (hasConfirmed) return;
     const id = setInterval(() => setSecondsLeft(s => Math.max(0, s - 1)), 1000);
     return () => clearInterval(id);
@@ -47,6 +50,31 @@ export default function DrawTelPromptPage() {
     socket.emit('dt:submit_prompt', { code, templateText: textToSubmit });
     markConfirmed();
   }, [secondsLeft, hasConfirmed, markConfirmed]);
+=======
+    setSecondsLeft(dt.promptSecondsLeft || 60);
+  }, [dt.promptSecondsLeft, dt.totalPrompts]);
+
+  useEffect(() => {
+    if (secondsLeft <= 0) {
+      if (!hasConfirmed) {
+        let textToSubmit = promptText.trim();
+        if (!hasName || textToSubmit.length <= 3) {
+          textToSubmit = "[name] doing absolutely nothing";
+        }
+        sounds.answer?.();
+        socket.emit('dt:submit_prompt', { code: roomCode, templateText: textToSubmit });
+        dispatch({ type: 'DT_MARK_PROMPT_SUBMITTED' });
+      }
+      markConfirmed();
+    }
+  }, [secondsLeft, hasConfirmed, promptText, hasName, roomCode, sounds, markConfirmed, dispatch]);
+
+  useEffect(() => {
+    if (hasConfirmed || secondsLeft <= 0) return;
+    const id = setInterval(() => setSecondsLeft(s => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(id);
+  }, [secondsLeft, hasConfirmed]);
+>>>>>>> 6c55a1a1b5659af3becef5a4465127581423cdd1
 
   return (
     <motion.div

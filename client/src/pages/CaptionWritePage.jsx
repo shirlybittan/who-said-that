@@ -28,6 +28,7 @@ export default function CaptionWritePage() {
   const { hasConfirmed, confirm, editResponse } = useMiniGameLifecycle({
     onSubmit: doSubmit,
     resetKey: caption.round,
+    initialConfirmed: caption.hasWrittenCaption,
   });
 
   return (
