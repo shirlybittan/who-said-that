@@ -11,7 +11,7 @@ function MostLikelyToHostCenter({ prompt, roundLabel }) {
   );
 }
 
-export default function MostLikelyToHostView({ state, socket, onOpenGamePicker, onOpenMainMenu }) {
+export default function MostLikelyToHostView({ state, socket, onOpenGamePicker, onOpenMainMenu, onSkipMiniGame }) {
   const { frame, actions } = useHostGameFrame({ gameKey: 'most-likely-to', state, socket });
 
   const handleCopyHostUrl = () => {
@@ -25,8 +25,7 @@ export default function MostLikelyToHostView({ state, socket, onOpenGamePicker, 
       frame={frame}
       onPauseToggle={actions.togglePause}
       onChangeQuestion={actions.changeQuestion}
-      onSkipQuestion={actions.skipQuestion}
-      onSkipMiniGame={actions.skipMiniGame}
+      onSkipMiniGame={onSkipMiniGame || actions.skipMiniGame}
       onOpenGamePicker={onOpenGamePicker}
       onOpenMainMenu={onOpenMainMenu}
       onCopyHostUrl={handleCopyHostUrl}

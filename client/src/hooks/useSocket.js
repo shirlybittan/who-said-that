@@ -178,6 +178,18 @@ export const useSocket = () => {
     };
 
     // ─── This-or-That handlers ───────────────────────────────────────────────
+    const onTotTimer = (data) => {
+      dispatch({ type: 'TOT_SET_TIMER', payload: data });
+    };
+
+    const onTotPaused = (data) => {
+      dispatch({ type: 'TOT_SET_PAUSED', payload: data });
+    };
+
+    const onTotResumed = (data) => {
+      dispatch({ type: 'TOT_SET_RESUMED', payload: data });
+    };
+
     const onTotVoteReceived = (data) => {
       dispatch({ type: 'TOT_VOTE_RECEIVED', payload: data });
     };
@@ -441,6 +453,9 @@ export const useSocket = () => {
     socket.on('tot:vote_received', onTotVoteReceived);
     socket.on('tot:results', onTotResults);
     socket.on('tot:end', onTotEnd);
+    socket.on('tot:timer', onTotTimer);
+    socket.on('tot:paused', onTotPaused);
+    socket.on('tot:resumed', onTotResumed);
     socket.on('sit:voting_started', onSitVotingStarted);
     socket.on('sit:vote_received', onSitVoteReceived);
     socket.on('sit:results', onSitResults);
@@ -626,6 +641,9 @@ export const useSocket = () => {
       socket.off('tot:vote_received', onTotVoteReceived);
       socket.off('tot:results', onTotResults);
       socket.off('tot:end', onTotEnd);
+      socket.off('tot:timer', onTotTimer);
+      socket.off('tot:paused', onTotPaused);
+      socket.off('tot:resumed', onTotResumed);
       socket.off('sit:voting_started', onSitVotingStarted);
       socket.off('sit:vote_received', onSitVoteReceived);
       socket.off('sit:results', onSitResults);

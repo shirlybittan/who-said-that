@@ -222,37 +222,47 @@ export default function DrawTelDrawPage() {
           <div className="flex-1 flex flex-col gap-3">
             <div className="bg-[#1A1A2E] rounded-2xl p-4 border border-[#FF6B6B]/30">
               <p className="text-xs text-gray-400 font-['Nunito'] uppercase tracking-widest mb-1">
-                Step {turn?.step} of {turn?.totalSteps}
-              </p>
-              <p className="text-lg text-white font-['Nunito']">
-                Draw what you see in the previous step!
-              </p>
-            </div>
+                  Step {turn?.position || 1} of {turn?.totalPositions || 1}
+                </p>
+                <p className="text-lg text-white font-['Nunito']">
+                  {turn?.position > 1 ? "Draw over the previous drawing!" : "Draw this prompt!"}
+                </p>
+              </div>
 
-            {/* Previous step content */}
-            <div className="bg-[#1A1A2E] rounded-2xl p-4 border border-[#FF6B6B]/30 flex-1">
-              <p className="text-xs text-gray-400 font-['Nunito'] uppercase tracking-widest mb-2">Previous Step</p>
-              {turn?.type === 'drawing' && turn.existingStrokes && (
-                <div className="bg-white rounded-xl overflow-hidden">
-                  <canvas
-                    ref={r => {
-                      if (r) redrawCanvas(r, turn.existingStrokes);
-                    }}
-                    width={CANVAS_W}
-                    height={CANVAS_H}
-                    className="w-full h-auto"
-                  />
-                </div>
-              )}
-              {turn?.type === 'text' && (
-                <div className="h-full flex items-center justify-center">
-                  <p className="text-3xl font-['Fredoka_One'] text-[#FFE66D] text-center">
-                    ""{turn.prompt}""
-                  </p>
-                </div>
-              )}
+              {/* Previous step content */}
+              <div className="bg-[#1A1A2E] rounded-2xl p-4 border border-[#FF6B6B]/30 flex-1">
+                <p className="text-xs text-gray-400 font-['Nunito'] uppercase tracking-widest mb-2">
+                  {turn?.position > 1 ? "Previous Drawing" : "Your Prompt"}
+                </p>
+                {turn?.position > 1 ? (
+                  <div className="bg-[#000] rounded-xl overflow-hidden relative" style={{ aspectRatio: `${CANVAS_W}/${CANVAS_H}` }}>
+                    {selfieData && <img src={selfieData} alt="" className="absolute inset-0 w-full h-full object-cover opacity-80" />}
+                    <canvas
+                      ref={r => {
+                        if (r) {
+                          const ctx = r.getContext('2d');
+                          ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+                          if (selfieData) redrawOverlay(r, turn.existingStrokes || []);
+                          else redrawCanvas(r, turn.existingStrokes || []);
+                        }
+                      }}
+                      width={CANVAS_W}
+                      height={CANVAS_H}
+                      className="w-full h-auto absolute inset-0"
+                    />
+                  </div>
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center p-2">
+                    <p className="text-3xl font-['Fredoka_One'] text-[#FFE66D] text-center mb-4">
+                      "{turn?.finalText}"
+                    </p>
+                    {selfieData && (
+                      <img src={selfieData} className="w-24 h-24 object-cover rounded-full border-2 border-[#FF6B6B] shadow-lg shadow-[#FF6B6B]/20" alt="Selfie bg" />
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
 
           {/* Right: Canvas + Controls */}
           <div className="lg:w-[420px] flex flex-col gap-3">

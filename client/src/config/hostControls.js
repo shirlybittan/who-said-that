@@ -54,6 +54,7 @@ export function buildHostControls({
   fitbData = {},
   gameQueue = [],
   queueIndex = 0,
+  answerPaused = false,
   handlers = {},
 }) {
   const {
@@ -80,6 +81,7 @@ export function buildHostControls({
     onPlayAgain,
     onNextQueueGame,
     onNewPartyPack,
+    onAnswerPauseResume,
   } = handlers;
 
   const canStart = playingCount >= 3;
@@ -119,11 +121,13 @@ export function buildHostControls({
     ],
 
     question: [
+      { label: answerPaused ? '▶ Resume' : '⏸ Pause', onClick: onAnswerPauseResume, color: '#FFE66D' },
       { label: '⏭ Skip Question', onClick: onSkipQuestion, color: '#FFE66D' },
       skipBtn,
     ],
 
     'sit-voting': [
+      { label: answerPaused ? '▶ Resume' : '⏸ Pause', onClick: onAnswerPauseResume, color: '#FFE66D' },
       { label: '⏭ Skip Question', onClick: onSkipQuestion, color: '#FFE66D' },
       skipBtn,
     ],

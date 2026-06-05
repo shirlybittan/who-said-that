@@ -73,4 +73,20 @@ describe('gameReducer', () => {
     expect(newState.dt.hasSubmittedPrompt).toBe(true);
     expect(newState.dt.promptsSubmittedCount).toBe(1);
   });
+
+  it('handles SELFIE_UPDATE_PROMPT to update drawing prompt', () => {
+    const initialState = {
+      selfie: {
+        promptTemplate: 'Old Prompt',
+        currentTurn: { prompt: 'Old Prompt' },
+        turn: { prompt: 'Old Prompt' }
+      }
+    };
+    
+    const newState = gameReducer(initialState, { type: 'SELFIE_UPDATE_PROMPT', payload: { prompt: 'New Prompt Template' } });
+
+    expect(newState.selfie.promptTemplate).toBe('New Prompt Template');
+    expect(newState.selfie.currentTurn.prompt).toBe('New Prompt Template');
+    expect(newState.selfie.turn.prompt).toBe('New Prompt Template');
+  });
 });
