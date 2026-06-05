@@ -29,6 +29,7 @@ export default function QuestionPage() {
   const { hasConfirmed, confirm, editResponse, markConfirmed } = useMiniGameLifecycle({
     onSubmit: doSubmitAnswer,
     resetKey: state.currentQuestion,
+    initialConfirmed: state.hasAnswered,
   });
 
   useEffect(() => {

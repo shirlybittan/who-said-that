@@ -7,7 +7,7 @@ import MiniGameWrapper from '../components/MiniGameWrapper.jsx';
 import { useMiniGameLifecycle } from '../hooks/useMiniGameLifecycle.js';
 
 export default function DrawTelPromptPage() {
-  const { state } = useGame();
+  const { state, dispatch } = useGame();
   const { dt, roomCode } = state;
   const sounds = useSounds();
   const [promptText, setPromptText] = useState('');
@@ -20,28 +20,39 @@ export default function DrawTelPromptPage() {
     if (!canSubmit) return;
     sounds.answer?.();
     socket.emit('dt:submit_prompt', { code: roomCode, templateText: promptText.trim() });
+    dispatch({ type: 'DT_MARK_PROMPT_SUBMITTED' });
   };
 
   const { hasConfirmed, confirm, editResponse, markConfirmed } = useMiniGameLifecycle({
     onSubmit: doSubmit,
     resetKey: dt.round,
+    initialConfirmed: dt.hasSubmittedPrompt,
   });
 
   useEffect(() => {
-    if (hasConfirmed) return;
+    setSecondsLeft(dt.promptSecondsLeft || 60);
+  }, [dt.promptSecondsLeft, dt.totalPrompts]);
+
+  useEffect(() => {
     if (secondsLeft <= 0) {
-      let textToSubmit = promptText.trim();
-      if (!hasName || textToSubmit.length <= 3) {
-        textToSubmit = "[name] doing absolutely nothing";
+      if (!hasConfirmed) {
+        let textToSubmit = promptText.trim();
+        if (!hasName || textToSubmit.length <= 3) {
+          textToSubmit = "[name] doing absolutely nothing";
+        }
+        sounds.answer?.();
+        socket.emit('dt:submit_prompt', { code: roomCode, templateText: textToSubmit });
+        dispatch({ type: 'DT_MARK_PROMPT_SUBMITTED' });
       }
-      sounds.answer?.();
-      socket.emit('dt:submit_prompt', { code: roomCode, templateText: textToSubmit });
       markConfirmed();
-      return;
     }
+  }, [secondsLeft, hasConfirmed, promptText, hasName, roomCode, sounds, markConfirmed, dispatch]);
+
+  useEffect(() => {
+    if (hasConfirmed || secondsLeft <= 0) return;
     const id = setInterval(() => setSecondsLeft(s => Math.max(0, s - 1)), 1000);
     return () => clearInterval(id);
-  }, [secondsLeft, hasConfirmed, promptText, hasName, roomCode, sounds, markConfirmed]);
+  }, [secondsLeft, hasConfirmed]);
 
   return (
     <motion.div

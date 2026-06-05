@@ -11,6 +11,7 @@ const {
   setGameOptions,
 } = require('./game/roomManager');
 const { selectQuestions, selectSituationalQuestions, selectThisOrThatQuestions, selectDrawingQuestion, selectMixedQuestions, shuffleAnswers } = require('./game/gameLogic');
+const { buildMiniGameSnapshot } = require('./game/miniGameSnapshot');
 const mltPromptBank = require('./questions/mostLikelyTo');
 const { words: drawWordBank, prompts: drawPrompts } = require('./questions/drawing');
 const { selfiePrompts } = require('./questions/selfie');
@@ -602,7 +603,17 @@ io.on('connection', (socket) => {
         }
       }
       socket.join(room.code);
-      socket.emit('join_success', { room, playerId: player.id, isRejoin });
+      socket.emit('join_success', {
+        room,
+        playerId: player.id,
+        isRejoin,
+        miniGameState: buildMiniGameSnapshot(room, player.id, {
+          dtPromptSeconds: DT_PROMPT_SECS,
+          dtGuessSeconds: DT_GUESS_SECS,
+          dtDrawSeconds: DT_DRAW_SECS,
+          dtVoteSeconds: DT_VOTE_SECS,
+        }),
+      });
       socket.to(room.code).emit('player_joined', { players: room.players });
     } catch (err) {
       socket.emit('error', { message: err.message });
@@ -3096,6 +3107,7 @@ io.on('connection', (socket) => {
   // Helper: start the prompt-phase countdown; auto-generates prompts for idle players on expiry
   const startDtPromptTimer = (io, room, code) => {
     if (room.dt.promptTimerRef) { clearTimeout(room.dt.promptTimerRef); room.dt.promptTimerRef = null; }
+    room.dt.promptStartedAt = Date.now();
     room.dt.promptTimerRef = setTimeout(() => {
       if (room.dt.phase !== 'prompting') return;
       const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
@@ -3126,6 +3138,7 @@ io.on('connection', (socket) => {
   // Helper: start the guess-phase countdown; auto-submits empty guess on expiry
   const startDtGuessTimer = (io, room, code) => {
     if (room.dt.guessTimerRef) { clearTimeout(room.dt.guessTimerRef); room.dt.guessTimerRef = null; }
+    room.dt.guessStartedAt = Date.now();
     room.dt.guessTimerRef = setTimeout(() => {
       if (room.dt.phase !== 'guessing') return;
       for (const promptId of Object.keys(room.dt.chains)) {
@@ -3376,7 +3389,9 @@ io.on('connection', (socket) => {
       totalChains: 0,
       scores: {},
       promptTimerRef: null,
+      promptStartedAt: null,
       guessTimerRef: null,
+      guessStartedAt: null,
       voteTimerRef: null,
       voteStartedAt: null,
     };
@@ -3764,7 +3779,7 @@ io.on('connection', (socket) => {
     if (!player || !player.isHost) return;
     cancelAllTimers(room);
     room.phase = 'lobby';
-    room.dt = { phase: 'waiting', prompts: [], chains: {}, activeTurns: {}, pendingTurns: {}, guesses: {}, votes: {}, revealQueue: [], revealCurrentIndex: 0, revealStep: 0, chainsCompletedDrawing: 0, totalChains: 0, scores: {}, promptTimerRef: null, guessTimerRef: null, voteTimerRef: null, voteStartedAt: null };
+    room.dt = { phase: 'waiting', prompts: [], chains: {}, activeTurns: {}, pendingTurns: {}, guesses: {}, votes: {}, revealQueue: [], revealCurrentIndex: 0, revealStep: 0, chainsCompletedDrawing: 0, totalChains: 0, scores: {}, promptTimerRef: null, promptStartedAt: null, guessTimerRef: null, guessStartedAt: null, voteTimerRef: null, voteStartedAt: null };
     room.players.forEach(p => { p.isReady = false; });
     io.to(code).emit('dt:restarted', { code, players: room.players });
   });
@@ -3802,7 +3817,7 @@ io.on('connection', (socket) => {
     room.selfie = { phase: 'waiting', photos: {}, assignments: {}, strokes: {}, votes: {}, scores: {} };
     room.caption = { phase: 'waiting', photos: {}, currentRound: 1, totalRounds: 3, captions: {}, votes: {}, scores: {}, usedPrompts: [], prompts: [], currentPromptIndex: 0 };
     room.photoVote = { subType: 'pmatch', phase: 'waiting', photos: {}, currentRound: 1, totalRounds: 5, prompts: [], currentPromptIndex: 0, votes: {}, scores: {} };
-    room.dt = { phase: 'waiting', prompts: [], chains: {}, activeTurns: {}, pendingTurns: {}, guesses: {}, votes: {}, revealQueue: [], revealCurrentIndex: 0, revealStep: 0, chainsCompletedDrawing: 0, totalChains: 0, scores: {} };
+    room.dt = { phase: 'waiting', prompts: [], chains: {}, activeTurns: {}, pendingTurns: {}, guesses: {}, votes: {}, revealQueue: [], revealCurrentIndex: 0, revealStep: 0, chainsCompletedDrawing: 0, totalChains: 0, scores: {}, promptStartedAt: null, guessStartedAt: null, voteStartedAt: null };
 
     io.to(code).emit('game_changed', {
       code,

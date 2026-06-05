@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { socket } from '../socket';
 import { useGame } from '../store/gameStore.jsx';
 import { useNavigate } from 'react-router-dom';
+import { buildJoinRestorePlan } from '../utils/rejoinState.js';
 
 export const useSocket = () => {
   const { state, dispatch } = useGame();
@@ -26,110 +27,16 @@ export const useSocket = () => {
       navigate('/lobby');
     };
 
-    const onJoinSuccess = ({ room, playerId, isRejoin }) => {
+    const onJoinSuccess = ({ room, playerId, isRejoin, miniGameState }) => {
       localStorage.setItem('wst_roomCode', room.code);
       const myPlayer = room.players.find(p => p.id === playerId);
       if (myPlayer?.name) localStorage.setItem('wst_playerName', myPlayer.name);
-      const isPlaying = myPlayer?.isPlaying ?? true;
-      const isHost = room.host === playerId;
-      const phase = room.phase;
-      const joinedMidRound = !isRejoin && phase && phase !== 'lobby';
+      const { roomPayload, actions, route } = buildJoinRestorePlan({ room, playerId, isRejoin, miniGameState });
 
-      dispatch({
-        type: 'SET_ROOM',
-        payload: {
-          roomCode: room.code,
-          phase: room.phase,
-          players: room.players,
-          mode: room.mode,
-          totalRounds: room.totalRounds,
-          currentRound: room.currentRound || 0,
-          isHost,
-          isPlaying,
-          joinedMidRound: !!joinedMidRound,
-          gameType: room.gameType || 'who-said-that',
-          selectedSubGames: room.selectedSubGames || [],
-          gameName: room.gameName || '',
-          scores: room.scores || {},
-          mlt: {
-            totalRounds: room.mlt?.totalRounds ?? 5,
-            allowSelfVote: room.mlt?.allowSelfVote ?? false,
-          },
-        } 
-      });
+      dispatch({ type: 'SET_ROOM', payload: roomPayload });
       dispatch({ type: 'SET_PLAYER_ID', payload: playerId });
-
-      // Brand-new player joining mid-game — hold in lobby until next round
-      if (joinedMidRound) {
-        navigate('/lobby');
-        return;
-      }
-
-      // Mid-game rejoin: restore phase-specific state and navigate to correct page
-      if (phase === 'lobby' || !phase) {
-        navigate('/lobby');
-        return;
-      }
-
-      if (phase === 'question') {
-        const q = room.questions?.[room.currentQuestionIndex];
-        dispatch({
-          type: 'SET_QUESTION',
-          payload: {
-            question: room.currentQuestion,
-            round: room.currentRound,
-            totalRounds: room.totalRounds,
-            roundType: q?.type || 'wst',
-            target: null,
-          }
-        });
-        if (room.answers?.some(a => a.playerId === playerId)) {
-          dispatch({ type: 'MARK_ANSWERED' });
-        }
-        navigate('/question');
-      } else if (phase === 'sit-voting' || phase === 'sit-results') {
-        const answers = room.answers?.map(a => ({ id: a.playerId, text: a.text })) || [];
-        dispatch({
-          type: 'SIT_VOTING_STARTED',
-          payload: { question: room.currentQuestion, answers, totalVoters: room.players.filter(p => p.isConnected && p.isPlaying).length }
-        });
-        if (phase === 'sit-results') {
-          // results will come via sit:results if host triggers, otherwise show voting page
-        } else if (room.sit?.votes?.[playerId]) {
-          dispatch({ type: 'SIT_MARK_VOTED', payload: { answerId: room.sit.votes[playerId] } });
-        }
-        navigate('/sit-vote');
-      } else if (phase === 'voting') {
-        dispatch({
-          type: 'SET_ANSWERS',
-          payload: {
-            answers: room.answers?.map(a => ({ text: a.text })) || [],
-            currentIndex: room.currentAnswerIndex || 0,
-          }
-        });
-        navigate('/vote');
-      } else if (phase === 'roundEnd') {
-        dispatch({ type: 'SET_ROUND_ENDED', payload: { scores: room.scores, players: room.players, answers: room.answers || [], stats: {} } });
-        navigate('/round-end');
-      } else if (phase === 'gameEnd') {
-        dispatch({ type: 'SET_GAME_ENDED', payload: { players: room.players, stats: {} } });
-        navigate('/game-end');
-      } else if (phase === 'tot') {
-        const q = room.questions?.[room.currentQuestionIndex];
-        dispatch({
-          type: 'SET_TOT_QUESTION',
-          payload: {
-            question: q?.text || room.currentQuestion || '',
-            a: q?.a || '',
-            b: q?.b || '',
-            round: room.currentRound,
-            totalRounds: room.totalRounds,
-          }
-        });
-        navigate('/tot');
-      } else {
-        navigate('/lobby');
-      }
+      actions.forEach(action => dispatch(action));
+      navigate(route);
     };
 
     const onPlayerJoined = ({ players }) => {

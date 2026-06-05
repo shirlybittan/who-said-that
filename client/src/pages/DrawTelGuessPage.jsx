@@ -28,12 +28,17 @@ export default function DrawTelGuessPage() {
   const { hasConfirmed, confirm, editResponse, markConfirmed } = useMiniGameLifecycle({
     onSubmit: doSubmit,
     resetKey: guessTurn?.promptId,
+    initialConfirmed: dt.hasGuessed,
   });
 
   useEffect(() => {
-    if (hasConfirmed) return;
+    setGuessText('');
+    setSecondsLeft(dt.guessSecondsLeft || 60);
+  }, [guessTurn?.promptId, dt.guessSecondsLeft]);
+
+  useEffect(() => {
     if (secondsLeft <= 0) {
-      if (guessTurn) {
+      if (!hasConfirmed && guessTurn) {
         let textToSubmit = guessText.trim();
         if (!textToSubmit) textToSubmit = "I had absolutely no idea 🤦‍♂️";
         sounds.answer?.();
@@ -41,11 +46,14 @@ export default function DrawTelGuessPage() {
         dispatch({ type: 'DT_MARK_GUESSED' });
       }
       markConfirmed();
-      return;
     }
+  }, [secondsLeft, hasConfirmed, guessText, guessTurn, roomCode, sounds, dispatch, markConfirmed]);
+
+  useEffect(() => {
+    if (hasConfirmed || !guessTurn || secondsLeft <= 0) return;
     const id = setInterval(() => setSecondsLeft(s => Math.max(0, s - 1)), 1000);
     return () => clearInterval(id);
-  }, [secondsLeft, hasConfirmed, guessText, guessTurn, roomCode, sounds, dispatch, markConfirmed]);
+  }, [secondsLeft, hasConfirmed, guessTurn]);
 
   if (!guessTurn) {
     return (

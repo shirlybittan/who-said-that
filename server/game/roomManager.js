@@ -151,6 +151,9 @@ const createRoom = (socketId, playerName = 'Host', gameType = 'most-likely-to', 
       chainsCompletedDrawing: 0,
       totalChains: 0,
       scores: {},              // {playerId: pts}
+      promptStartedAt: null,
+      guessStartedAt: null,
+      voteStartedAt: null,
     },
   };
   

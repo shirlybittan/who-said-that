@@ -24,6 +24,7 @@ export default function FillBlankPage() {
   const { hasConfirmed, confirm, editResponse } = useMiniGameLifecycle({
     onSubmit: doSubmitAnswer,
     resetKey: fitb.question,
+    initialConfirmed: fitb.hasAnswered,
   });
 
   const handleVote = (id) => {

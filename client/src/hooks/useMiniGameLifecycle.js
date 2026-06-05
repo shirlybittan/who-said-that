@@ -4,17 +4,18 @@ import { useState, useEffect, useCallback } from 'react';
  * useMiniGameLifecycle — manages the Input → Confirm → Waiting lifecycle
  * that is shared across all mini-game input phases.
  *
- * @param {Function} onSubmit   Called when the player clicks Confirm
- * @param {*}        resetKey   When this value changes, confirmed state is reset
- *                              (e.g. pass `state.currentQuestion` or `fitb.question`)
+ * @param {Function} onSubmit          Called when the player clicks Confirm
+ * @param {*}        resetKey          When this value changes, confirmed state is reset
+ *                                     (e.g. pass `state.currentQuestion` or `fitb.question`)
+ * @param {boolean}  initialConfirmed  Canonical confirmed state restored from the store
  */
-export function useMiniGameLifecycle({ onSubmit, resetKey } = {}) {
-  const [hasConfirmed, setHasConfirmed] = useState(false);
+export function useMiniGameLifecycle({ onSubmit, resetKey, initialConfirmed = false } = {}) {
+  const [hasConfirmed, setHasConfirmed] = useState(!!initialConfirmed);
 
   // Reset whenever the prompt / round changes
   useEffect(() => {
-    setHasConfirmed(false);
-  }, [resetKey]);
+    setHasConfirmed(!!initialConfirmed);
+  }, [initialConfirmed, resetKey]);
 
   /** Calls onSubmit then locks the UI into the waiting phase. */
   const confirm = useCallback(() => {
