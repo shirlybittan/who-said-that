@@ -6,6 +6,8 @@ export function useHostGameFrame({ gameKey, state, socket, context = {} }) {
 
   const frame = adapter.selectHostFrame(state, context);
   const actions = adapter.createHostActions({ socket, roomCode: frame.roomCode, state, context });
+  
+  console.log(`[Game-Core-Frame] Rendering frame for Host Game: ${gameKey}`, frame);
 
   return { frame, actions };
 }

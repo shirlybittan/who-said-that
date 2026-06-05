@@ -7,6 +7,8 @@ export function usePlayerGameFrame({ gameKey, state, socket, dispatch, context =
   const roomCode = state?.gameInfo?.code || state?.roomCode;
   const frame = adapter.selectPlayerFrame(state, context);
   const actions = adapter.createPlayerActions({ socket, roomCode, dispatch, state, context });
+  
+  console.log(`[Game-Core-Frame] Rendering frame for Player Game: ${gameKey}`, frame);
 
   return { frame, actions };
 }
