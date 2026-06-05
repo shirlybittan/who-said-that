@@ -29,7 +29,7 @@ export default function ConfirmVoteCard({ vote, onConfirm, onChange, confirmLabe
               className="w-12 h-12 rounded-full flex items-center justify-center text-black font-bold text-xl border-2 border-white/20 flex-shrink-0"
               style={{ backgroundColor: vote.color }}
             >
-              {vote.name.charAt(0).toUpperCase()}
+              {vote.name?.charAt(0)?.toUpperCase() ?? '?'}
             </div>
             <span className="font-['Fredoka_One'] text-2xl text-[#4ECDC4] flex-1">{vote.name}</span>
           </>

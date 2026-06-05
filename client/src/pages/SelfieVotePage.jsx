@@ -62,10 +62,15 @@ export default function SelfieVotePage() {
                 <p className="mt-2 text-xs font-['Nunito'] text-[#FFE66D] italic">{sub.prompt}</p>
               )}
               <div className="flex items-center gap-2 mt-1">
-                <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: sub.drawerColor }} />
+                <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: selfie.hasVoted ? sub.drawerColor : '#6B7280' }} />
                 <span className="font-['Nunito'] text-sm text-gray-300">
-                  Drew: <span className="font-bold">{sub.drawerName}</span>
-                  {isOwn && <span className="text-gray-500"> (yours — can't vote)</span>}
+                  {selfie.hasVoted ? (
+                    <>Drew: <span className="font-bold">{sub.drawerName}</span></>
+                  ) : isOwn ? (
+                    <span className="text-gray-500">Your drawing (can't vote)</span>
+                  ) : (
+                    <span className="text-gray-500">Anonymous Artist</span>
+                  )}
                 </span>
               </div>
               <span className="text-xs text-gray-500 font-['Nunito']">on {sub.ownerName}'s selfie</span>
