@@ -62,4 +62,15 @@ describe('gameReducer', () => {
     expect(newState.answers).toEqual([]);
     expect(newState.currentQuestion).toBeNull();
   });
+
+  it('marks draw-telephone prompts as submitted', () => {
+    const initialState = {
+      dt: { hasSubmittedPrompt: false, promptsSubmittedCount: 1, totalPrompts: 3 },
+    };
+
+    const newState = gameReducer(initialState, { type: 'DT_MARK_PROMPT_SUBMITTED' });
+
+    expect(newState.dt.hasSubmittedPrompt).toBe(true);
+    expect(newState.dt.promptsSubmittedCount).toBe(1);
+  });
 });

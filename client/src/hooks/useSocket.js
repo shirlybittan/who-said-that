@@ -51,7 +51,7 @@ export const useSocket = () => {
       dispatch({ type: 'UPDATE_CUSTOM_QUESTIONS', payload: customQuestions });
     };
 
-    const onPlayerDisconnected = ({ playerId, playerName }) => {
+    const onPlayerDisconnected = () => {
       // Logic for disconnect goes here if needed
     };
 
@@ -172,7 +172,7 @@ export const useSocket = () => {
       dispatch({ type: 'MLT_SET_RESUMED', payload: data });
     };
 
-    const onMltRestarted = ({ code, gameName, players, gameType }) => {
+    const onMltRestarted = ({ gameName, players, gameType }) => {
       dispatch({ type: 'MLT_RESTARTED', payload: { gameName, players, gameType } });
       navigate('/lobby');
     };
@@ -400,7 +400,7 @@ export const useSocket = () => {
       navigate('/lobby');
     };
 
-    const onGameChanged = ({ code, gameType, players, gameName }) => {
+    const onGameChanged = ({ gameType, players, gameName }) => {
       dispatch({ type: 'GAME_SWITCHED', payload: { gameType, players, gameName } });
       navigate('/lobby');
     };
