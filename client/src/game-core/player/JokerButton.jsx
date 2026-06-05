@@ -1,8 +1,8 @@
 import React from 'react';
 
-export default function JokerButton({ left, active, onClick }) {
+export default function JokerButton({ left, active, onClick, noJokersLabel = 'No jokers remaining', activeLabel = 'Joker ON!', useLabel = 'Use Joker', leftLabel = 'left' }) {
   if (!active && left <= 0) {
-    return <p className="text-center text-gray-600 font-['Nunito'] text-sm">No jokers remaining</p>;
+    return <p className="text-center text-gray-600 font-['Nunito'] text-sm">{noJokersLabel}</p>;
   }
 
   return (
@@ -13,7 +13,7 @@ export default function JokerButton({ left, active, onClick }) {
         ? { backgroundColor: '#FF6B6B22', borderColor: '#FF6B6B', color: '#FF6B6B', boxShadow: '0 0 20px #FF6B6B55' }
         : { backgroundColor: '#2D2D44', borderColor: '#6C5CE7', color: '#A29BFE' }}
     >
-      {active ? '🔥 Joker ON!' : `🃏 Use Joker (${left} left)`}
+      {active ? `🔥 ${activeLabel}` : `🃏 ${useLabel} (${left} ${leftLabel})`}
     </button>
   );
 }

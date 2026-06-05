@@ -1,9 +1,9 @@
 import React from 'react';
 
-export default function PlayerStatusBubbles({ players }) {
+export default function PlayerStatusBubbles({ players, statusLabel = 'Voting' }) {
   return (
     <div className="bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
-      <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-4">Voting</p>
+      <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-4">{statusLabel}</p>
       <div className="flex flex-wrap gap-4 justify-center">
         {players.map((player) => (
           <div key={player.id} className="flex flex-col items-center gap-1">

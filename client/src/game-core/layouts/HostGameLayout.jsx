@@ -19,7 +19,7 @@ export default function HostGameLayout({ frame, onPauseToggle, onChangeQuestion,
         <div className="w-full max-w-6xl mx-auto flex flex-col lg:flex-row gap-6 items-start">
           <HostLeftRail timer={frame.timer} progress={frame.progress} />
           <main className="flex-1 flex flex-col gap-6">
-            <PlayerStatusBubbles players={frame.playerStatuses} />
+            <PlayerStatusBubbles players={frame.playerStatuses} statusLabel={frame.statusLabel} />
             {centerContent}
           </main>
         </div>

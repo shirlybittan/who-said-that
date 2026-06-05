@@ -29,6 +29,7 @@ export const mostLikelyToAdapter = {
         color: player.color,
         status: (mlt.votedPlayerIds || []).includes(player.id) ? 'voted' : 'waiting',
       })),
+      statusLabel: 'Voting',
       paused: !!mlt.paused,
       prompt: getPromptText(mlt.prompt),
       roundLabel: `Round ${mlt.round || 0} of ${mlt.totalRounds || 0}`,
@@ -46,7 +47,7 @@ export const mostLikelyToAdapter = {
         if (!socket || !roomCode) return;
         socket.emit('mlt:change_question', { code: roomCode });
       },
-      skipQuestion: null,
+      skipQuestion: () => {},
       skipMiniGame: () => {
         if (!socket || !roomCode) return;
         socket.emit('skip_mini_game', { code: roomCode });
@@ -54,14 +55,16 @@ export const mostLikelyToAdapter = {
     };
   },
 
-  selectPlayerFrame(state) {
+  selectPlayerFrame(state, context = {}) {
     const base = createEmptyPlayerFrame();
     const mlt = state?.mlt || {};
+    const labels = context.labels || {};
 
     return {
       ...base,
       gameName: mlt.gameName || state?.gameName || '',
-      roundLabel: `Round ${mlt.round || 0} of ${mlt.totalRounds || 0}`,
+      roundLabel: `${labels.round || 'Round'} ${mlt.round || 0} ${labels.of || 'of'} ${mlt.totalRounds || 0}`,
+      promptLabel: labels.promptLabel || 'Who is most likely to...',
       prompt: getPromptText(mlt.prompt),
       timer: {
         secondsLeft: mlt.secondsLeft ?? base.timer.secondsLeft,
@@ -93,7 +96,7 @@ export const mostLikelyToAdapter = {
         sounds?.joker?.();
         socket.emit('mlt:toggle_joker', { code: roomCode });
       },
-      chooseChoice: () => {
+      playChoiceClick: () => {
         sounds?.click?.();
       },
     };

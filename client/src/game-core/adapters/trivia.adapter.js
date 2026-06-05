@@ -1,8 +1,8 @@
 import { createEmptyHostFrame, createEmptyPlayerFrame } from '../types/gameFrame.contract';
 
 export const triviaAdapter = {
-  selectHostFrame(state) {
-    return createEmptyHostFrame({ state });
+  selectHostFrame() {
+    return createEmptyHostFrame();
   },
   createHostActions() {
     return {
