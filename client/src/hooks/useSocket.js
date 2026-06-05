@@ -51,8 +51,12 @@ export const useSocket = () => {
       dispatch({ type: 'UPDATE_CUSTOM_QUESTIONS', payload: customQuestions });
     };
 
-    const onPlayerDisconnected = () => {
-      // Logic for disconnect goes here if needed
+    const onPlayerDisconnected = ({ playerId, playerName }) => {
+      dispatch({ type: 'UPDATE_PLAYER_CONNECTION', payload: { playerId, isConnected: false } });
+    };
+
+    const onPlayerReconnected = ({ playerId, playerName, players }) => {
+      dispatch({ type: 'UPDATE_PLAYERS', payload: players });
     };
 
     const onGameStarted = (data) => {
@@ -437,6 +441,7 @@ export const useSocket = () => {
     socket.on('options_updated', onOptionsUpdated);
     socket.on('custom_questions_updated', onCustomQuestionsUpdated);
     socket.on('player_disconnected', onPlayerDisconnected);
+    socket.on('player_reconnected', onPlayerReconnected);
     socket.on('host_changed', onHostChanged);
     socket.on('game_started', onGameStarted);
     socket.on('new_question', onNewQuestion);
@@ -626,6 +631,7 @@ export const useSocket = () => {
       socket.off('options_updated', onOptionsUpdated);
       socket.off('custom_questions_updated', onCustomQuestionsUpdated);
       socket.off('player_disconnected', onPlayerDisconnected);
+      socket.off('player_reconnected', onPlayerReconnected);
       socket.off('host_changed', onHostChanged);
       socket.off('game_started', onGameStarted);
       socket.off('new_question', onNewQuestion);

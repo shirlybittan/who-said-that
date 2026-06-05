@@ -285,6 +285,13 @@ export const gameReducer = (state, action) => {
       };
     case 'UPDATE_PLAYERS':
       return { ...state, players: action.payload };
+    case 'UPDATE_PLAYER_CONNECTION': {
+      const { playerId, isConnected } = action.payload;
+      return {
+        ...state,
+        players: state.players.map(p => p.id === playerId ? { ...p, isConnected } : p),
+      };
+    }
     case 'UPDATE_CUSTOM_QUESTIONS':
       return { ...state, customQuestions: action.payload };
     case 'SET_PHASE':

@@ -9,17 +9,52 @@ const {
   getRoomBySocketId,
   removePlayerBySocketId,
   setGameOptions,
+  touchRoom,
+  evictStaleRooms,
 } = require('./game/roomManager');
 const { selectQuestions, selectSituationalQuestions, selectThisOrThatQuestions, selectDrawingQuestion, selectMixedQuestions, shuffleAnswers } = require('./game/gameLogic');
 const { buildMiniGameSnapshot } = require('./game/miniGameSnapshot');
 const mltPromptBank = require('./questions/mostLikelyTo');
 const { words: drawWordBank, prompts: drawPrompts } = require('./questions/drawing');
 const { selfiePrompts } = require('./questions/selfie');
+const { isConfigured: storageConfigured, createPresignedUpload } = require('./storage/photoStorage');
 
 const app = express();
 app.use(cors());
+app.use(express.json());
 
 app.get('/ping', (req, res) => res.json({ status: 'awake' }));
+
+// ─── Presigned upload URL endpoint ───────────────────────────────────────────
+// Returns a short-lived PUT URL so clients upload photos directly to cloud
+// storage without routing binary data through the Node.js event loop.
+app.post('/api/upload-photo-url', async (req, res) => {
+  if (!storageConfigured()) {
+    return res.status(503).json({ error: 'Storage not configured — use base64 flow' });
+  }
+
+  const { roomCode, playerId, mimeType } = req.body || {};
+  if (!roomCode || !playerId) {
+    return res.status(400).json({ error: 'roomCode and playerId are required' });
+  }
+
+  const validMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
+  const safeMime = validMimeTypes.includes(mimeType) ? mimeType : 'image/jpeg';
+
+  // Validate that the room and player actually exist before issuing a URL
+  const room = getRoom(roomCode);
+  if (!room) return res.status(404).json({ error: 'Room not found' });
+  const player = room.players.find(p => p.id === playerId);
+  if (!player) return res.status(404).json({ error: 'Player not found' });
+
+  try {
+    const { uploadUrl, publicUrl, objectKey } = await createPresignedUpload(roomCode, playerId, safeMime);
+    res.json({ uploadUrl, publicUrl, objectKey });
+  } catch (err) {
+    console.error('[upload-photo-url]', err);
+    res.status(500).json({ error: 'Failed to generate upload URL' });
+  }
+});
 
 const server = http.createServer(app);
 
@@ -614,6 +649,35 @@ function cancelAllTimers(room) {
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
+  // ─── Auto-rejoin via handshake auth ────────────────────────────────────────
+  // When a mobile player reconnects after a phone call / app switch, their
+  // stored playerId + roomCode arrive in socket.handshake.auth. Remap them
+  // immediately so they don't have to wait for the client to fire join_room.
+  (() => {
+    const { playerId, roomCode, playerName } = socket.handshake.auth || {};
+    if (!playerId || !roomCode) return;
+    try {
+      const { room, player, isRejoin } = joinRoom(roomCode, socket.id, playerName || '', playerId);
+      if (!isRejoin) return; // Only handle returning players here; fresh joins go through join_room
+      touchRoom(roomCode);
+      socket.join(room.code);
+      socket.emit('join_success', {
+        room,
+        playerId: player.id,
+        isRejoin: true,
+        miniGameState: buildMiniGameSnapshot(room, player.id, {
+          dtPromptSeconds: DT_PROMPT_SECS,
+          dtGuessSeconds: DT_GUESS_SECS,
+          dtDrawSeconds: DT_DRAW_SECS,
+          dtVoteSeconds: DT_VOTE_SECS,
+        }),
+      });
+      socket.to(room.code).emit('player_reconnected', { playerId: player.id, playerName: player.name, players: room.players });
+    } catch (_) {
+      // Auth credentials no longer valid (room expired, etc.) — client will handle via join_room
+    }
+  })();
+
   socket.on('create_room', (data = {}) => {
     const playerName = data.playerName || 'Host';
     const gameType = data.gameType || 'most-likely-to';
@@ -636,6 +700,7 @@ io.on('connection', (socket) => {
   socket.on('join_room', ({ code, playerName, playerId }) => {
     try {
       const { room, player, isRejoin } = joinRoom(code, socket.id, playerName, playerId);
+      touchRoom(code);
       // Prevent cast/screen-mirror devices from counting as players
       if (!isRejoin) {
         const castNames = ['screen cast', 'chromecast', 'cast screen', 'google cast', 'firestick'];
@@ -919,6 +984,7 @@ io.on('connection', (socket) => {
   socket.on('submit_answer', ({ code, text }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'question') return;
+    touchRoom(code);
 
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isConnected || !player.isPlaying) return;
@@ -1375,6 +1441,7 @@ io.on('connection', (socket) => {
   socket.on('mlt:vote', ({ code, targetPlayerId }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'mlt' || room.mlt.roundState !== 'voting') return;
+    touchRoom(code);
 
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isConnected || !player.isPlaying) return;
@@ -1722,6 +1789,7 @@ io.on('connection', (socket) => {
   socket.on('draw:submit', ({ code, strokes }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'drawing' || !room.draw || room.draw.phase !== 'drawing') return;
+    touchRoom(code);
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isPlaying) return;
     const isResubmit = !!room.draw.submissions[player.id];
@@ -2216,18 +2284,25 @@ io.on('connection', (socket) => {
     const room = getRoom(code);
     if (!room) return;
 
+    // ── Validate: accept either a cloud storage HTTPS URL or a Base64 data URI ──
+    if (!photoData || typeof photoData !== 'string') return;
+    const isCloudUrl = /^https:\/\/.+\.(jpg|jpeg|png|webp)(\?.*)?$/i.test(photoData);
+    const isBase64 = photoData.startsWith('data:image/jpeg;base64,') ||
+                     photoData.startsWith('data:image/png;base64,')  ||
+                     photoData.startsWith('data:image/webp;base64,');
+    if (!isCloudUrl && !isBase64) return;
+    // Enforce size cap only on Base64 (cloud URLs are just short strings)
+    if (isBase64 && photoData.length > 2 * 1024 * 1024) return;
+
     // Handle DT selfie collection phase
     if (room.phase === 'dt' && room.dt.phase === 'selfie') {
       const player = room.players.find(p => p.socketId === socket.id);
       if (!player || !player.isPlaying || !player.isConnected) return;
       if (room.dt.selfiePhotos?.[player.id]) return; // already submitted
 
-      if (!photoData || typeof photoData !== 'string') return;
-      if (!photoData.startsWith('data:image/jpeg;base64,') && !photoData.startsWith('data:image/png;base64,') && !photoData.startsWith('data:image/webp;base64,')) return;
-      if (photoData.length > 2 * 1024 * 1024) return;
-
       if (!room.playerPhotos) room.playerPhotos = {};
       room.playerPhotos[player.id] = photoData;
+      touchRoom(code);
       if (!room.dt.selfiePhotos) room.dt.selfiePhotos = {};
       room.dt.selfiePhotos[player.id] = true;
 
@@ -2252,16 +2327,12 @@ io.on('connection', (socket) => {
     if (!player || !player.isPlaying || !player.isConnected) return;
     if (room.selfie.photos[player.id]) return; // already submitted (or not a retake)
 
-    // Basic data URI validation — must be JPEG or PNG base64
-    if (!photoData || typeof photoData !== 'string') return;
-    if (!photoData.startsWith('data:image/jpeg;base64,') && !photoData.startsWith('data:image/png;base64,') && !photoData.startsWith('data:image/webp;base64,')) return;
-    // Limit to ~2MB base64 (~1.5MB actual)
-    if (photoData.length > 2 * 1024 * 1024) return;
-
+    // Validation already performed above (cloud URL or Base64 check)
     room.selfie.photos[player.id] = photoData;
     // Persist photo for reuse across selfie-based mini games
     if (!room.playerPhotos) room.playerPhotos = {};
     room.playerPhotos[player.id] = photoData;
+    touchRoom(code);
 
     if (room.selfie.phase === 'drawing') {
       // Retake path: re-assign updated photo to the drawer, then return retaker to drawing screen
@@ -4033,3 +4104,13 @@ const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+
+// ─── Room eviction: drop rooms idle for >60 minutes every 10 minutes ─────────
+const ROOM_IDLE_TTL_MS = 60 * 60 * 1000;   // 60 min
+const EVICTION_INTERVAL_MS = 10 * 60 * 1000; // 10 min
+setInterval(() => {
+  const evicted = evictStaleRooms(ROOM_IDLE_TTL_MS);
+  if (evicted.length > 0) {
+    console.log(`[eviction] Dropped ${evicted.length} idle room(s):`, evicted);
+  }
+}, EVICTION_INTERVAL_MS).unref(); // .unref() so this timer doesn't keep the process alive during tests
