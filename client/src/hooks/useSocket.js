@@ -27,13 +27,14 @@ export const useSocket = () => {
       navigate('/lobby');
     };
 
-    const onJoinSuccess = ({ room, playerId, isRejoin, miniGameState }) => {
+    const onJoinSuccess = ({ room, playerId, isRejoin, miniGameState, uploadToken }) => {
       localStorage.setItem('wst_roomCode', room.code);
       const myPlayer = room.players.find(p => p.id === playerId);
       if (myPlayer?.name) localStorage.setItem('wst_playerName', myPlayer.name);
+      if (uploadToken) localStorage.setItem('wst_uploadToken', uploadToken);
       const { roomPayload, actions, route } = buildJoinRestorePlan({ room, playerId, isRejoin, miniGameState });
 
-      dispatch({ type: 'SET_ROOM', payload: roomPayload });
+      dispatch({ type: 'SET_ROOM', payload: { ...roomPayload, uploadToken: uploadToken || null } });
       dispatch({ type: 'SET_PLAYER_ID', payload: playerId });
       actions.forEach(action => dispatch(action));
       navigate(route);

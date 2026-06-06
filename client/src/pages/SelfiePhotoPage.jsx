@@ -12,7 +12,7 @@ const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
  * Returns the public URL on success, or null if the server doesn't have
  * storage configured (falls back to base64 socket path).
  */
-async function tryCloudUpload(roomCode, playerId, dataUrl) {
+async function tryCloudUpload(roomCode, playerId, dataUrl, uploadToken) {
   // Derive mimeType from the data URI
   const mimeMatch = dataUrl.match(/^data:(image\/[a-z]+);base64,/);
   if (!mimeMatch) return null;
@@ -22,7 +22,7 @@ async function tryCloudUpload(roomCode, playerId, dataUrl) {
     const res = await fetch(`${SERVER_URL}/api/upload-photo-url`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ roomCode, playerId, mimeType }),
+      body: JSON.stringify({ roomCode, playerId, mimeType, uploadToken }),
     });
     if (!res.ok) return null; // Server returned 503 = storage not configured
 
@@ -93,7 +93,7 @@ export default function SelfiePhotoPage() {
 
     // Try cloud upload first; fall back to inline base64 if unavailable
     let photoData = compressed;
-    const cloudUrl = await tryCloudUpload(state.roomCode, state.playerId, compressed);
+    const cloudUrl = await tryCloudUpload(state.roomCode, state.playerId, compressed, state.uploadToken);
     if (cloudUrl) photoData = cloudUrl;
 
     // Confirm we still have something to send

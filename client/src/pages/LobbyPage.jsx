@@ -56,7 +56,6 @@ export default function LobbyPage() {
   const handleStartGame = () => {
     if (state.players.filter(p => p.isPlaying).length < 3) return alert('Need at least 3 players to start!');
     sounds.click();
-    console.log('[lobby] handleStartGame gameType=', state.gameType);
     if (isMlt) {
       socket.emit('mlt:start', {
         code: state.roomCode,

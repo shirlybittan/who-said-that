@@ -17,7 +17,34 @@ const { buildMiniGameSnapshot } = require('./game/miniGameSnapshot');
 const mltPromptBank = require('./questions/mostLikelyTo');
 const { words: drawWordBank, prompts: drawPrompts } = require('./questions/drawing');
 const { selfiePrompts } = require('./questions/selfie');
-const { isConfigured: storageConfigured, createPresignedUpload } = require('./storage/photoStorage');
+const { isConfigured: storageConfigured, createPresignedUpload, getPublicBaseUrl } = require('./storage/photoStorage');
+
+// ─── Per-player upload tokens (prevents unauthenticated presigned URL requests) ─
+// A token is issued over the socket on join_success and required for the HTTP
+// endpoint. Keys are unguessable UUIDs, values expire after 24h.
+const { randomUUID: generateToken } = require('crypto');
+const uploadTokens = new Map(); // token → { roomCode, playerId, expiresAt }
+
+const issueUploadToken = (roomCode, playerId) => {
+  const token = generateToken();
+  uploadTokens.set(token, { roomCode, playerId, expiresAt: Date.now() + 24 * 60 * 60 * 1000 });
+  return token;
+};
+
+const validateUploadToken = (token) => {
+  const entry = uploadTokens.get(token);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) { uploadTokens.delete(token); return null; }
+  return entry;
+};
+
+// Periodically clean up expired tokens
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, entry] of uploadTokens) {
+    if (now > entry.expiresAt) uploadTokens.delete(token);
+  }
+}, 60 * 60 * 1000);
 
 const app = express();
 app.use(cors());
@@ -33,9 +60,18 @@ app.post('/api/upload-photo-url', async (req, res) => {
     return res.status(503).json({ error: 'Storage not configured — use base64 flow' });
   }
 
-  const { roomCode, playerId, mimeType } = req.body || {};
-  if (!roomCode || !playerId) {
-    return res.status(400).json({ error: 'roomCode and playerId are required' });
+  const { roomCode, playerId, mimeType, uploadToken } = req.body || {};
+  if (!uploadToken) {
+    return res.status(401).json({ error: 'uploadToken is required' });
+  }
+
+  // Validate the upload token — prevents unauthenticated bucket writes
+  const tokenEntry = validateUploadToken(uploadToken);
+  if (!tokenEntry) {
+    return res.status(401).json({ error: 'Invalid or expired uploadToken' });
+  }
+  if (tokenEntry.roomCode !== roomCode || tokenEntry.playerId !== playerId) {
+    return res.status(403).json({ error: 'Token does not match roomCode/playerId' });
   }
 
   const validMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
@@ -661,10 +697,12 @@ io.on('connection', (socket) => {
       if (!isRejoin) return; // Only handle returning players here; fresh joins go through join_room
       touchRoom(roomCode);
       socket.join(room.code);
+      const uploadToken = issueUploadToken(room.code, player.id);
       socket.emit('join_success', {
         room,
         playerId: player.id,
         isRejoin: true,
+        uploadToken,
         miniGameState: buildMiniGameSnapshot(room, player.id, {
           dtPromptSeconds: DT_PROMPT_SECS,
           dtGuessSeconds: DT_GUESS_SECS,
@@ -701,6 +739,12 @@ io.on('connection', (socket) => {
     try {
       const { room, player, isRejoin } = joinRoom(code, socket.id, playerName, playerId);
       touchRoom(code);
+
+      // Guard against double-join: if the handshake auto-rejoin already mapped this
+      // socket to the room, skip the redundant player_joined broadcast. The client
+      // still gets join_success (idempotent) so state syncs correctly.
+      const alreadyInRoom = socket.rooms.has(room.code);
+
       // Prevent cast/screen-mirror devices from counting as players
       if (!isRejoin) {
         const castNames = ['screen cast', 'chromecast', 'cast screen', 'google cast', 'firestick'];
@@ -709,10 +753,12 @@ io.on('connection', (socket) => {
         }
       }
       socket.join(room.code);
+      const uploadToken = issueUploadToken(room.code, player.id);
       socket.emit('join_success', {
         room,
         playerId: player.id,
         isRejoin,
+        uploadToken,
         miniGameState: buildMiniGameSnapshot(room, player.id, {
           dtPromptSeconds: DT_PROMPT_SECS,
           dtGuessSeconds: DT_GUESS_SECS,
@@ -720,7 +766,11 @@ io.on('connection', (socket) => {
           dtVoteSeconds: DT_VOTE_SECS,
         }),
       });
-      socket.to(room.code).emit('player_joined', { players: room.players });
+      // Only broadcast player_joined for new joins; skip if socket was already
+      // in the room (handshake auto-rejoin already fired player_reconnected).
+      if (!alreadyInRoom || !isRejoin) {
+        socket.to(room.code).emit('player_joined', { players: room.players });
+      }
     } catch (err) {
       socket.emit('error', { message: err.message });
     }
@@ -2064,6 +2114,7 @@ io.on('connection', (socket) => {
     if (!player || !player.isPlaying || !player.isConnected) return;
     room.fitb.drafts = room.fitb.drafts || {};
     room.fitb.drafts[player.id] = String(text || '').slice(0, 120);
+    touchRoom(code); // keep room alive while players are actively typing
   });
 
   socket.on('fitb:answer', ({ code, text }) => {
@@ -2318,7 +2369,12 @@ io.on('connection', (socket) => {
 
     // ── Validate: accept either a cloud storage HTTPS URL or a Base64 data URI ──
     if (!photoData || typeof photoData !== 'string') return;
-    const isCloudUrl = /^https:\/\/.+\.(jpg|jpeg|png|webp)(\?.*)?$/i.test(photoData);
+    // Only accept cloud URLs from the configured public storage domain to prevent
+    // arbitrary external URL injection (tracking pixels, unexpected resources).
+    const cloudBase = storageConfigured() ? getPublicBaseUrl() : null;
+    const isCloudUrl = cloudBase
+      ? (photoData.startsWith(cloudBase + '/') && /\.(jpg|jpeg|png|webp)(\?.*)?$/i.test(photoData))
+      : false;
     const isBase64 = photoData.startsWith('data:image/jpeg;base64,') ||
                      photoData.startsWith('data:image/png;base64,')  ||
                      photoData.startsWith('data:image/webp;base64,');

@@ -4,6 +4,7 @@ const initialState = {
   playerId: localStorage.getItem('wst_playerId') || null,
   playerName: localStorage.getItem('wst_playerName') || null,
   roomCode: localStorage.getItem('wst_roomCode') || null,
+  uploadToken: localStorage.getItem('wst_uploadToken') || null,
   isHost: false,
   isPlaying: true,
   joinedMidRound: false,

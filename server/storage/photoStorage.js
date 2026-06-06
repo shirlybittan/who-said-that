@@ -47,11 +47,19 @@ const loadAwsSdk = () => {
 };
 
 /**
- * Returns true when storage is configured and the AWS SDK is available.
+ * Returns true when storage is configured, the AWS SDK is available,
+ * and the required credentials/bucket env vars are present.
  */
 const isConfigured = () => {
   if (!PROVIDER) return false;
-  return loadAwsSdk();
+  if (!loadAwsSdk()) return false;
+  if (PROVIDER === 'r2') {
+    return !!(process.env.R2_ACCOUNT_ID && process.env.R2_ACCESS_KEY_ID &&
+              process.env.R2_SECRET_ACCESS_KEY && process.env.R2_BUCKET);
+  }
+  // AWS S3
+  return !!(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY &&
+            process.env.S3_BUCKET);
 };
 
 const buildS3Client = () => {
