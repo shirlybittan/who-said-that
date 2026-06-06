@@ -66,6 +66,7 @@ function waitForAny(sock, events, timeoutMs = 20000) {
 const FAKE_STROKES = [
   { color: '#FF6B6B', width: 4, type: 'pen', points: [{ x: 10, y: 10 }, { x: 50, y: 50 }, { x: 90, y: 10 }] },
 ];
+const FAKE_PHOTO = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
 
 // ─── Game drivers ─────────────────────────────────────────────────────────────
 
@@ -499,3 +500,127 @@ test('Playlist — 5 mini-games in sequence: MLT → WST → FITB → Drawing �
   for (const p of players) p.sock.disconnect();
   console.log('\n  ✅ Playlist complete — 5 games played without errors.\n');
 }, 300000); // 5 minute timeout for the whole playlist
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TEST: Playlist — selfie-roast → WST  (regression for drawTimerRef stack overflow)
+//
+// Verifies that cancelAllTimers correctly stops room.selfie.drawTimerRef so that
+// the stale setInterval cannot keep running after change_game, and that
+// sanitizeRoomForClient strips the Timeout object before JSON serialisation.
+// Before the fix, change_game after selfie-roast → client alert popup:
+//   "Maximum call stack size exceeded" (circular Timeout → JSON.stringify crash).
+// ─────────────────────────────────────────────────────────────────────────────
+test('Playlist — selfie-roast → WST: no drawTimerRef stack overflow on transition', async () => {
+  const hostSock = await connect();
+  const players = await Promise.all([
+    connect().then(s => ({ sock: s, name: 'One' })),
+    connect().then(s => ({ sock: s, name: 'Two' })),
+    connect().then(s => ({ sock: s, name: 'Three' })),
+  ]);
+  let code;
+
+  // ── Create room as selfie-roast ──────────────────────────────────────────
+  const created = await new Promise(resolve => {
+    hostSock.once('room_created', resolve);
+    hostSock.emit('create_room', {
+      playerName:    'SelfieHost',
+      gameType:      'selfie-roast',
+      hostIsPlaying: false,
+    });
+  });
+  code = created.code;
+  console.log(`\n  🏠 Room: ${code}`);
+
+  for (const p of players) {
+    p.id = await new Promise(resolve => {
+      p.sock.once('join_success', d => resolve(d.playerId));
+      p.sock.emit('join_room', { code, playerName: p.name });
+    });
+  }
+
+  // ── Start selfie-roast (1 round) ─────────────────────────────────────────
+  const photoPhaseP = waitFor(hostSock, 'selfie:photo_phase', 8000);
+  hostSock.emit('selfie:start', { code, rounds: 1 });
+  const photoPhase = await photoPhaseP;
+  console.log(`  📸 Selfie photo phase: ${photoPhase.players?.length} players`);
+  expect(photoPhase.players?.length).toBe(3);
+
+  // ── All players submit photos → triggers drawing phase + drawTimerRef ────
+  const drawPhaseP = waitFor(hostSock, 'selfie:drawing_phase', 10000);
+  const drawAssignPs = players.map(p => waitFor(p.sock, 'selfie:draw_assigned', 10000));
+  for (const p of players) {
+    p.sock.emit('selfie:submit_photo', { code, photoData: FAKE_PHOTO });
+    await DELAY(50);
+  }
+  await drawPhaseP;           // drawTimerRef is now running inside assignSelfieDrawers
+  await Promise.all(drawAssignPs);
+  console.log(`  🖌 Drawing phase started — drawTimerRef is now active`);
+
+  // ── Transition to WST via change_game ────────────────────────────────────
+  // Before the fix: cancelAllTimers skipped selfie.drawTimerRef, leaving a
+  // stale setInterval that could fire later and cause JSON.stringify errors.
+  // Also sanitizeRoomForClient did not strip selfie.drawTimerRef, so any
+  // rejoin during/after the selfie phase would crash with "Maximum call stack
+  // size exceeded" when socket.io tried to serialise the circular Timeout object.
+  console.log(`  🔄 Transitioning selfie-roast → who-said-that via change_game …`);
+
+  const allChangedPs = [
+    waitFor(hostSock, 'game_changed', 8000),
+    ...players.map(p => waitFor(p.sock, 'game_changed', 8000)),
+  ];
+  hostSock.emit('change_game', { code, newGameType: 'who-said-that' });
+  const changed = await Promise.all(allChangedPs);
+  console.log(`  ✅ All 4 sockets received game_changed → ${changed[0].gameType}`);
+  expect(changed[0].gameType).toBe('who-said-that');
+
+  // ── Brief wait to let any stale timer callbacks fire ─────────────────────
+  // If drawTimerRef was NOT cancelled it would fire within ~1 s and could emit
+  // selfie events on a reset room (worst case causing a server crash / error).
+  await DELAY(1500);
+
+  // ── Start WST — verify no 'error' event is emitted to any socket ─────────
+  let errorFired = null;
+  const checkError = (data) => { errorFired = data; };
+  hostSock.on('error', checkError);
+  for (const p of players) p.sock.on('error', (d) => { errorFired = d; });
+
+  await DELAY(200);
+  const gsP = waitFor(hostSock, 'game_started', 8000);
+  hostSock.emit('start_game', { code });
+  const gs = await gsP;
+  console.log(`  🎮 WST game_started — ${gs.totalRounds} rounds`);
+  expect(gs.totalRounds).toBeGreaterThanOrEqual(1);
+
+  // Play 1 WST round to confirm full health
+  const nqP = waitFor(hostSock, 'new_question', 8000);
+  const qEvt = await nqP;
+  console.log(`  📝 WST round: "${String(qEvt.question).slice(0, 50)}…"`);
+
+  const vsP = waitFor(hostSock, 'voting_started', 15000);
+  for (const p of players) p.sock.emit('submit_answer', { code, text: `Ans-${p.name}` });
+  const vsEvt = await vsP;
+  const totalAnswers = vsEvt?.answers?.length ?? players.length;
+  for (let ansIdx = 0; ansIdx < totalAnswers; ansIdx++) {
+    for (let i = 0; i < players.length; i++) {
+      players[i].sock.emit('submit_vote', { code, votedPlayerId: players[(i + 1) % players.length].id });
+    }
+    await waitForAny(hostSock, ['all_votes_in'], 5000).catch(() => {});
+    if (ansIdx < totalAnswers - 1) {
+      hostSock.emit('next_answer_request', { code });
+      await waitFor(hostSock, 'next_answer', 5000);
+    } else {
+      const reP = waitFor(hostSock, 'round_ended', 8000);
+      hostSock.emit('next_answer_request', { code });
+      await reP;
+    }
+  }
+  console.log(`  🏁 WST round completed cleanly`);
+
+  // ── No error should have fired ────────────────────────────────────────────
+  expect(errorFired).toBeNull();
+  console.log(`  ✅ No 'error' event fired — drawTimerRef was cancelled correctly`);
+
+  hostSock.disconnect();
+  for (const p of players) p.sock.disconnect();
+  console.log('  ✅ selfie-roast → WST playlist transition test passed.\n');
+});

@@ -983,6 +983,17 @@ export const gameReducer = (state, action) => {
           captionSubmittedCount: 0,
           captionSubmittedPlayerIds: [],
           hasWrittenCaption: false,
+          writingSecondsLeft: action.payload.writingSecondsLeft ?? 60,
+          writingTimerActive: true,
+        },
+      };
+    case 'CAPTION_WRITING_TIMER':
+      return {
+        ...state,
+        caption: {
+          ...state.caption,
+          writingSecondsLeft: action.payload.secondsLeft,
+          writingTimerActive: action.payload.secondsLeft > 0,
         },
       };
     case 'CAPTION_CAPTION_SUBMITTED': {

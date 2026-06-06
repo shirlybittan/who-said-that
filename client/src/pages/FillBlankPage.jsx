@@ -34,6 +34,12 @@ export default function FillBlankPage() {
   const autoSubmitRef = useRef({ answerText });
   useEffect(() => { autoSubmitRef.current = { answerText }; });
 
+  // Guard: don't auto-submit until the timer has actually started ticking
+  const timerWasActiveRef = useRef(false);
+  useEffect(() => {
+    if (answerTimeLeft > 0 && answerTimeLeft < 30) timerWasActiveRef.current = true;
+  }, [answerTimeLeft]);
+
   // Send draft to server as user types so server can use it on timer expiry
   useEffect(() => {
     if (fitb.hasAnswered || hasConfirmed) return;
@@ -48,6 +54,8 @@ export default function FillBlankPage() {
   useEffect(() => {
     if (fitb.hasAnswered) return;
     if (hasConfirmed) return;
+    if (fitb.phase !== 'answering') return;
+    if (!timerWasActiveRef.current) return;
     if (answerTimeLeft <= 0) {
       let textToSubmit = autoSubmitRef.current.answerText.trim();
       if (!textToSubmit) textToSubmit = "I couldn't think of anything funny in time! 🕒";
@@ -55,7 +63,7 @@ export default function FillBlankPage() {
       dispatch({ type: 'FITB_MARK_ANSWERED', payload: { myAnswer: textToSubmit } });
       markConfirmed();
     }
-  }, [answerTimeLeft, fitb.hasAnswered, hasConfirmed, state.roomCode, dispatch, markConfirmed]);
+  }, [answerTimeLeft, fitb.hasAnswered, hasConfirmed, fitb.phase, state.roomCode, dispatch, markConfirmed]);
 
   const handleVote = (id) => {
     if (fitb.hasVoted) return;

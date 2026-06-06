@@ -379,6 +379,9 @@ export const useSocket = () => {
     const onCaptionCaptionSubmitted = (data) => {
       dispatch({ type: 'CAPTION_CAPTION_SUBMITTED', payload: data });
     };
+    const onCaptionWritingTimer = (data) => {
+      dispatch({ type: 'CAPTION_WRITING_TIMER', payload: data });
+    };
     const onCaptionVotingPhase = (data) => {
       dispatch({ type: 'CAPTION_VOTING_PHASE', payload: data });
       navigate('/caption-vote');
@@ -521,6 +524,7 @@ export const useSocket = () => {
     socket.on('caption:photo_submitted', onCaptionPhotoSubmitted);
     socket.on('caption:writing_phase', onCaptionWritingPhase);
     socket.on('caption:caption_submitted', onCaptionCaptionSubmitted);
+    socket.on('caption:writing_timer', onCaptionWritingTimer);
     socket.on('caption:voting_phase', onCaptionVotingPhase);
     socket.on('caption:your_caption_id', onCaptionYourCaptionId);
     socket.on('caption:vote_received', onCaptionVoteReceived);
@@ -712,6 +716,7 @@ export const useSocket = () => {
       socket.off('caption:photo_submitted', onCaptionPhotoSubmitted);
       socket.off('caption:writing_phase', onCaptionWritingPhase);
       socket.off('caption:caption_submitted', onCaptionCaptionSubmitted);
+      socket.off('caption:writing_timer', onCaptionWritingTimer);
       socket.off('caption:voting_phase', onCaptionVotingPhase);
       socket.off('caption:your_caption_id', onCaptionYourCaptionId);
       socket.off('caption:vote_received', onCaptionVoteReceived);

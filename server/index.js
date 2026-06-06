@@ -665,12 +665,15 @@ function sanitizeRoomForClient(room) {
     }
     r.dt = dt;
   }
+  if (r.selfie) { const s = { ...r.selfie }; delete s.drawTimerRef; r.selfie = s; }
+  if (r.caption) { const c = { ...r.caption }; delete c.writingTimerRef; r.caption = c; }
   return r;
 }
 
 // Cancel all active game timers for a room (called before starting a new game)
 function cancelAllTimers(room) {
   if (room.mlt?.timerRef) { clearTimeout(room.mlt.timerRef); room.mlt.timerRef = null; }
+  if (room.tot?.timerRef) { clearTimeout(room.tot.timerRef); room.tot.timerRef = null; }
   if (room.draw?.timerRef) { clearInterval(room.draw.timerRef); room.draw.timerRef = null; }
   if (room.fitb?.timerRef) { clearTimeout(room.fitb.timerRef); room.fitb.timerRef = null; }
   if (room.fitb?.answerTimerRef) { clearTimeout(room.fitb.answerTimerRef); room.fitb.answerTimerRef = null; }
@@ -683,6 +686,8 @@ function cancelAllTimers(room) {
   if (room.dt?.promptTimerRef) { clearTimeout(room.dt.promptTimerRef); room.dt.promptTimerRef = null; }
   if (room.dt?.guessTimerRef) { clearTimeout(room.dt.guessTimerRef); room.dt.guessTimerRef = null; }
   if (room.dt?.voteTimerRef) { clearTimeout(room.dt.voteTimerRef); room.dt.voteTimerRef = null; }
+  if (room.selfie?.drawTimerRef) { clearInterval(room.selfie.drawTimerRef); room.selfie.drawTimerRef = null; }
+  if (room.caption?.writingTimerRef) { clearInterval(room.caption.writingTimerRef); room.caption.writingTimerRef = null; }
   stopAnswerTimer(room);
 }
 
@@ -2880,6 +2885,12 @@ io.on('connection', (socket) => {
     room.caption.captions = {};
     room.caption.votes = {};
 
+    // Cancel any stale writing timer from a previous round
+    if (room.caption.writingTimerRef) {
+      clearTimeout(room.caption.writingTimerRef);
+      room.caption.writingTimerRef = null;
+    }
+
     // Pick the featured photo owner for this round (cycle through players)
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
     const ownerIndex = (room.caption.currentRound - 1) % playingPlayers.length;
@@ -2890,6 +2901,9 @@ io.on('connection', (socket) => {
     room.caption.usedPrompts.push(promptObj.text);
     room.caption.currentPromptIndex++;
 
+    const WRITING_SECS = 60;
+    room.caption.writingSecondsLeft = WRITING_SECS;
+
     const owner = room.players.find(p => p.id === room.caption.featuredOwnerId);
     io.to(code).emit('caption:writing_phase', {
       round: room.caption.currentRound,
@@ -2899,7 +2913,32 @@ io.on('connection', (socket) => {
       featuredOwnerName: owner?.name || '?',
       featuredPhotoData: room.caption.photos[room.caption.featuredOwnerId],
       writers: playingPlayers.filter(p => p.id !== room.caption.featuredOwnerId).map(p => ({ id: p.id, name: p.name })),
+      writingSecondsLeft: WRITING_SECS,
     });
+
+    // Broadcast per-second countdown so clients can show a live timer and auto-submit
+    room.caption.writingTimerRef = setInterval(() => {
+      if (room.phase !== 'caption' || room.caption.phase !== 'writing') {
+        clearInterval(room.caption.writingTimerRef);
+        room.caption.writingTimerRef = null;
+        return;
+      }
+      room.caption.writingSecondsLeft = Math.max(0, (room.caption.writingSecondsLeft || 0) - 1);
+      io.to(code).emit('caption:writing_timer', { secondsLeft: room.caption.writingSecondsLeft });
+      if (room.caption.writingSecondsLeft <= 0) {
+        clearInterval(room.caption.writingTimerRef);
+        room.caption.writingTimerRef = null;
+        // Auto-submit fallback text for writers who haven't submitted
+        const writers = room.players.filter(p => p.isConnected && p.isPlaying && p.id !== room.caption.featuredOwnerId);
+        writers.forEach(p => {
+          if (!room.caption.captions[p.id]) {
+            const captionId = `cap_${p.id}_${Date.now()}`;
+            room.caption.captions[p.id] = { id: captionId, playerId: p.id, text: "⏰ Ran out of time" };
+          }
+        });
+        startCaptionVotingPhase(io, room, code);
+      }
+    }, 1000);
   }
 
   socket.on('caption:submit_caption', ({ code, text }) => {
