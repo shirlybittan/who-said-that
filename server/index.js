@@ -121,6 +121,34 @@ const mergeToGlobalScores = (io, room, scores) => {
   io.to(room.code).emit('global_scores_updated', { globalScores: room.globalScores, leaderboard });
 };
 
+// ─── Room sanitizer ────────────────────────────────────────────────────────────
+// Strips all Node.js timer handles (Timeout / Interval) from the room object
+// before sending it to clients via Socket.io. JSON.stringify will throw a
+// "Maximum call stack size exceeded" error when it encounters these because the
+// internal Node.js Timeout objects have circular prototype chains.
+
+const sanitizeRoomForClient = (room) => {
+  const { answerTimerRef, timer, ...rest } = room;
+
+  return {
+    ...rest,
+    tot: room.tot ? { ...room.tot, timerRef: undefined } : room.tot,
+    mlt: room.mlt ? { ...room.mlt, timerRef: undefined } : room.mlt,
+    draw: room.draw ? { ...room.draw, timerRef: undefined } : room.draw,
+    fitb: room.fitb ? { ...room.fitb, timerRef: undefined } : room.fitb,
+    dt: room.dt ? {
+      ...room.dt,
+      promptTimerRef: undefined,
+      drawTimerRef: undefined,
+      guessTimerRef: undefined,
+      voteTimerRef: undefined,
+      chains: Object.fromEntries(
+        Object.entries(room.dt.chains || {}).map(([id, chain]) => [id, { ...chain, timerRef: undefined }])
+      ),
+    } : room.dt,
+  };
+};
+
 // ─── Answer-phase timer (WST / Situational answering) ─────────────────────────
 
 const stopAnswerTimer = (room) => {
@@ -433,6 +461,18 @@ const emitWstQuestion = (io, room, code) => {
   startAnswerTimer(io, room, code, roundDuration, () => {
     if (room.phase !== 'question') return;
     const connectedPlayersCount = activePlayers(room).length;
+    // Auto-submit fallback for any player who didn't answer in time
+    activePlayers(room).forEach(p => {
+      if (!room.answers.find(a => a.playerId === p.id)) {
+        const draft = (room.answerDrafts || {})[p.id] || '';
+        room.answers.push({
+          playerId: p.id,
+          playerName: p.name,
+          text: draft || "I ran out of time! ⏰",
+          votes: [],
+        });
+      }
+    });
     if (room.answers.length === 0) {
       // No one answered — skip to next question or end
       if (room.currentRound < room.totalRounds) {
@@ -702,7 +742,7 @@ io.on('connection', (socket) => {
       socket.join(room.code);
       const uploadToken = issueUploadToken(room.code, player.id);
       socket.emit('join_success', {
-        room,
+        room: sanitizeRoomForClient(room),
         playerId: player.id,
         isRejoin: true,
         uploadToken,
@@ -758,7 +798,7 @@ io.on('connection', (socket) => {
       socket.join(room.code);
       const uploadToken = issueUploadToken(room.code, player.id);
       socket.emit('join_success', {
-        room,
+        room: sanitizeRoomForClient(room),
         playerId: player.id,
         isRejoin,
         uploadToken,
@@ -1034,6 +1074,15 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('answer_draft', ({ code, text }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'question') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isConnected || !player.isPlaying) return;
+    if (!room.answerDrafts) room.answerDrafts = {};
+    room.answerDrafts[player.id] = typeof text === 'string' ? text.trim().slice(0, 300) : '';
+  });
+
   socket.on('submit_answer', ({ code, text }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'question') return;
@@ -1097,7 +1146,6 @@ io.on('connection', (socket) => {
 
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isConnected || !player.isPlaying) return;
-
     if (answerId === player.id) return;           // can't vote own answer
     if (room.sit.votes[player.id]) return;        // already voted
 
@@ -1157,6 +1205,7 @@ io.on('connection', (socket) => {
     }
 
     io.to(code).emit('vote_received', { votedCount: currentAnswer.votes.length, totalPlayers: expectedVotes, votedPlayerIds: currentAnswer.votes.map(v => v.voterId) });
+    console.log(`[Server] WST vote: ${currentAnswer.votes.length}/${expectedVotes} room=${code}`);
 
     if (currentAnswer.votes.length >= expectedVotes) {
       io.to(code).emit('all_votes_in', { currentIndex: room.currentAnswerIndex });
@@ -1435,6 +1484,79 @@ io.on('connection', (socket) => {
           voteCount: Object.keys(room.sit.votes || {}).length,
           totalVoters: playingPlayers.length,
         },
+        // WST voting state (for reconnect recovery)
+        voting: room.phase === 'voting' ? {
+          answers: (room.answers || []).map(a => ({ text: a.text })),
+          currentIndex: room.currentAnswerIndex || 0,
+          voteCount: (room.answers?.[room.currentAnswerIndex]?.votes || []).length,
+          totalPlayers: playingPlayers.length,
+          votedPlayerIds: (room.answers?.[room.currentAnswerIndex]?.votes || []).map(v => v.voterId),
+        } : null,
+        // WST answering phase (answer submission count)
+        answeredCount: room.phase === 'question' ? (room.answers || []).length : 0,
+        // FITB state (for reconnect recovery — both answering and voting phases)
+        fitb: room.phase === 'fitb' ? {
+          phase: room.fitb.phase,
+          question: room.fitb.question || '',
+          answers: room.fitb.phase === 'voting' ? (room.fitb.answers || []).map((a, i) => ({ id: i, text: a.text })) : [],
+          voteCount: Object.keys(room.fitb._votes || {}).length,
+          totalVoters: playingPlayers.length,
+          votedPlayerIds: Object.keys(room.fitb._votes || {}),
+          answeredCount: (room.fitb.answers || []).length,
+          totalAnswerers: playingPlayers.length,
+          answeredPlayerIds: (room.fitb.answers || []).map(a => a.playerId),
+        } : null,
+        // Draw state — includes both drawing (submission) and voting phase details
+        draw: room.phase === 'drawing' ? {
+          phase: room.draw?.phase || 'drawing',
+          submittedCount: Object.keys(room.draw?.submissions || {}).length,
+          totalDrawers: playingPlayers.length,
+          submittedPlayerIds: Object.keys(room.draw?.submissions || {}),
+          voteCount: Object.keys(room.draw?.votes || {}).length,
+          totalVoters: playingPlayers.length,
+          votedPlayerIds: Object.keys(room.draw?.votes || {}),
+        } : null,
+        // Selfie state (for reconnect recovery)
+        selfie: room.phase === 'selfie' ? {
+          phase: room.selfie.phase,
+          photoCount: Object.keys(room.selfie.photos || {}).length,
+          totalPhotographers: playingPlayers.length,
+          submittedPlayerIds: Object.keys(room.selfie.photos || {}),
+          drawingCount: Object.keys(room.selfie.strokes || {}).length,
+          totalDrawers: playingPlayers.length,
+          drawnPlayerIds: Object.keys(room.selfie.strokes || {}),
+          voteCount: Object.keys(room.selfie.votes || {}).length,
+          totalVoters: playingPlayers.length,
+          votedPlayerIds: Object.keys(room.selfie.votes || {}),
+        } : null,
+        // Caption state (for reconnect recovery)
+        caption: room.phase === 'caption' ? {
+          phase: room.caption.phase,
+          captionCount: Object.keys(room.caption.captions || {}).length,
+          totalWriters: playingPlayers.length,
+          captionSubmittedPlayerIds: Object.keys(room.caption.captions || {}),
+          voteCount: Object.keys(room.caption.votes || {}).length,
+          totalVoters: playingPlayers.length,
+          votedPlayerIds: Object.keys(room.caption.votes || {}),
+        } : null,
+        // PhotoVote (pmatch / photoassoc) state (for reconnect recovery)
+        photoVote: room.phase === 'photovote' ? {
+          phase: room.photoVote?.phase || 'photo',
+          submittedPlayerIds: Object.keys(room.photoVote?.photos || {}),
+          voteCount: Object.keys(room.photoVote?.votes || {}).length,
+          totalVoters: playingPlayers.length,
+          votedPlayerIds: Object.keys(room.photoVote?.votes || {}),
+        } : null,
+        // DrawTel state (for reconnect recovery)
+        dt: (room.phase === 'dt' || room.phase?.startsWith('dt-')) ? {
+          phase: room.dt.phase,
+          promptsSubmittedCount: (room.dt.prompts || []).length,
+          totalPrompts: playingPlayers.length,
+          submittedPlayerIds: (room.dt.prompts || []).map(p => p.authorId).filter(Boolean),
+          guessedCount: Object.keys(room.dt.guesses || {}).length,
+          totalGuessers: playingPlayers.length,
+          guessedPlayerIds: Object.keys(room.dt.guesses || {}),
+        } : null,
       },
     });
   });
@@ -1896,6 +2018,7 @@ io.on('connection', (socket) => {
     const submittedCount = Object.keys(room.draw.submissions).length;
     const submittedPlayerIds = Object.keys(room.draw.submissions);
     io.to(code).emit('draw:submission_received', { submittedCount, totalDrawers: playingPlayers.length, submittedPlayerIds });
+    console.log(`[Server] Draw submission: ${submittedCount}/${playingPlayers.length} room=${code}`);
 
     if (!isResubmit && submittedCount >= playingPlayers.length) {
       if (room.draw.timerRef) { clearInterval(room.draw.timerRef); room.draw.timerRef = null; }
@@ -1918,13 +2041,20 @@ io.on('connection', (socket) => {
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isPlaying) return;
     if (room.draw.votes[player.id]) return; // already voted
-    if (votedForPlayerId === player.id) return; // no self-vote
-    if (!room.draw.submissions[votedForPlayerId]) return; // must vote for a submission
+    if (votedForPlayerId === player.id) {
+      socket.emit('draw:vote_rejected', { reason: 'no_self_vote' });
+      return;
+    }
+    if (!room.draw.submissions[votedForPlayerId]) {
+      socket.emit('draw:vote_rejected', { reason: 'invalid_submission' });
+      return;
+    }
 
     room.draw.votes[player.id] = votedForPlayerId;
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
     const voteCount = Object.keys(room.draw.votes).length;
     io.to(code).emit('draw:vote_received', { voteCount, totalVoters: playingPlayers.length, votedPlayerIds: Object.keys(room.draw.votes) });
+    console.log(`[Server] Draw vote: ${voteCount}/${playingPlayers.length} room=${code}`);
 
     if (voteCount >= playingPlayers.length) {
       resolveDrawVoting(io, room, code);
@@ -3774,8 +3904,11 @@ io.on('connection', (socket) => {
 
     if (!templateText || typeof templateText !== 'string') return;
     const sanitized = templateText.trim().slice(0, 200);
-    // Must contain [name] placeholder
-    if (!sanitized.toLowerCase().includes('[name]')) return;
+    // Must contain [name] placeholder — notify the client so they can correct it
+    if (!sanitized.toLowerCase().includes('[name]')) {
+      socket.emit('dt:prompt_rejected', { reason: 'missing_name_placeholder' });
+      return;
+    }
 
     const promptId = `dt_${player.id}_${Date.now()}`;
     room.dt.prompts.push({ id: promptId, authorId: player.id, templateText: sanitized });

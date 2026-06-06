@@ -244,6 +244,10 @@ export const useSocket = () => {
       dispatch({ type: 'DRAW_VOTE_RECEIVED', payload: data });
     };
 
+    const onDrawVoteRejected = () => {
+      dispatch({ type: 'DRAW_VOTE_REJECTED' });
+    };
+
     const onDrawResults = (data) => {
       dispatch({ type: 'DRAW_SET_RESULTS', payload: data });
     };
@@ -482,6 +486,7 @@ export const useSocket = () => {
     socket.on('draw:submission_received', onDrawSubmissionReceived);
     socket.on('draw:voting_started', onDrawVotingStarted);
     socket.on('draw:vote_received', onDrawVoteReceived);
+    socket.on('draw:vote_rejected', onDrawVoteRejected);
     socket.on('draw:results', onDrawResults);
     socket.on('draw:end', onDrawEnd);
     socket.on('draw:restarted', onDrawRestarted);
@@ -539,6 +544,9 @@ export const useSocket = () => {
     const onDtPromptReceived = (data) => {
       dispatch({ type: 'DT_PROMPT_RECEIVED', payload: data });
     };
+    const onDtPromptRejected = () => {
+      dispatch({ type: 'DT_PROMPT_REJECTED' });
+    };
     const onDtDrawingPhase = (data) => {
       dispatch({ type: 'DT_DRAWING_PHASE', payload: data });
       navigate('/draw-tel-wait');
@@ -592,6 +600,7 @@ export const useSocket = () => {
     socket.on('dt:photo_received', onDtPhotoReceived);
     socket.on('dt:prompt_phase', onDtPromptPhase);
     socket.on('dt:prompt_received', onDtPromptReceived);
+    socket.on('dt:prompt_rejected', onDtPromptRejected);
     socket.on('dt:drawing_phase', onDtDrawingPhase);
     socket.on('dt:your_turn', onDtYourTurn);
     socket.on('dt:turn_timer', onDtTurnTimer);
@@ -672,6 +681,7 @@ export const useSocket = () => {
       socket.off('draw:submission_received', onDrawSubmissionReceived);
       socket.off('draw:voting_started', onDrawVotingStarted);
       socket.off('draw:vote_received', onDrawVoteReceived);
+      socket.off('draw:vote_rejected', onDrawVoteRejected);
       socket.off('draw:results', onDrawResults);
       socket.off('draw:end', onDrawEnd);
       socket.off('draw:restarted', onDrawRestarted);
@@ -717,6 +727,7 @@ export const useSocket = () => {
       socket.off('dt:photo_received', onDtPhotoReceived);
       socket.off('dt:prompt_phase', onDtPromptPhase);
       socket.off('dt:prompt_received', onDtPromptReceived);
+      socket.off('dt:prompt_rejected', onDtPromptRejected);
       socket.off('dt:drawing_phase', onDtDrawingPhase);
       socket.off('dt:your_turn', onDtYourTurn);
       socket.off('dt:turn_timer', onDtTurnTimer);

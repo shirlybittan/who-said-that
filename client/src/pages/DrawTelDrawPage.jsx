@@ -164,7 +164,9 @@ export default function DrawTelDrawPage() {
     });
     dispatch({ type: 'DT_MARK_TURN_SUBMITTED' });
     setSubmitted(true);
-  }, [submitted, roomCode, turn?.promptId, sounds, dispatch]);
+    // Navigate to wait so we're in the right place for the next turn or guessing phase
+    navigate('/draw-tel-wait');
+  }, [submitted, roomCode, turn?.promptId, sounds, dispatch, navigate]);
 
   // Auto-submit at ≤1 second (belt-and-suspenders alongside dt:time_up)
   useEffect(() => {
@@ -172,8 +174,9 @@ export default function DrawTelDrawPage() {
       socket.emit('dt:submit_strokes', { code: roomCode, promptId: turn.promptId, strokes: strokesRef.current });
       dispatch({ type: 'DT_MARK_TURN_SUBMITTED' });
       setSubmitted(true);
+      navigate('/draw-tel-wait');
     }
-  }, [dt.currentTurn?.secondsLeft, submitted, turn, roomCode, dispatch]);
+  }, [dt.currentTurn?.secondsLeft, submitted, turn, roomCode, dispatch, navigate]);
 
   // Force-submit when server says time is up (ensures actual strokes reach server before fallback)
   useEffect(() => {
@@ -182,11 +185,12 @@ export default function DrawTelDrawPage() {
         socket.emit('dt:submit_strokes', { code: roomCode, promptId, strokes: strokesRef.current });
         dispatch({ type: 'DT_MARK_TURN_SUBMITTED' });
         setSubmitted(true);
+        navigate('/draw-tel-wait');
       }
     };
     socket.on('dt:time_up', onTimeUp);
     return () => socket.off('dt:time_up', onTimeUp);
-  }, [submitted, turn, roomCode, dispatch]);
+  }, [submitted, turn, roomCode, dispatch, navigate]);
 
   // Touch handlers
   const onTouchStart = (e) => {

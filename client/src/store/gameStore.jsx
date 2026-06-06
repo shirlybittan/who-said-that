@@ -886,6 +886,9 @@ export const gameReducer = (state, action) => {
       return { ...state, draw: { ...state.draw, voteCount: action.payload.voteCount, totalVoters: action.payload.totalVoters } };
     case 'DRAW_MARK_VOTED':
       return { ...state, draw: { ...state.draw, hasVoted: true, votedForPlayerId: action.payload.votedForPlayerId } };
+    case 'DRAW_VOTE_REJECTED':
+      // Server rejected our vote — reset so the player can try again
+      return { ...state, draw: { ...state.draw, hasVoted: false, votedForPlayerId: null } };
     case 'DRAW_SET_RESULTS':
       return {
         ...state,
@@ -1166,6 +1169,15 @@ export const gameReducer = (state, action) => {
           hasSubmittedPrompt: true,
         },
       };
+    case 'DT_PROMPT_REJECTED':
+      // Server rejected the prompt (e.g. missing [name]) — reopen input so player can fix it
+      return {
+        ...state,
+        dt: {
+          ...state.dt,
+          hasSubmittedPrompt: false,
+        },
+      };
     case 'DT_DRAWING_PHASE':
       return {
         ...state,
@@ -1175,7 +1187,8 @@ export const gameReducer = (state, action) => {
           totalChains: action.payload.totalChains,
           chainsCompletedCount: 0,
           chainProgress: {},
-          currentTurn: null,
+          // Preserve currentTurn if dt:your_turn already arrived (race condition guard)
+          currentTurn: state.dt.currentTurn || null,
           hasSubmittedTurn: false,
         },
       };
@@ -1245,6 +1258,8 @@ export const gameReducer = (state, action) => {
           totalGuessers: action.payload.totalGuessers,
           guessSecondsLeft: action.payload.secondsLeft || 60,
           guessedCount: 0,
+          // Preserve guessTurn if dt:your_guess already arrived (race condition guard)
+          guessTurn: state.dt.guessTurn || null,
         },
       };
     case 'DT_YOUR_GUESS':

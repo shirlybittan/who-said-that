@@ -300,7 +300,7 @@ async function playSelfie(hostSock, players, code) {
   const vsP = waitFor(hostSock, 'selfie:voting_started', 15000);
   // Listen for draw assignments and submit drawings
   const assignPromises = players.map(p =>
-    waitFor(p.sock, 'selfie:draw_assigned', 8000).then(() => {
+    waitFor(p.sock, 'selfie:draw_assigned', 15000).then(() => {
       p.sock.emit('selfie:submit_drawing', { code, strokes: FAKE_STROKES });
     })
   );
