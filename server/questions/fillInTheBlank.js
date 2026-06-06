@@ -87,7 +87,7 @@ const questions = [
   "The one rule {name} would add to every workplace is ___",
 
   // New additions — hypothetical & creative
-  "If {name} could live in any fictional world, they'd choose ___ because ___",
+  "If {name} could live in any fictional world, they'd choose ___",
   "The villain {name} would secretly be rooting for in every movie is ___",
   "{name}'s superpower would backfire immediately because ___",
   "The animal {name} would be reincarnated as based on their behaviour is ___",
