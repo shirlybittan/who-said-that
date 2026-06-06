@@ -132,7 +132,14 @@ export const useSocket = () => {
 
     const onError = ({ message }) => {
       dispatch({ type: 'SET_ERROR', payload: message });
-      alert(message);
+      // If the player had a room but it no longer exists (expired/evicted), reset
+      // to home rather than leaving them stranded on a stale game screen.
+      if (state.roomCode && (message === 'Room not found' || message === 'Room has expired')) {
+        dispatch({ type: 'RESET_GAME' });
+        navigate('/');
+      } else {
+        alert(message);
+      }
     };
 
     const onKicked = () => {
