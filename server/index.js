@@ -92,6 +92,8 @@ const startAnswerTimer = (io, room, code, seconds, onExpire) => {
   stopAnswerTimer(room);
   room.answerSecondsLeft = seconds;
   room.answerPaused = false;
+  // Always reset draft map at the start of each answer phase
+  room.answerDrafts = {};
   io.to(code).emit('phase_timer', { secondsLeft: seconds, phase: 'answering' });
   room.answerTimerRef = setInterval(() => {
     if (room.phase !== 'question') { stopAnswerTimer(room); return; }
@@ -100,6 +102,21 @@ const startAnswerTimer = (io, room, code, seconds, onExpire) => {
     io.to(code).emit('phase_timer', { secondsLeft: room.answerSecondsLeft, phase: 'answering' });
     if (room.answerSecondsLeft <= 0) {
       stopAnswerTimer(room);
+      // Before advancing, flush drafts: any player who typed but didn't officially submit
+      // gets their draft text (or a fallback) auto-submitted so every player has an answer.
+      const playing = room.players.filter(p => p.isConnected && p.isPlaying);
+      playing.forEach(p => {
+        const alreadySubmitted = room.answers.find(a => a.playerId === p.id);
+        if (!alreadySubmitted) {
+          const draftText = (room.answerDrafts?.[p.id] || '').trim();
+          room.answers.push({
+            playerId: p.id,
+            playerName: p.name,
+            text: draftText || "⏰ Ran out of time",
+            votes: [],
+          });
+        }
+      });
       onExpire();
     }
   }, 1000);
@@ -628,6 +645,29 @@ const closeSitVoting = (io, room, code) => {
 // Players who count toward round thresholds (connected, playing, not waiting for next round)
 const activePlayers = (room) => room.players.filter(p => p.isConnected && p.isPlaying && !p.joinedMidRound);
 
+// Strip non-serializable timer references before sending room data to clients.
+// Node.js Timeout objects are circular and cause JSON.stringify to throw
+// "Maximum call stack size exceeded" when socket.io tries to serialize them.
+function sanitizeRoomForClient(room) {
+  const r = { ...room };
+  delete r.answerTimerRef;
+  if (r.mlt) { const m = { ...r.mlt }; delete m.timerRef; r.mlt = m; }
+  if (r.tot) { const t = { ...r.tot }; delete t.timerRef; r.tot = t; }
+  if (r.draw) { const d = { ...r.draw }; delete d.timerRef; r.draw = d; }
+  if (r.fitb) { const f = { ...r.fitb }; delete f.timerRef; delete f.answerTimerRef; r.fitb = f; }
+  if (r.dt) {
+    const dt = { ...r.dt };
+    delete dt.promptTimerRef; delete dt.guessTimerRef; delete dt.voteTimerRef;
+    if (dt.chains) {
+      const chains = {};
+      for (const [id, chain] of Object.entries(dt.chains)) { chains[id] = { ...chain }; delete chains[id].timerRef; }
+      dt.chains = chains;
+    }
+    r.dt = dt;
+  }
+  return r;
+}
+
 // Cancel all active game timers for a room (called before starting a new game)
 function cancelAllTimers(room) {
   if (room.mlt?.timerRef) { clearTimeout(room.mlt.timerRef); room.mlt.timerRef = null; }
@@ -662,7 +702,7 @@ io.on('connection', (socket) => {
       touchRoom(roomCode);
       socket.join(room.code);
       socket.emit('join_success', {
-        room,
+        room: sanitizeRoomForClient(room),
         playerId: player.id,
         isRejoin: true,
         miniGameState: buildMiniGameSnapshot(room, player.id, {
@@ -711,7 +751,7 @@ io.on('connection', (socket) => {
       }
       socket.join(room.code);
       socket.emit('join_success', {
-        room,
+        room: sanitizeRoomForClient(room),
         playerId: player.id,
         isRejoin,
         miniGameState: buildMiniGameSnapshot(room, player.id, {
@@ -1037,6 +1077,16 @@ io.on('connection', (socket) => {
         });
       }
     }
+  });
+
+  // ─── Draft answer — saves player's in-progress text so timer expiry can auto-submit it ──
+  socket.on('answer_draft', ({ code, text }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'question') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isConnected || !player.isPlaying) return;
+    if (!room.answerDrafts) room.answerDrafts = {};
+    room.answerDrafts[player.id] = (typeof text === 'string' ? text : '').slice(0, 500);
   });
 
   socket.on('sit:vote', ({ code, answerId }) => {
@@ -2439,7 +2489,28 @@ io.on('connection', (socket) => {
 
     // Broadcast drawing phase start
     const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
-    io.to(code).emit('selfie:drawing_phase', { players, totalDrawers: drawerIds.length, promptTemplate: room.selfie.promptTemplate });
+    const drawSecs = room.roomConfig?.selfieDrawSecs || 90;
+    room.selfie.timeLimit = drawSecs;
+    room.selfie.secondsLeft = drawSecs;
+    io.to(code).emit('selfie:drawing_phase', { players, totalDrawers: drawerIds.length, promptTemplate: room.selfie.promptTemplate, timeLimit: drawSecs, secondsLeft: drawSecs });
+
+    // Start per-selfie draw timer
+    if (room.selfie.drawTimerRef) { clearInterval(room.selfie.drawTimerRef); room.selfie.drawTimerRef = null; }
+    room.selfie.drawTimerRef = setInterval(() => {
+      if (!room.selfie || room.selfie.phase !== 'drawing') {
+        clearInterval(room.selfie.drawTimerRef); room.selfie.drawTimerRef = null; return;
+      }
+      room.selfie.secondsLeft = Math.max(0, (room.selfie.secondsLeft || 0) - 1);
+      io.to(code).emit('selfie:draw_timer', { secondsLeft: room.selfie.secondsLeft });
+      if (room.selfie.secondsLeft <= 0) {
+        clearInterval(room.selfie.drawTimerRef); room.selfie.drawTimerRef = null;
+        io.to(code).emit('selfie:drawing_ending');
+        setTimeout(() => {
+          if (room.selfie.phase !== 'drawing') return;
+          startSelfieVoting(io, room, code);
+        }, 1500);
+      }
+    }, 1000);
   };
 
   socket.on('selfie:skip_to_drawing', ({ code }) => {
@@ -2457,7 +2528,7 @@ io.on('connection', (socket) => {
     if (!room || room.phase !== 'selfie' || room.selfie.phase !== 'drawing') return;
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
-    if (room.selfie.strokes[player.id]) return; // already submitted
+    // Allow re-submission (update drawing) while the drawing phase is still open.
 
     // Sanitize strokes
     if (!Array.isArray(strokes)) return;

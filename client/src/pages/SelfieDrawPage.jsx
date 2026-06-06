@@ -4,6 +4,7 @@ import { socket } from '../socket';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
 import { CANVAS_W, CANVAS_H, drawStroke, redrawOverlay } from '../utils/canvasUtils';
+import TimerRing from '../components/game/TimerRing';
 
 const COLORS = [
   '#000000', '#FFFFFF', '#EF4444', '#F97316', '#EAB308',
@@ -104,7 +105,6 @@ export default function SelfieDrawPage() {
   };
 
   const handleSubmit = () => {
-    if (selfie.hasSubmittedDrawing) return;
     sounds.answer?.();
     socket.emit('selfie:submit_drawing', { code: state.roomCode, strokes: strokesRef.current });
     dispatch({ type: 'SELFIE_MARK_DRAWING_SUBMITTED' });
@@ -145,7 +145,14 @@ export default function SelfieDrawPage() {
       className="flex flex-col items-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-4"
       initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}
     >
-      <h1 className="text-2xl font-['Fredoka_One'] text-[#FF6B6B] mt-4 mb-1">🎨 Draw on {selfie.assignedOwnerName}'s selfie!</h1>
+      <div className="flex items-center justify-between w-full max-w-sm mb-1">
+        <h1 className="text-2xl font-['Fredoka_One'] text-[#FF6B6B] mt-4">🎨 Draw on {selfie.assignedOwnerName}'s selfie!</h1>
+        {selfie.secondsLeft > 0 && (
+          <div className="mt-4 flex-shrink-0">
+            <TimerRing secondsLeft={selfie.secondsLeft} total={selfie.timeLimit || 90} size={52} />
+          </div>
+        )}
+      </div>
       {selfie.assignedPrompt ? (
         <div className="w-full max-w-sm bg-[#FFE66D]/10 border border-[#FFE66D]/40 rounded-xl px-4 py-2 mb-3 text-center">
           <p className="text-[#FFE66D] font-['Fredoka_One'] text-base">{selfie.assignedPrompt}</p>
@@ -237,7 +244,7 @@ export default function SelfieDrawPage() {
             onClick={handleSubmit}
             className="w-full max-w-xs bg-[#FF6B6B] text-white font-['Fredoka_One'] text-lg py-3 rounded-xl hover:bg-[#e05a5a] transition"
           >
-            Submit Drawing ✓
+            {selfie.hasSubmittedDrawing ? '↑ Update Drawing' : 'Submit Drawing ✓'}
           </button>
 
           <button
@@ -247,16 +254,18 @@ export default function SelfieDrawPage() {
             📷 Retake Photo
           </button>
         </>
-      ) : (
-        <div className="w-full max-w-xs bg-[#1A1A2E] rounded-2xl border border-[#2D2D44] p-5 text-center">
-          <p className="text-[#4ECDC4] font-['Fredoka_One'] text-xl mb-2">Drawing submitted! ✓</p>
-          <p className="text-gray-400 font-['Nunito'] text-sm">
-            Waiting for others… ({selfie.drawingCount}/{selfie.totalDrawers})
+      )}
+
+      {/* When submitted: show status but keep toolbar visible so player can update */}
+      {selfie.hasSubmittedDrawing && (
+        <div className="w-full max-w-xs bg-[#1A1A2E] rounded-xl border border-[#4ECDC4]/40 px-4 py-2 text-center mt-2">
+          <p className="text-[#4ECDC4] font-['Fredoka_One'] text-sm">
+            ✓ Drawing submitted! ({selfie.drawingCount}/{selfie.totalDrawers}) — you can still update it
           </p>
         </div>
       )}
 
-      {state.isHost && selfie.hasSubmittedDrawing && (
+      {state.isHost && (
         <button
           onClick={handleSkip}
           className="mt-4 text-sm text-gray-400 underline font-['Nunito'] hover:text-white transition"

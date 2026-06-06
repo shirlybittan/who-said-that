@@ -45,6 +45,18 @@ export default function QuestionPage() {
   const autoSubmitRef = React.useRef({ answer });
   useEffect(() => { autoSubmitRef.current = { answer }; });
 
+  // Send a draft to the server on every keystroke (debounced 300 ms) so that
+  // the server can auto-submit the draft if the timer expires before the player
+  // manually confirms their answer.
+  const draftTimerRef = React.useRef(null);
+  const handleAnswerChange = (newText) => {
+    setAnswer(newText);
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    draftTimerRef.current = setTimeout(() => {
+      socket.emit('answer_draft', { code: state.roomCode, text: newText });
+    }, 300);
+  };
+
   const timerWasActiveRef = React.useRef(false);
   useEffect(() => {
     if (timerActive) timerWasActiveRef.current = true;
@@ -167,7 +179,7 @@ export default function QuestionPage() {
           >
             <textarea
               value={answer}
-              onChange={(e) => setAnswer(e.target.value)}
+              onChange={(e) => handleAnswerChange(e.target.value)}
               placeholder={isSituational && target ? `What would ${target.name} say?` : t.typeAnswerPlaceholder}
               className="w-full p-4 rounded-xl text-black bg-white focus:bg-[#FFF] font-['Nunito'] text-[16px] border-4 border-transparent focus:border-[#FFE66D] focus:outline-none resize-none h-32"
               maxLength={150}

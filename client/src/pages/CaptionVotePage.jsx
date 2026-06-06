@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
@@ -9,13 +9,19 @@ export default function CaptionVotePage() {
   const { state, dispatch } = useGame();
   const caption = state.caption;
   const sounds = useSounds();
+  const [selected, setSelected] = useState(null);
 
-  const handleVote = (captionId) => {
-    if (caption.hasVoted) return;
-    if (captionId === caption.myOwnCaptionId) return; // can't vote for own caption
+  const handleSelect = (captionId) => {
+    if (caption.hasVoted || captionId === caption.myOwnCaptionId) return;
+    sounds.click?.();
+    setSelected(captionId);
+  };
+
+  const handleConfirm = () => {
+    if (!selected || caption.hasVoted) return;
     sounds.vote?.();
-    socket.emit('caption:vote', { code: state.roomCode, captionId });
-    dispatch({ type: 'CAPTION_MARK_VOTED', payload: { captionId } });
+    socket.emit('caption:vote', { code: state.roomCode, captionId: selected });
+    dispatch({ type: 'CAPTION_MARK_VOTED', payload: { captionId: selected } });
   };
 
   return (
@@ -40,26 +46,42 @@ export default function CaptionVotePage() {
         )}
 
         {!caption.hasVoted ? (
+          <>
           <div className="w-full max-w-sm flex flex-col gap-3">
             {(caption.captions || []).map((c) => {
               const isOwn = c.id === caption.myOwnCaptionId;
+              const isSelected = selected === c.id;
               return (
                 <button
                   key={c.id}
-                  onClick={() => handleVote(c.id)}
+                  onClick={() => handleSelect(c.id)}
                   disabled={isOwn}
                   className={`w-full py-4 px-5 rounded-2xl border font-['Nunito'] text-base text-left transition-colors ${
                     isOwn
                       ? 'border-gray-700 bg-[#1A1A2E]/50 text-gray-500 cursor-not-allowed'
+                      : isSelected
+                      ? 'border-[#FD79A8] bg-[#FD79A8]/20 text-white'
+                      : selected
+                      ? 'bg-[#1A1A2E] border-gray-700 text-gray-400 opacity-60'
                       : 'bg-[#1A1A2E] border-gray-600 text-white hover:border-[#FD79A8] hover:bg-[#FD79A8]/10'
                   }`}
                 >
                   {isOwn ? <span className="mr-2 text-xs text-gray-500">(yours)</span> : null}
+                  {isSelected && <span className="mr-2">👆</span>}
                   {c.text}
                 </button>
               );
             })}
           </div>
+          {selected && (
+            <button
+              onClick={handleConfirm}
+              className="mt-4 w-full max-w-sm py-4 rounded-2xl bg-[#FD79A8] text-white font-['Fredoka_One'] text-xl active:scale-95 transition-transform"
+            >
+              Confirm Vote ✓
+            </button>
+          )}
+          </>
         ) : (
           <div className="w-full max-w-sm flex flex-col gap-3">
             {(caption.captions || []).map((c) => (

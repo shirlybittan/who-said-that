@@ -133,6 +133,8 @@ const initialState = {
     assignedOwnerPlayerId: null,
     assignedPrompt: null,       // e.g. "Turn Maya into a pirate"
     promptTemplate: null,       // e.g. "Turn [Name] into a pirate"
+    secondsLeft: 90,            // drawing phase countdown
+    timeLimit: 90,
     submissions: [],       // [{drawerId, drawerName, drawerColor, ownerName, photoData, strokes, votes?, prompt}]
     voteCount: 0,
     totalVoters: 0,
@@ -726,7 +728,15 @@ export const gameReducer = (state, action) => {
           drawingCount: 0,
           totalDrawers: action.payload.totalDrawers || state.selfie.totalPhotographers,
           promptTemplate: action.payload.promptTemplate || state.selfie.promptTemplate,
+          timeLimit: action.payload.timeLimit || 90,
+          secondsLeft: action.payload.secondsLeft ?? action.payload.timeLimit ?? 90,
+          hasSubmittedDrawing: false,
         },
+      };
+    case 'SELFIE_DRAW_TIMER':
+      return {
+        ...state,
+        selfie: { ...state.selfie, secondsLeft: action.payload.secondsLeft },
       };
     case 'SELFIE_DRAWING_RECEIVED':
       return {
@@ -928,6 +938,10 @@ export const gameReducer = (state, action) => {
       };
     case 'PHASE_TIMER_STOP':
       return { ...state, phaseTimer: { secondsLeft: 0, active: false } };
+    case 'CLEAR_SESSION':
+      // Wipe stale session identifiers so the reconnect handler doesn't
+      // auto-rejoin a room from a previous game.
+      return { ...state, playerId: null, roomCode: null, playerName: null };
     case 'SET_ROOM_CONFIG':
       return { ...state, roomConfig: { ...state.roomConfig, ...action.payload } };
     // ─── Caption actions ─────────────────────────────────────────────────────

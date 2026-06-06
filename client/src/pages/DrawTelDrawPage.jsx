@@ -221,12 +221,17 @@ export default function DrawTelDrawPage() {
           {/* Left: Prompt + Info */}
           <div className="flex-1 flex flex-col gap-3">
             <div className="bg-[#1A1A2E] rounded-2xl p-4 border border-[#FF6B6B]/30">
-              <p className="text-xs text-gray-400 font-['Nunito'] uppercase tracking-widest mb-1">
-                  Step {turn?.position || 1} of {turn?.totalPositions || 1}
-                </p>
-                <p className="text-lg text-white font-['Nunito']">
-                  {turn?.position > 1 ? "Draw over the previous drawing!" : "Draw this prompt!"}
-                </p>
+              {/* Timer row */}
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <p className="text-xs text-gray-400 font-['Nunito'] uppercase tracking-widest mb-1">
+                    Step {turn?.position || 1} of {turn?.totalPositions || 1}
+                  </p>
+                  <p className="text-lg text-white font-['Nunito']">
+                    {turn?.position > 1 ? "Draw over the previous drawing!" : "Draw this prompt!"}
+                  </p>
+                </div>
+                <TimerRing secondsLeft={turn?.secondsLeft ?? 0} total={60} size={52} />
               </div>
 
               {/* Previous step content */}
@@ -263,6 +268,7 @@ export default function DrawTelDrawPage() {
                 )}
               </div>
             </div>
+          </div>
 
           {/* Right: Canvas + Controls */}
           <div className="lg:w-[420px] flex flex-col gap-3">

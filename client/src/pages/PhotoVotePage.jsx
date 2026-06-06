@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
@@ -8,14 +8,21 @@ export default function PhotoVotePage() {
   const { state, dispatch } = useGame();
   const pv = state.photoVote;
   const sounds = useSounds();
+  const [selected, setSelected] = useState(null);
 
   const modeColor = pv.subType === 'photoassoc' ? '#A29BFE' : '#FDCB6E';
 
-  const handleVote = (targetPlayerId) => {
+  const handleSelect = (targetPlayerId) => {
     if (pv.hasVoted || targetPlayerId === state.playerId) return;
+    sounds.click?.();
+    setSelected(targetPlayerId);
+  };
+
+  const handleConfirm = () => {
+    if (!selected || pv.hasVoted) return;
     sounds.vote?.();
-    socket.emit('photovote:vote', { code: state.roomCode, targetPlayerId });
-    dispatch({ type: 'PHOTOVOTE_MARK_VOTED', payload: { targetPlayerId } });
+    socket.emit('photovote:vote', { code: state.roomCode, targetPlayerId: selected });
+    dispatch({ type: 'PHOTOVOTE_MARK_VOTED', payload: { targetPlayerId: selected } });
   };
 
   return (
@@ -29,20 +36,23 @@ export default function PhotoVotePage() {
       <div className="grid grid-cols-2 gap-3 w-full max-w-sm">
         {(pv.photos || []).map((photo) => {
           const isMe = photo.playerId === state.playerId;
+          const isSelected = selected === photo.playerId;
           const isVoted = pv.myVote === photo.playerId;
-          const isDimmed = pv.hasVoted && !isVoted;
+          const isDimmed = (pv.hasVoted && !isVoted) || (selected && !isSelected && !pv.hasVoted);
 
           return (
             <button
               key={photo.playerId}
-              onClick={() => handleVote(photo.playerId)}
+              onClick={() => handleSelect(photo.playerId)}
               disabled={pv.hasVoted || isMe}
               className={`relative flex flex-col items-center rounded-2xl overflow-hidden border-2 transition-all ${
                 isVoted
                   ? 'border-[#4ECDC4] scale-105'
+                  : isSelected
+                  ? 'border-yellow-400 scale-105'
                   : isMe
                   ? 'border-gray-700 opacity-50 cursor-not-allowed'
-                  : pv.hasVoted
+                  : isDimmed
                   ? 'border-gray-700 opacity-40'
                   : 'border-gray-600 hover:border-yellow-400 active:scale-95'
               }`}
@@ -57,12 +67,23 @@ export default function PhotoVotePage() {
               <div className="w-full bg-[#0D0D1A]/80 py-1 px-2 text-center">
                 <span className="font-['Nunito'] text-xs text-white">{photo.playerName}</span>
                 {isVoted && <span className="ml-1">✅</span>}
+                {isSelected && !pv.hasVoted && <span className="ml-1">👆</span>}
                 {isMe && <span className="ml-1 text-gray-500 text-xs">(you)</span>}
               </div>
             </button>
           );
         })}
       </div>
+
+      {selected && !pv.hasVoted && (
+        <button
+          onClick={handleConfirm}
+          style={{ backgroundColor: modeColor }}
+          className="mt-5 w-full max-w-sm py-3 rounded-2xl text-white font-['Fredoka_One'] text-xl active:scale-95 transition-transform"
+        >
+          Confirm Vote ✓
+        </button>
+      )}
 
       {pv.hasVoted && (
         <p className="text-gray-500 font-['Nunito'] text-sm mt-5">

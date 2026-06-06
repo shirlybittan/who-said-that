@@ -429,24 +429,34 @@ function MltEndPanel({ mlt }) {
   );
 }
 
-function QuestionPanel({ questionData, players, paused = false }) {
+function QuestionPanel({ questionData, players, paused = false, serverSecondsLeft }) {
   const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
   const computeSecondsLeft = () => {
     const elapsed = questionData.startedAt ? Math.floor((Date.now() - questionData.startedAt) / 1000) : 0;
     return Math.max(0, (questionData.roundDuration || 60) - elapsed);
   };
-  const [secondsLeft, setSecondsLeft] = useState(computeSecondsLeft);
+  const [localSecondsLeft, setLocalSecondsLeft] = useState(computeSecondsLeft);
+
+  // Sync to server-driven timer whenever it updates (eliminates host/player desync)
+  useEffect(() => {
+    if (serverSecondsLeft !== undefined && serverSecondsLeft > 0) {
+      setLocalSecondsLeft(serverSecondsLeft);
+    }
+  }, [serverSecondsLeft]);
 
   useEffect(() => {
     const elapsed = questionData.startedAt ? Math.floor((Date.now() - questionData.startedAt) / 1000) : 0;
-    setSecondsLeft(Math.max(0, (questionData.roundDuration || 60) - elapsed));
+    setLocalSecondsLeft(Math.max(0, (questionData.roundDuration || 60) - elapsed));
   }, [questionData.text]); // Reset timer when question changes
 
+  // Local tick fills the gaps between server ticks (server sends every ~1 s)
   useEffect(() => {
-    if (secondsLeft <= 0 || paused) return;
-    const id = setTimeout(() => setSecondsLeft(s => Math.max(0, s - 1)), 1000);
+    if (localSecondsLeft <= 0 || paused) return;
+    const id = setTimeout(() => setLocalSecondsLeft(s => Math.max(0, s - 1)), 1000);
     return () => clearTimeout(id);
-  }, [secondsLeft, paused]);
+  }, [localSecondsLeft, paused]);
+
+  const secondsLeft = serverSecondsLeft !== undefined ? serverSecondsLeft : localSecondsLeft;
 
   return (
     <div className="flex flex-col items-center gap-8 w-full max-w-5xl">
@@ -3536,7 +3546,7 @@ export default function HostPage() {
       case 'mlt-end':
         return <MltEndPanel mlt={{ ...mlt, gameName: gameInfo.gameName }} />;
       case 'question':
-        return <QuestionPanel questionData={questionData} players={players} paused={!!phaseTimer?.paused} />;
+        return <QuestionPanel questionData={questionData} players={players} paused={!!phaseTimer?.paused} serverSecondsLeft={phaseTimer?.secondsLeft} />;
       case 'voting':
         return <VotingPanel votingData={votingData} players={players} />;
       case 'round-end':

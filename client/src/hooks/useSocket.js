@@ -10,9 +10,15 @@ export const useSocket = () => {
 
   useEffect(() => {
     const onConnect = () => {
-      const savedId = localStorage.getItem('wst_playerId');
-      const savedCode = localStorage.getItem('wst_roomCode');
-      const savedName = localStorage.getItem('wst_playerName');
+      // Use React state (per-tab, in-memory) instead of localStorage (shared between all
+      // browser tabs on the same origin).  When multiple players test on the same device,
+      // each tab has its own state.playerId / state.roomCode, but they share localStorage.
+      // Reading from localStorage here causes tab B's join to overwrite wst_playerId with
+      // B's ID, so when tab A's effect re-runs and calls onConnect(), it reads B's ID and
+      // accidentally remaps player B to tab A's socket — making tab B's submissions invisible.
+      const savedId   = state.playerId;
+      const savedCode = state.roomCode;
+      const savedName = state.playerName || localStorage.getItem('wst_playerName');
       if (savedId && savedCode && savedName) {
         socket.emit('join_room', { code: savedCode, playerName: savedName, playerId: savedId });
       }
@@ -322,6 +328,10 @@ export const useSocket = () => {
       dispatch({ type: 'SELFIE_DRAWING_PHASE', payload: data });
     };
 
+    const onSelfieDrawTimer = (data) => {
+      dispatch({ type: 'SELFIE_DRAW_TIMER', payload: data });
+    };
+
     const onSelfieDrawingReceived = (data) => {
       dispatch({ type: 'SELFIE_DRAWING_RECEIVED', payload: data });
     };
@@ -498,6 +508,7 @@ export const useSocket = () => {
     socket.on('selfie:photo_received', onSelfiePhotoReceived);
     socket.on('selfie:draw_assigned', onSelfieDrawAssigned);
     socket.on('selfie:drawing_phase', onSelfieDrawingPhase);
+    socket.on('selfie:draw_timer', onSelfieDrawTimer);
     socket.on('selfie:drawing_received', onSelfieDrawingReceived);
     socket.on('selfie:voting_started', onSelfieVotingStarted);
     socket.on('selfie:vote_received', onSelfieVoteReceived);
@@ -688,6 +699,7 @@ export const useSocket = () => {
       socket.off('selfie:photo_received', onSelfiePhotoReceived);
       socket.off('selfie:draw_assigned', onSelfieDrawAssigned);
       socket.off('selfie:drawing_phase', onSelfieDrawingPhase);
+      socket.off('selfie:draw_timer', onSelfieDrawTimer);
       socket.off('selfie:drawing_received', onSelfieDrawingReceived);
       socket.off('selfie:voting_started', onSelfieVotingStarted);
       socket.off('selfie:vote_received', onSelfieVoteReceived);
@@ -734,5 +746,5 @@ export const useSocket = () => {
       socket.off('phase_timer', onPhaseTimer);
       socket.off('game_changed', onGameChanged);
     };
-  }, [dispatch, navigate, state.playerId]);
+  }, [dispatch, navigate, state.playerId, state.roomCode, state.playerName]);
 };
