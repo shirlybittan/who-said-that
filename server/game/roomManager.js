@@ -70,6 +70,13 @@ const createRoom = (socketId, playerName = 'Host', gameType = 'most-likely-to', 
     timer: null,
     answerTimerRef: null,
     globalScores: {},
+    promptHistory: {
+      mlt: [],
+      fitb: [],
+      caption: [],
+      pmatch: [],
+      photoassoc: [],
+    },
     roomConfig: {
       roundDurationSecs: typeof roomConfig.roundDurationSecs === 'number'
         ? Math.min(Math.max(roomConfig.roundDurationSecs, 20), 300) : 60,
