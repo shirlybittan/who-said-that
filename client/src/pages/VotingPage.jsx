@@ -22,6 +22,8 @@ export default function VotingPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.currentAnswerIndex]);
 
+  const [pendingVoteId, setPendingVoteId] = useState(null);
+
   useEffect(() => {
     if (!state.isPlaying) return;   // cast screen never auto-votes
     if (state.hasVoted || isRevealed || state.allVotesIn) return;
@@ -38,9 +40,7 @@ export default function VotingPage() {
     }
     const timer = setInterval(() => setTimeLeft(prev => prev - 1), 1000);
     return () => clearInterval(timer);
-  }, [timeLeft, state.hasVoted, isRevealed, state.allVotesIn, state.players, state.playerId, state.roomCode, dispatch]);
-
-  const [pendingVoteId, setPendingVoteId] = useState(null);
+  }, [timeLeft, state.hasVoted, isRevealed, state.allVotesIn, state.players, state.playerId, state.roomCode, dispatch, pendingVoteId]);
 
   const handleVote = (votedPlayerId) => {
     if (state.hasVoted) return;

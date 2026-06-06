@@ -417,8 +417,7 @@ test('Fill-in-the-Blank: answer timer auto-advances to voting', async () => {
   // All players vote (voting for index 0, unless it's their own)
   const resultsPromise = waitFor(hostSock, 'fitb:results', 8000);
   for (let i = 0; i < players.length; i++) {
-    // Vote for the first answer that isn't theirs
-    const myIdx = votingStarted.answers?.findIndex ? -1 : -1; // anon, just vote 0
+    // Vote for the first answer that isn't theirs (answers are anonymous, index 0 is safe)
     players[i].sock.emit('fitb:vote', { code, answerId: 0 });
     await DELAY(50);
   }

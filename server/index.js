@@ -83,6 +83,9 @@ app.post('/api/upload-photo-url', async (req, res) => {
   const player = room.players.find(p => p.id === playerId);
   if (!player) return res.status(404).json({ error: 'Player not found' });
 
+  // Touch the room so it isn't evicted while the client is uploading
+  touchRoom(roomCode);
+
   try {
     const { uploadUrl, publicUrl, objectKey } = await createPresignedUpload(roomCode, playerId, safeMime);
     res.json({ uploadUrl, publicUrl, objectKey });
@@ -561,7 +564,7 @@ const closeTotRound = (io, room, code) => {
 
   // Scoring: majority side gets +1
   const tieRound = countA === countB;
-  const majorityChoice = tieRound ? 'a' : (countA > countB ? 'a' : 'b');
+  const majorityChoice = tieRound ? null : (countA > countB ? 'a' : 'b');
 
   if (!tieRound) {
     const winners = majorityChoice === 'a' ? room.tot.votesA : room.tot.votesB;
