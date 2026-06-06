@@ -240,6 +240,10 @@ export default function DrawTelDrawPage() {
                   {turn?.position > 1 ? "Previous Drawing" : "Your Prompt"}
                 </p>
                 {turn?.position > 1 ? (
+                  <>
+                    <p className="text-sm font-['Fredoka_One'] text-[#FFE66D] text-center mb-2">
+                      "{turn?.finalText}"
+                    </p>
                   <div className="bg-[#000] rounded-xl overflow-hidden relative" style={{ aspectRatio: `${CANVAS_W}/${CANVAS_H}` }}>
                     {selfieData && <img src={selfieData} alt="" className="absolute inset-0 w-full h-full object-cover" />}
                     <canvas
@@ -256,6 +260,7 @@ export default function DrawTelDrawPage() {
                       className="w-full h-auto absolute inset-0"
                     />
                   </div>
+                  </>
                 ) : (
                   <div className="h-full flex flex-col items-center justify-center p-2">
                     <p className="text-3xl font-['Fredoka_One'] text-[#FFE66D] text-center mb-4">

@@ -10,15 +10,9 @@ export const useSocket = () => {
 
   useEffect(() => {
     const onConnect = () => {
-      // Use React state (per-tab, in-memory) instead of localStorage (shared between all
-      // browser tabs on the same origin).  When multiple players test on the same device,
-      // each tab has its own state.playerId / state.roomCode, but they share localStorage.
-      // Reading from localStorage here causes tab B's join to overwrite wst_playerId with
-      // B's ID, so when tab A's effect re-runs and calls onConnect(), it reads B's ID and
-      // accidentally remaps player B to tab A's socket — making tab B's submissions invisible.
-      const savedId   = state.playerId;
-      const savedCode = state.roomCode;
-      const savedName = state.playerName || localStorage.getItem('wst_playerName');
+      const savedId = localStorage.getItem('wst_playerId');
+      const savedCode = localStorage.getItem('wst_roomCode');
+      const savedName = localStorage.getItem('wst_playerName');
       if (savedId && savedCode && savedName) {
         socket.emit('join_room', { code: savedCode, playerName: savedName, playerId: savedId });
       }
@@ -132,14 +126,7 @@ export const useSocket = () => {
 
     const onError = ({ message }) => {
       dispatch({ type: 'SET_ERROR', payload: message });
-      // If the player had a room but it no longer exists (expired/evicted), reset
-      // to home rather than leaving them stranded on a stale game screen.
-      if (state.roomCode && (message === 'Room not found' || message === 'Room has expired')) {
-        dispatch({ type: 'RESET_GAME' });
-        navigate('/');
-      } else {
-        alert(message);
-      }
+      alert(message);
     };
 
     const onKicked = () => {
@@ -335,10 +322,6 @@ export const useSocket = () => {
       dispatch({ type: 'SELFIE_DRAWING_PHASE', payload: data });
     };
 
-    const onSelfieDrawTimer = (data) => {
-      dispatch({ type: 'SELFIE_DRAW_TIMER', payload: data });
-    };
-
     const onSelfieDrawingReceived = (data) => {
       dispatch({ type: 'SELFIE_DRAWING_RECEIVED', payload: data });
     };
@@ -385,9 +368,6 @@ export const useSocket = () => {
     };
     const onCaptionCaptionSubmitted = (data) => {
       dispatch({ type: 'CAPTION_CAPTION_SUBMITTED', payload: data });
-    };
-    const onCaptionWritingTimer = (data) => {
-      dispatch({ type: 'CAPTION_WRITING_TIMER', payload: data });
     };
     const onCaptionVotingPhase = (data) => {
       dispatch({ type: 'CAPTION_VOTING_PHASE', payload: data });
@@ -441,7 +421,6 @@ export const useSocket = () => {
     };
 
     const onGameChanged = ({ gameType, players, gameName }) => {
-      console.log('[socket] game_changed received:', gameType);
       dispatch({ type: 'GAME_SWITCHED', payload: { gameType, players, gameName } });
       navigate('/lobby');
     };
@@ -519,7 +498,6 @@ export const useSocket = () => {
     socket.on('selfie:photo_received', onSelfiePhotoReceived);
     socket.on('selfie:draw_assigned', onSelfieDrawAssigned);
     socket.on('selfie:drawing_phase', onSelfieDrawingPhase);
-    socket.on('selfie:draw_timer', onSelfieDrawTimer);
     socket.on('selfie:drawing_received', onSelfieDrawingReceived);
     socket.on('selfie:voting_started', onSelfieVotingStarted);
     socket.on('selfie:vote_received', onSelfieVoteReceived);
@@ -531,7 +509,6 @@ export const useSocket = () => {
     socket.on('caption:photo_submitted', onCaptionPhotoSubmitted);
     socket.on('caption:writing_phase', onCaptionWritingPhase);
     socket.on('caption:caption_submitted', onCaptionCaptionSubmitted);
-    socket.on('caption:writing_timer', onCaptionWritingTimer);
     socket.on('caption:voting_phase', onCaptionVotingPhase);
     socket.on('caption:your_caption_id', onCaptionYourCaptionId);
     socket.on('caption:vote_received', onCaptionVoteReceived);
@@ -711,7 +688,6 @@ export const useSocket = () => {
       socket.off('selfie:photo_received', onSelfiePhotoReceived);
       socket.off('selfie:draw_assigned', onSelfieDrawAssigned);
       socket.off('selfie:drawing_phase', onSelfieDrawingPhase);
-      socket.off('selfie:draw_timer', onSelfieDrawTimer);
       socket.off('selfie:drawing_received', onSelfieDrawingReceived);
       socket.off('selfie:voting_started', onSelfieVotingStarted);
       socket.off('selfie:vote_received', onSelfieVoteReceived);
@@ -723,7 +699,6 @@ export const useSocket = () => {
       socket.off('caption:photo_submitted', onCaptionPhotoSubmitted);
       socket.off('caption:writing_phase', onCaptionWritingPhase);
       socket.off('caption:caption_submitted', onCaptionCaptionSubmitted);
-      socket.off('caption:writing_timer', onCaptionWritingTimer);
       socket.off('caption:voting_phase', onCaptionVotingPhase);
       socket.off('caption:your_caption_id', onCaptionYourCaptionId);
       socket.off('caption:vote_received', onCaptionVoteReceived);
@@ -759,5 +734,5 @@ export const useSocket = () => {
       socket.off('phase_timer', onPhaseTimer);
       socket.off('game_changed', onGameChanged);
     };
-  }, [dispatch, navigate, state.playerId, state.roomCode, state.playerName]);
+  }, [dispatch, navigate, state.playerId]);
 };

@@ -200,22 +200,12 @@ const evictStaleRooms = (maxAgeMs = 60 * 60 * 1000) => {
       room.mlt?.timerRef,
       room.tot?.timerRef,
       room.draw?.timerRef,
-      room.fitb?.timerRef,
-      room.fitb?.answerTimerRef,
-      room.selfie?.drawTimerRef,
-      room.caption?.writingTimerRef,
       room.dt?.promptTimerRef,
       room.dt?.drawTimerRef,
       room.dt?.guessTimerRef,
       room.dt?.voteTimerRef,
     ];
     timerFields.forEach(ref => { if (ref) { try { clearTimeout(ref); clearInterval(ref); } catch (_) {} } });
-    // Cancel per-chain draw-telephone timers
-    if (room.dt?.chains) {
-      for (const chain of Object.values(room.dt.chains)) {
-        if (chain.timerRef) { try { clearInterval(chain.timerRef); } catch (_) {} }
-      }
-    }
 
     // Drop heavy asset blobs to free memory before GC
     if (room.playerPhotos) room.playerPhotos = {};

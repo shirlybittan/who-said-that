@@ -2592,7 +2592,7 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
         </button>
       </div>
     );
-  } else if (status === 'game-end' || status === 'mlt-end' || status === 'tot-end' || status === 'draw-end' || status === 'fitb-end' || status === 'selfie-results') {
+  } else if (status === 'game-end' || status === 'mlt-end' || status === 'tot-end' || status === 'draw-end' || status === 'fitb-end' || status === 'selfie-results' || status === 'dt-end') {
     const hasNextInQueue = gameQueue && gameQueue.length > 1 && queueIndex < gameQueue.length - 1;
     const nextGame = hasNextInQueue ? gameQueue[queueIndex + 1] : null;
     controls = (
@@ -2639,7 +2639,17 @@ export default function HostPage() {
   const [creatorSettings, setCreatorSettings] = useState({ gameType: 'most-likely-to', rounds: 5 });
 
   const [gameInfo, setGameInfo] = useState({ code: roomCodeParam || '', gameName: '', gameType: '' });
-  const [players, setPlayers] = useState([]);
+  const [players, setPlayersRaw] = useState([]);
+  const setPlayers = (arr) => {
+    const input = Array.isArray(arr) ? arr : [];
+    const seen = new Set();
+    const deduped = input.filter(p => {
+      if (seen.has(p.id)) return false;
+      seen.add(p.id);
+      return true;
+    });
+    setPlayersRaw(deduped);
+  };
 
   const [mlt, setMlt] = useState({
     prompt: '', round: 0, totalRounds: 0,
@@ -2968,7 +2978,7 @@ export default function HostPage() {
     sock.on('fitb:round_start', (data) => {
       setFitbData(prev => ({
         ...prev, phase: 'answering', round: data.round, totalRounds: data.totalRounds,
-        question: data.question, answeredCount: 0, totalAnswerers: data.totalAnswerers || 0,
+        question: data.question, answeredCount: 0, answeredPlayerIds: [], totalAnswerers: data.totalAnswerers || 0,
         voteCount: 0, totalVoters: 0, answers: [],
         answerTimeLeft: data.timeLimit || 30, answerTimeTotal: data.timeLimit || 30,
       }));
@@ -3173,7 +3183,8 @@ export default function HostPage() {
     });
     sock.on('dt:reveal_update', (data) => {
       if (!isActiveSock()) return;
-      setDtData(prev => ({ ...prev, phase: 'reveal', reveal: { ...data } }));
+      const votedPlayerIds = data.votes ? Object.keys(data.votes) : [];
+      setDtData(prev => ({ ...prev, phase: 'reveal', reveal: { ...data, votedPlayerIds } }));
     });
     sock.on('dt:vote_received', ({ promptId, voteCount, totalVoters, votedPlayerIds }) => {
       if (!isActiveSock()) return;
@@ -3640,7 +3651,7 @@ export default function HostPage() {
         </div>
       </div>}
 
-      {['game-end', 'mlt-end', 'tot-end', 'draw-end', 'fitb-end', 'selfie-results'].includes(status) && (
+      {['game-end', 'mlt-end', 'tot-end', 'draw-end', 'fitb-end', 'selfie-results', 'dt-end'].includes(status) && (
         <Confetti width={window.innerWidth} height={window.innerHeight} recycle={false} numberOfPieces={400} />
       )}
 

@@ -17,7 +17,7 @@ const { buildMiniGameSnapshot } = require('./game/miniGameSnapshot');
 const mltPromptBank = require('./questions/mostLikelyTo');
 const { words: drawWordBank, prompts: drawPrompts } = require('./questions/drawing');
 const { selfiePrompts } = require('./questions/selfie');
-const { isConfigured: storageConfigured, createPresignedUpload, getPublicBaseUrl } = require('./storage/photoStorage');
+const { isConfigured: storageConfigured, createPresignedUpload } = require('./storage/photoStorage');
 
 const app = express();
 app.use(cors());
@@ -92,8 +92,6 @@ const startAnswerTimer = (io, room, code, seconds, onExpire) => {
   stopAnswerTimer(room);
   room.answerSecondsLeft = seconds;
   room.answerPaused = false;
-  // Always reset draft map at the start of each answer phase
-  room.answerDrafts = {};
   io.to(code).emit('phase_timer', { secondsLeft: seconds, phase: 'answering' });
   room.answerTimerRef = setInterval(() => {
     if (room.phase !== 'question') { stopAnswerTimer(room); return; }
@@ -102,21 +100,6 @@ const startAnswerTimer = (io, room, code, seconds, onExpire) => {
     io.to(code).emit('phase_timer', { secondsLeft: room.answerSecondsLeft, phase: 'answering' });
     if (room.answerSecondsLeft <= 0) {
       stopAnswerTimer(room);
-      // Before advancing, flush drafts: any player who typed but didn't officially submit
-      // gets their draft text (or a fallback) auto-submitted so every player has an answer.
-      const playing = room.players.filter(p => p.isConnected && p.isPlaying);
-      playing.forEach(p => {
-        const alreadySubmitted = room.answers.find(a => a.playerId === p.id);
-        if (!alreadySubmitted) {
-          const draftText = (room.answerDrafts?.[p.id] || '').trim();
-          room.answers.push({
-            playerId: p.id,
-            playerName: p.name,
-            text: draftText || "⏰ Ran out of time",
-            votes: [],
-          });
-        }
-      });
       onExpire();
     }
   }, 1000);
@@ -535,14 +518,14 @@ const closeTotRound = (io, room, code) => {
   const connectedPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
   const countA = Object.keys(room.tot.votesA).length;
   const countB = Object.keys(room.tot.votesB).length;
-  const total = countA + countB || 1;
+  const total = countA + countB;
 
-  const pctA = Math.round((countA / total) * 100);
-  const pctB = 100 - pctA;
+  const pctA = total === 0 ? 0 : Math.round((countA / total) * 100);
+  const pctB = total === 0 ? 0 : 100 - pctA;
 
   // Scoring: majority side gets +1
-  const majorityChoice = countA >= countB ? 'a' : 'b';
   const tieRound = countA === countB;
+  const majorityChoice = tieRound ? 'a' : (countA > countB ? 'a' : 'b');
 
   if (!tieRound) {
     const winners = majorityChoice === 'a' ? room.tot.votesA : room.tot.votesB;
@@ -645,35 +628,9 @@ const closeSitVoting = (io, room, code) => {
 // Players who count toward round thresholds (connected, playing, not waiting for next round)
 const activePlayers = (room) => room.players.filter(p => p.isConnected && p.isPlaying && !p.joinedMidRound);
 
-// Strip non-serializable timer references before sending room data to clients.
-// Node.js Timeout objects are circular and cause JSON.stringify to throw
-// "Maximum call stack size exceeded" when socket.io tries to serialize them.
-function sanitizeRoomForClient(room) {
-  const r = { ...room };
-  delete r.answerTimerRef;
-  if (r.mlt) { const m = { ...r.mlt }; delete m.timerRef; r.mlt = m; }
-  if (r.tot) { const t = { ...r.tot }; delete t.timerRef; r.tot = t; }
-  if (r.draw) { const d = { ...r.draw }; delete d.timerRef; r.draw = d; }
-  if (r.fitb) { const f = { ...r.fitb }; delete f.timerRef; delete f.answerTimerRef; r.fitb = f; }
-  if (r.dt) {
-    const dt = { ...r.dt };
-    delete dt.promptTimerRef; delete dt.guessTimerRef; delete dt.voteTimerRef;
-    if (dt.chains) {
-      const chains = {};
-      for (const [id, chain] of Object.entries(dt.chains)) { chains[id] = { ...chain }; delete chains[id].timerRef; }
-      dt.chains = chains;
-    }
-    r.dt = dt;
-  }
-  if (r.selfie) { const s = { ...r.selfie }; delete s.drawTimerRef; r.selfie = s; }
-  if (r.caption) { const c = { ...r.caption }; delete c.writingTimerRef; r.caption = c; }
-  return r;
-}
-
 // Cancel all active game timers for a room (called before starting a new game)
 function cancelAllTimers(room) {
   if (room.mlt?.timerRef) { clearTimeout(room.mlt.timerRef); room.mlt.timerRef = null; }
-  if (room.tot?.timerRef) { clearTimeout(room.tot.timerRef); room.tot.timerRef = null; }
   if (room.draw?.timerRef) { clearInterval(room.draw.timerRef); room.draw.timerRef = null; }
   if (room.fitb?.timerRef) { clearTimeout(room.fitb.timerRef); room.fitb.timerRef = null; }
   if (room.fitb?.answerTimerRef) { clearTimeout(room.fitb.answerTimerRef); room.fitb.answerTimerRef = null; }
@@ -686,8 +643,6 @@ function cancelAllTimers(room) {
   if (room.dt?.promptTimerRef) { clearTimeout(room.dt.promptTimerRef); room.dt.promptTimerRef = null; }
   if (room.dt?.guessTimerRef) { clearTimeout(room.dt.guessTimerRef); room.dt.guessTimerRef = null; }
   if (room.dt?.voteTimerRef) { clearTimeout(room.dt.voteTimerRef); room.dt.voteTimerRef = null; }
-  if (room.selfie?.drawTimerRef) { clearInterval(room.selfie.drawTimerRef); room.selfie.drawTimerRef = null; }
-  if (room.caption?.writingTimerRef) { clearInterval(room.caption.writingTimerRef); room.caption.writingTimerRef = null; }
   stopAnswerTimer(room);
 }
 
@@ -707,7 +662,7 @@ io.on('connection', (socket) => {
       touchRoom(roomCode);
       socket.join(room.code);
       socket.emit('join_success', {
-        room: sanitizeRoomForClient(room),
+        room,
         playerId: player.id,
         isRejoin: true,
         miniGameState: buildMiniGameSnapshot(room, player.id, {
@@ -718,9 +673,8 @@ io.on('connection', (socket) => {
         }),
       });
       socket.to(room.code).emit('player_reconnected', { playerId: player.id, playerName: player.name, players: room.players });
-    } catch (err) {
-      // Expected: room expired or player not found — client will handle via join_room
-      if (err.message !== 'Room not found') console.warn('[auth-rejoin]', err.message);
+    } catch (_) {
+      // Auth credentials no longer valid (room expired, etc.) — client will handle via join_room
     }
   })();
 
@@ -756,7 +710,7 @@ io.on('connection', (socket) => {
       }
       socket.join(room.code);
       socket.emit('join_success', {
-        room: sanitizeRoomForClient(room),
+        room,
         playerId: player.id,
         isRejoin,
         miniGameState: buildMiniGameSnapshot(room, player.id, {
@@ -1084,16 +1038,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // ─── Draft answer — saves player's in-progress text so timer expiry can auto-submit it ──
-  socket.on('answer_draft', ({ code, text }) => {
-    const room = getRoom(code);
-    if (!room || room.phase !== 'question') return;
-    const player = room.players.find(p => p.socketId === socket.id);
-    if (!player || !player.isConnected || !player.isPlaying) return;
-    if (!room.answerDrafts) room.answerDrafts = {};
-    room.answerDrafts[player.id] = (typeof text === 'string' ? text : '').slice(0, 500);
-  });
-
   socket.on('sit:vote', ({ code, answerId }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'sit-voting') return;
@@ -1304,6 +1248,38 @@ io.on('connection', (socket) => {
     room.currentRound++;
     room.currentQuestionIndex++;
     emitNextQuestion(io, room, code);
+  });
+
+  // Change the current question without advancing the round counter
+  socket.on('tot:change_question', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'tot') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+
+    stopTotTimer(room);
+    // Swap in a replacement question from the pool without incrementing round
+    const usedIndexes = new Set();
+    for (let i = 0; i <= room.currentQuestionIndex; i++) usedIndexes.add(i);
+
+    // Find next unused question of type 'this-or-that' in the list
+    let nextIdx = -1;
+    for (let i = room.currentQuestionIndex + 1; i < room.questions.length; i++) {
+      if (room.questions[i].type === 'this-or-that' || room.questions[i].a) {
+        nextIdx = i;
+        break;
+      }
+    }
+    if (nextIdx === -1) {
+      // No replacement available; just re-emit same question
+      emitTotQuestion(io, room, code);
+      return;
+    }
+    // Swap the question at currentQuestionIndex with the new one
+    const replacement = room.questions[nextIdx];
+    room.questions[nextIdx] = room.questions[room.currentQuestionIndex];
+    room.questions[room.currentQuestionIndex] = replacement;
+    emitTotQuestion(io, room, code);
   });
 
   socket.on('tot:pause', ({ code }) => {
@@ -2286,11 +2262,10 @@ io.on('connection', (socket) => {
   // ─── Selfie Roast handlers ─────────────────────────────────────────────────
 
   socket.on('selfie:start', ({ code, rounds }) => {
-    console.log(`[selfie:start] code=${code} rounds=${rounds} socketId=${socket.id}`);
     const room = getRoom(code);
-    if (!room) { console.log(`[selfie:start] BLOCKED: room not found`); return; }
+    if (!room) return;
     const player = room.players.find(p => p.socketId === socket.id);
-    if (!player || !player.isHost) { console.log(`[selfie:start] BLOCKED: player=${player?.name} isHost=${player?.isHost}`); return; }
+    if (!player || !player.isHost) return;
 
     cancelAllTimers(room);
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
@@ -2343,12 +2318,7 @@ io.on('connection', (socket) => {
 
     // ── Validate: accept either a cloud storage HTTPS URL or a Base64 data URI ──
     if (!photoData || typeof photoData !== 'string') return;
-    // Cloud URL must originate from our own configured storage bucket to prevent
-    // content injection via arbitrary external URLs.
-    const storageBase = storageConfigured() ? getPublicBaseUrl() : null;
-    const isCloudUrl = !!(storageBase &&
-      photoData.startsWith(storageBase) &&
-      /\.(jpg|jpeg|png|webp)(\?.*)?$/i.test(photoData));
+    const isCloudUrl = /^https:\/\/.+\.(jpg|jpeg|png|webp)(\?.*)?$/i.test(photoData);
     const isBase64 = photoData.startsWith('data:image/jpeg;base64,') ||
                      photoData.startsWith('data:image/png;base64,')  ||
                      photoData.startsWith('data:image/webp;base64,');
@@ -2495,28 +2465,7 @@ io.on('connection', (socket) => {
 
     // Broadcast drawing phase start
     const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
-    const drawSecs = room.roomConfig?.selfieDrawSecs || 90;
-    room.selfie.timeLimit = drawSecs;
-    room.selfie.secondsLeft = drawSecs;
-    io.to(code).emit('selfie:drawing_phase', { players, totalDrawers: drawerIds.length, promptTemplate: room.selfie.promptTemplate, timeLimit: drawSecs, secondsLeft: drawSecs });
-
-    // Start per-selfie draw timer
-    if (room.selfie.drawTimerRef) { clearInterval(room.selfie.drawTimerRef); room.selfie.drawTimerRef = null; }
-    room.selfie.drawTimerRef = setInterval(() => {
-      if (!room.selfie || room.selfie.phase !== 'drawing') {
-        clearInterval(room.selfie.drawTimerRef); room.selfie.drawTimerRef = null; return;
-      }
-      room.selfie.secondsLeft = Math.max(0, (room.selfie.secondsLeft || 0) - 1);
-      io.to(code).emit('selfie:draw_timer', { secondsLeft: room.selfie.secondsLeft });
-      if (room.selfie.secondsLeft <= 0) {
-        clearInterval(room.selfie.drawTimerRef); room.selfie.drawTimerRef = null;
-        io.to(code).emit('selfie:drawing_ending');
-        setTimeout(() => {
-          if (room.selfie.phase !== 'drawing') return;
-          startSelfieVoting(io, room, code);
-        }, 1500);
-      }
-    }, 1000);
+    io.to(code).emit('selfie:drawing_phase', { players, totalDrawers: drawerIds.length, promptTemplate: room.selfie.promptTemplate });
   };
 
   socket.on('selfie:skip_to_drawing', ({ code }) => {
@@ -2534,7 +2483,7 @@ io.on('connection', (socket) => {
     if (!room || room.phase !== 'selfie' || room.selfie.phase !== 'drawing') return;
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
-    // Allow re-submission (update drawing) while the drawing phase is still open.
+    if (room.selfie.strokes[player.id]) return; // already submitted
 
     // Sanitize strokes
     if (!Array.isArray(strokes)) return;
@@ -2885,12 +2834,6 @@ io.on('connection', (socket) => {
     room.caption.captions = {};
     room.caption.votes = {};
 
-    // Cancel any stale writing timer from a previous round
-    if (room.caption.writingTimerRef) {
-      clearTimeout(room.caption.writingTimerRef);
-      room.caption.writingTimerRef = null;
-    }
-
     // Pick the featured photo owner for this round (cycle through players)
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
     const ownerIndex = (room.caption.currentRound - 1) % playingPlayers.length;
@@ -2901,9 +2844,6 @@ io.on('connection', (socket) => {
     room.caption.usedPrompts.push(promptObj.text);
     room.caption.currentPromptIndex++;
 
-    const WRITING_SECS = 60;
-    room.caption.writingSecondsLeft = WRITING_SECS;
-
     const owner = room.players.find(p => p.id === room.caption.featuredOwnerId);
     io.to(code).emit('caption:writing_phase', {
       round: room.caption.currentRound,
@@ -2913,32 +2853,7 @@ io.on('connection', (socket) => {
       featuredOwnerName: owner?.name || '?',
       featuredPhotoData: room.caption.photos[room.caption.featuredOwnerId],
       writers: playingPlayers.filter(p => p.id !== room.caption.featuredOwnerId).map(p => ({ id: p.id, name: p.name })),
-      writingSecondsLeft: WRITING_SECS,
     });
-
-    // Broadcast per-second countdown so clients can show a live timer and auto-submit
-    room.caption.writingTimerRef = setInterval(() => {
-      if (room.phase !== 'caption' || room.caption.phase !== 'writing') {
-        clearInterval(room.caption.writingTimerRef);
-        room.caption.writingTimerRef = null;
-        return;
-      }
-      room.caption.writingSecondsLeft = Math.max(0, (room.caption.writingSecondsLeft || 0) - 1);
-      io.to(code).emit('caption:writing_timer', { secondsLeft: room.caption.writingSecondsLeft });
-      if (room.caption.writingSecondsLeft <= 0) {
-        clearInterval(room.caption.writingTimerRef);
-        room.caption.writingTimerRef = null;
-        // Auto-submit fallback text for writers who haven't submitted
-        const writers = room.players.filter(p => p.isConnected && p.isPlaying && p.id !== room.caption.featuredOwnerId);
-        writers.forEach(p => {
-          if (!room.caption.captions[p.id]) {
-            const captionId = `cap_${p.id}_${Date.now()}`;
-            room.caption.captions[p.id] = { id: captionId, playerId: p.id, text: "⏰ Ran out of time" };
-          }
-        });
-        startCaptionVotingPhase(io, room, code);
-      }
-    }, 1000);
   }
 
   socket.on('caption:submit_caption', ({ code, text }) => {
@@ -4150,16 +4065,12 @@ io.on('connection', (socket) => {
   // ─── Change game (keep same room/players, switch game type) ───────────────
 
   socket.on('change_game', ({ code, newGameType }) => {
-    console.log(`[change_game] code=${code} newGameType=${newGameType} socketId=${socket.id}`);
     const room = getRoom(code);
-    if (!room) { console.log(`[change_game] BLOCKED: room not found`); return; }
+    if (!room) return;
     const player = room.players.find(p => p.socketId === socket.id);
-    if (!player || !player.isHost) {
-      console.log(`[change_game] BLOCKED: player=${player?.name} isHost=${player?.isHost} (socketId mismatch or not host)`);
-      return;
-    }
+    if (!player || !player.isHost) return;
     const validGameTypes = ['who-said-that', 'most-likely-to', 'situational', 'this-or-that', 'mixed', 'drawing', 'fill-in-the-blank', 'selfie-roast', 'caption', 'pmatch', 'photoassoc', 'selfie-beforeafter', 'draw-telephone'];
-    if (!validGameTypes.includes(newGameType)) { console.log(`[change_game] BLOCKED: invalid gameType ${newGameType}`); return; }
+    if (!validGameTypes.includes(newGameType)) return;
 
     // Cancel any active timers before resetting state
     cancelAllTimers(room);
@@ -4186,7 +4097,6 @@ io.on('connection', (socket) => {
     room.photoVote = { subType: 'pmatch', phase: 'waiting', photos: {}, currentRound: 1, totalRounds: 5, prompts: [], currentPromptIndex: 0, votes: {}, scores: {} };
     room.dt = { phase: 'waiting', prompts: [], chains: {}, activeTurns: {}, pendingTurns: {}, guesses: {}, votes: {}, revealQueue: [], revealCurrentIndex: 0, revealStep: 0, chainsCompletedDrawing: 0, totalChains: 0, scores: {}, promptStartedAt: null, guessStartedAt: null, voteStartedAt: null };
 
-    console.log(`[change_game] OK: switching room ${code} to ${newGameType}`);
     io.to(code).emit('game_changed', {
       code,
       gameType: newGameType,

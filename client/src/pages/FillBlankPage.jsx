@@ -34,6 +34,9 @@ export default function FillBlankPage() {
   const autoSubmitRef = useRef({ answerText });
   useEffect(() => { autoSubmitRef.current = { answerText }; });
 
+  // Clear the input when a new question arrives
+  useEffect(() => { setAnswerText(''); }, [fitb.question]);
+
   // Guard: don't auto-submit until the timer has actually started ticking
   const timerWasActiveRef = useRef(false);
   useEffect(() => {
