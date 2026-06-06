@@ -431,6 +431,7 @@ export const useSocket = () => {
     };
 
     const onGameChanged = ({ gameType, players, gameName }) => {
+      console.log('[socket] game_changed received:', gameType);
       dispatch({ type: 'GAME_SWITCHED', payload: { gameType, players, gameName } });
       navigate('/lobby');
     };

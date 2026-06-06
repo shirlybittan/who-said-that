@@ -188,7 +188,7 @@ export default function SelfieDrawPage() {
         />
       </div>
 
-      {!selfie.hasSubmittedDrawing ? (
+      {(
         <>
           {/* Color palette */}
           <div className="flex flex-wrap justify-center gap-2 mb-2">

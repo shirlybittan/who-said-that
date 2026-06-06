@@ -2281,10 +2281,11 @@ io.on('connection', (socket) => {
   // ─── Selfie Roast handlers ─────────────────────────────────────────────────
 
   socket.on('selfie:start', ({ code, rounds }) => {
+    console.log(`[selfie:start] code=${code} rounds=${rounds} socketId=${socket.id}`);
     const room = getRoom(code);
-    if (!room) return;
+    if (!room) { console.log(`[selfie:start] BLOCKED: room not found`); return; }
     const player = room.players.find(p => p.socketId === socket.id);
-    if (!player || !player.isHost) return;
+    if (!player || !player.isHost) { console.log(`[selfie:start] BLOCKED: player=${player?.name} isHost=${player?.isHost}`); return; }
 
     cancelAllTimers(room);
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
@@ -4110,12 +4111,16 @@ io.on('connection', (socket) => {
   // ─── Change game (keep same room/players, switch game type) ───────────────
 
   socket.on('change_game', ({ code, newGameType }) => {
+    console.log(`[change_game] code=${code} newGameType=${newGameType} socketId=${socket.id}`);
     const room = getRoom(code);
-    if (!room) return;
+    if (!room) { console.log(`[change_game] BLOCKED: room not found`); return; }
     const player = room.players.find(p => p.socketId === socket.id);
-    if (!player || !player.isHost) return;
+    if (!player || !player.isHost) {
+      console.log(`[change_game] BLOCKED: player=${player?.name} isHost=${player?.isHost} (socketId mismatch or not host)`);
+      return;
+    }
     const validGameTypes = ['who-said-that', 'most-likely-to', 'situational', 'this-or-that', 'mixed', 'drawing', 'fill-in-the-blank', 'selfie-roast', 'caption', 'pmatch', 'photoassoc', 'selfie-beforeafter', 'draw-telephone'];
-    if (!validGameTypes.includes(newGameType)) return;
+    if (!validGameTypes.includes(newGameType)) { console.log(`[change_game] BLOCKED: invalid gameType ${newGameType}`); return; }
 
     // Cancel any active timers before resetting state
     cancelAllTimers(room);
@@ -4142,6 +4147,7 @@ io.on('connection', (socket) => {
     room.photoVote = { subType: 'pmatch', phase: 'waiting', photos: {}, currentRound: 1, totalRounds: 5, prompts: [], currentPromptIndex: 0, votes: {}, scores: {} };
     room.dt = { phase: 'waiting', prompts: [], chains: {}, activeTurns: {}, pendingTurns: {}, guesses: {}, votes: {}, revealQueue: [], revealCurrentIndex: 0, revealStep: 0, chainsCompletedDrawing: 0, totalChains: 0, scores: {}, promptStartedAt: null, guessStartedAt: null, voteStartedAt: null };
 
+    console.log(`[change_game] OK: switching room ${code} to ${newGameType}`);
     io.to(code).emit('game_changed', {
       code,
       gameType: newGameType,

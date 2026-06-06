@@ -56,6 +56,7 @@ export default function LobbyPage() {
   const handleStartGame = () => {
     if (state.players.filter(p => p.isPlaying).length < 3) return alert('Need at least 3 players to start!');
     sounds.click();
+    console.log('[lobby] handleStartGame gameType=', state.gameType);
     if (isMlt) {
       socket.emit('mlt:start', {
         code: state.roomCode,
@@ -71,10 +72,10 @@ export default function LobbyPage() {
       socket.emit('pmatch:start', { code: state.roomCode });
       return;
     } else if (state.gameType === 'selfie-roast') {
-      socket.emit('selfie:start_game', { code: state.roomCode });
+      socket.emit('selfie:start', { code: state.roomCode, rounds: 3 });
       return;
     } else if (state.gameType === 'caption') {
-      socket.emit('caption:start_game', { code: state.roomCode });
+      socket.emit('caption:start', { code: state.roomCode, rounds: 3 });
       return;
     } else {
       if (state.gameType === 'who-said-that' && state.mode === 'custom' && (!state.customQuestions || state.customQuestions.length < state.totalRounds)) {
