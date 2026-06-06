@@ -58,6 +58,41 @@ const questions = [
   "The statute of limitations on {name}'s worst decision expired when they ___",
   "{name}'s proudest achievement that they can't put on a résumé is ___",
   "{name} has a 5-year plan that involves ___",
+
+  // New additions — personality & quirks
+  "The text {name} has been meaning to reply to for three weeks says ___",
+  "{name}'s go-to excuse that everyone sees through immediately is ___",
+  "The one song {name} would play at full volume to drive everyone away is ___",
+  "{name} is the only person in the world who thinks ___ is actually a good idea",
+  "If {name} were a holiday, they'd be ___",
+  "The phrase that lives rent-free in {name}'s head is ___",
+  "{name}'s most confident wrong opinion is ___",
+  "The thing {name} does that they don't realise is extremely weird is ___",
+
+  // New additions — social & absurd
+  "If {name} had to describe their entire personality in one emoji, it would be ___",
+  "{name}'s spirit animal after 11pm is ___",
+  "The compliment {name} gives that is actually a roast in disguise is ___",
+  "If {name}'s life were a movie genre, it would be ___",
+  "The reason {name} would get eliminated first in a survival competition is ___",
+  "{name}'s most chaotic 'great idea' that seemed brilliant at the time was ___",
+  "If {name} had a warning label, it would say ___",
+  "The Wikipedia page {name} has definitely fallen down a rabbit hole reading is ___",
+
+  // New additions — work & future
+  "The job title that perfectly describes how {name} operates is ___",
+  "If {name} had to give a TEDTalk tomorrow, it would be about ___",
+  "The business {name} would absolutely launch on a whim is ___",
+  "{name}'s retirement plan is secretly ___",
+  "The one rule {name} would add to every workplace is ___",
+
+  // New additions — hypothetical & creative
+  "If {name} could live in any fictional world, they'd choose ___ because ___",
+  "The villain {name} would secretly be rooting for in every movie is ___",
+  "{name}'s superpower would backfire immediately because ___",
+  "The animal {name} would be reincarnated as based on their behaviour is ___",
+  "The talent {name} is convinced they have but definitely doesn't is ___",
 ];
 
 module.exports = questions;
+
