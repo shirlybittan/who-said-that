@@ -5,8 +5,6 @@ import { useSounds } from '../../hooks/useSounds';
 import { translations } from '../../locales/translations';
 import PlayerGameLayout from '../../game-core/layouts/PlayerGameLayout';
 import { usePlayerGameFrame } from '../../game-core/hooks/usePlayerGameFrame';
-import { useVoteConfirmation } from '../../game-core/hooks/useVoteConfirmation';
-import ConfirmVoteCard from '../../game-core/player/ConfirmVoteCard';
 import JokerButton from '../../game-core/player/JokerButton';
 
 function ChoiceList({ choices, onSelect, helperText }) {
@@ -72,11 +70,6 @@ export default function MostLikelyToPlayerView() {
     context: { sounds, labels: t },
   });
 
-  const vote = useVoteConfirmation({
-    onConfirmSubmit: actions.submitChoice,
-    resetKey: `${state.mlt.round}-${state.mlt.prompt}`,
-  });
-
   const selectionUI = frame.hasSubmitted ? (
     <LockedVoteCard
       choice={frame.submittedChoice}
@@ -94,7 +87,7 @@ export default function MostLikelyToPlayerView() {
       helperText={t.tapToVote}
       onSelect={(choice) => {
         actions.playChoiceClick(choice);
-        vote.choose(choice);
+        actions.submitChoice(choice);
       }}
     />
   );
@@ -103,16 +96,6 @@ export default function MostLikelyToPlayerView() {
     <PlayerGameLayout
       frame={frame}
       selectionUI={selectionUI}
-      confirmUI={vote.pending && !vote.confirmed ? (
-        <ConfirmVoteCard
-          vote={vote.pending}
-          onConfirm={vote.confirm}
-          onChange={vote.change}
-          titleLabel={t.confirmVoteLabel}
-          confirmLabel={t.confirmVote}
-          changeLabel={t.changeVote}
-        />
-      ) : null}
       jokerUI={
         <JokerButton
           left={frame.joker.left}

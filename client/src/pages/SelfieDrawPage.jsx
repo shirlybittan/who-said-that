@@ -64,7 +64,7 @@ export default function SelfieDrawPage() {
 
   const onPointerDown = useCallback((e) => {
     e.preventDefault();
-    if (selfie.hasSubmittedDrawing) return;
+    // Allow drawing even after submit — each subsequent stroke updates the submission
     isDrawing.current = true;
     const pt = getEventPos(e);
     curStroke.current = { color, width, type: tool, points: [pt] };
@@ -147,9 +147,9 @@ export default function SelfieDrawPage() {
     >
       <div className="flex items-center justify-between w-full max-w-sm mb-1">
         <h1 className="text-2xl font-['Fredoka_One'] text-[#FF6B6B] mt-4">🎨 Draw on {selfie.assignedOwnerName}'s selfie!</h1>
-        {selfie.secondsLeft > 0 && (
+        {selfie.phase === 'drawing' && (
           <div className="mt-4 flex-shrink-0">
-            <TimerRing secondsLeft={selfie.secondsLeft} total={selfie.timeLimit || 90} size={52} />
+            <TimerRing secondsLeft={selfie.secondsLeft ?? 90} total={selfie.timeLimit || 90} size={52} />
           </div>
         )}
       </div>
@@ -177,7 +177,7 @@ export default function SelfieDrawPage() {
           width={CANVAS_W}
           height={CANVAS_H}
           className="absolute inset-0 w-full h-full"
-          style={{ touchAction: 'none', cursor: selfie.hasSubmittedDrawing ? 'default' : 'crosshair' }}
+          style={{ touchAction: 'none', cursor: 'crosshair' }}
           onMouseDown={onPointerDown}
           onMouseMove={onPointerMove}
           onMouseUp={onPointerUp}
@@ -263,15 +263,6 @@ export default function SelfieDrawPage() {
             ✓ Drawing submitted! ({selfie.drawingCount}/{selfie.totalDrawers}) — you can still update it
           </p>
         </div>
-      )}
-
-      {state.isHost && (
-        <button
-          onClick={handleSkip}
-          className="mt-4 text-sm text-gray-400 underline font-['Nunito'] hover:text-white transition"
-        >
-          Skip to voting
-        </button>
       )}
 
       {/* Progress dots */}

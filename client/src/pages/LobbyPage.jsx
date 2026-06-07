@@ -6,13 +6,18 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
 
 const GAME_TYPES = [
-  { id: 'who-said-that',  emoji: '🤔', key: 'gameWst',   color: '#FFE66D',  dark: '#0D0D1A' },
-  { id: 'situational',    emoji: '🎭', key: 'gameSit',   color: '#A8E6CF',  dark: '#0D0D1A' },
-  { id: 'this-or-that',   emoji: '⚡', key: 'gameTot',   color: '#6C5CE7',  dark: '#F7F7F7' },
-  { id: 'most-likely-to', emoji: '👑', key: 'gameMlt',   color: '#4ECDC4',  dark: '#0D0D1A' },
-  { id: 'mixed',          emoji: '🎲', key: 'gameMixed', color: '#FF8B94',  dark: '#0D0D1A' },
-  { id: 'drawing',        emoji: '🎨', key: 'gameDraw',  color: '#C39BD3',  dark: '#0D0D1A' },
-  { id: 'draw-telephone',  emoji: '📞', key: 'gameDt',    color: '#FF6B6B',  dark: '#0D0D1A' },
+  { id: 'who-said-that',  emoji: '🤔', key: 'gameWst',    color: '#FFE66D',  dark: '#0D0D1A' },
+  { id: 'situational',    emoji: '🎭', key: 'gameSit',    color: '#A8E6CF',  dark: '#0D0D1A' },
+  { id: 'this-or-that',   emoji: '⚡', key: 'gameTot',    color: '#6C5CE7',  dark: '#F7F7F7' },
+  { id: 'most-likely-to', emoji: '👑', key: 'gameMlt',    color: '#4ECDC4',  dark: '#0D0D1A' },
+  { id: 'mixed',          emoji: '🎲', key: 'gameMixed',  color: '#FF8B94',  dark: '#0D0D1A' },
+  { id: 'drawing',        emoji: '🎨', key: 'gameDraw',   color: '#C39BD3',  dark: '#0D0D1A' },
+  { id: 'draw-telephone', emoji: '📞', key: 'gameDt',     color: '#FF6B6B',  dark: '#0D0D1A' },
+  { id: 'selfie-roast',   emoji: '📸', key: 'gameSelfie', color: '#FD79A8',  dark: '#0D0D1A' },
+  { id: 'caption',        emoji: '💬', key: 'gameCaption',color: '#FD79A8',  dark: '#0D0D1A' },
+  { id: 'pmatch',         emoji: '🎭', key: 'gamePmatch', color: '#FDCB6E',  dark: '#0D0D1A' },
+  { id: 'photoassoc',     emoji: '🎯', key: 'gamePhotoassoc', color: '#A29BFE', dark: '#0D0D1A' },
+  { id: 'fill-in-the-blank', emoji: '✏️', key: 'gameFitb', color: '#55EFC4', dark: '#0D0D1A' },
 ];
 
 export default function LobbyPage() {

@@ -124,7 +124,9 @@ const AnimatedRoutes = () => {
 const GlobalTimerOverlay = () => {
   const { state } = useGame();
   const timer = state.phaseTimer;
-  if (!timer?.active || timer.secondsLeft <= 0) return null;
+  // Hide timer in lobby, home, or end screens — it's only relevant during active gameplay
+  const hiddenPhases = ['lobby', 'home', 'game_end', 'gameEnd', 'dt', 'drawing', 'selfie', 'mlt', 'fitb', 'caption', 'selfie-roast'];
+  if (!timer?.active || timer.secondsLeft <= 0 || hiddenPhases.includes(state.phase)) return null;
   const total = state.roomConfig?.roundDurationSecs || 60;
   return (
     <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 pointer-events-none">

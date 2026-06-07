@@ -327,6 +327,18 @@ export const useSocket = () => {
       dispatch({ type: 'SELFIE_DRAWING_PHASE', payload: data });
     };
 
+    const onSelfieTimer = ({ secondsLeft }) => {
+      dispatch({ type: 'SELFIE_TIMER', payload: { secondsLeft } });
+    };
+
+    const onSelfiePaused = ({ secondsLeft }) => {
+      dispatch({ type: 'SELFIE_PAUSED', payload: { secondsLeft } });
+    };
+
+    const onSelfieResumed = ({ secondsLeft }) => {
+      dispatch({ type: 'SELFIE_RESUMED', payload: { secondsLeft } });
+    };
+
     const onSelfieDrawingReceived = (data) => {
       dispatch({ type: 'SELFIE_DRAWING_RECEIVED', payload: data });
     };
@@ -504,6 +516,9 @@ export const useSocket = () => {
     socket.on('selfie:photo_received', onSelfiePhotoReceived);
     socket.on('selfie:draw_assigned', onSelfieDrawAssigned);
     socket.on('selfie:drawing_phase', onSelfieDrawingPhase);
+    socket.on('selfie:timer', onSelfieTimer);
+    socket.on('selfie:paused', onSelfiePaused);
+    socket.on('selfie:resumed', onSelfieResumed);
     socket.on('selfie:drawing_received', onSelfieDrawingReceived);
     socket.on('selfie:voting_started', onSelfieVotingStarted);
     socket.on('selfie:vote_received', onSelfieVoteReceived);
@@ -699,6 +714,9 @@ export const useSocket = () => {
       socket.off('selfie:photo_received', onSelfiePhotoReceived);
       socket.off('selfie:draw_assigned', onSelfieDrawAssigned);
       socket.off('selfie:drawing_phase', onSelfieDrawingPhase);
+      socket.off('selfie:timer', onSelfieTimer);
+      socket.off('selfie:paused', onSelfiePaused);
+      socket.off('selfie:resumed', onSelfieResumed);
       socket.off('selfie:drawing_received', onSelfieDrawingReceived);
       socket.off('selfie:voting_started', onSelfieVotingStarted);
       socket.off('selfie:vote_received', onSelfieVoteReceived);
