@@ -28,9 +28,11 @@ const DELAY    = (ms) => new Promise(r => setTimeout(r, ms));
 function connect() {
   return new Promise((resolve, reject) => {
     const sock = io(SERVER, { transports: ['websocket'], forceNew: true });
-    sock.once('connect',       () => resolve(sock));
-    sock.once('connect_error', reject);
-    setTimeout(() => reject(new Error('connect timeout')), 8000);
+    let timeoutId;
+    const cleanup = () => clearTimeout(timeoutId);
+    sock.once('connect',       () => { cleanup(); resolve(sock); });
+    sock.once('connect_error', (err) => { cleanup(); reject(err); });
+    timeoutId = setTimeout(() => reject(new Error('connect timeout')), 8000);
   });
 }
 

@@ -408,17 +408,22 @@ test('Fill-in-the-Blank: answer timer auto-advances to voting', async () => {
   expect(roundStart.question).toBeTruthy();
   expect(roundStart.timeLimit).toBeGreaterThan(0);
 
-  // Don't submit anything — wait for timer to auto-advance to voting
+  // Don't submit anything — wait for timer to auto-advance to voting.
+  // fitb:voting_started is sent per-player (with myAnswerIndex); collect each player's event.
   console.log(`  ⏳ Waiting for auto-advance (up to ${roundStart.timeLimit + 5}s)…`);
+  const perPlayerVotingPs = players.map(p => waitFor(p.sock, 'fitb:voting_started', (roundStart.timeLimit + 5) * 1000));
   const votingStarted = await waitFor(hostSock, 'fitb:voting_started', (roundStart.timeLimit + 5) * 1000);
+  const perPlayerVoting = await Promise.all(perPlayerVotingPs);
   console.log(`  🗳 Auto-advanced to voting: ${votingStarted.answers?.length} answers (auto-filled)`);
   expect(votingStarted.answers).toBeDefined();
 
-  // All players vote (voting for index 0, unless it's their own)
+  // Each player votes for an answer that isn't their own
   const resultsPromise = waitFor(hostSock, 'fitb:results', 8000);
   for (let i = 0; i < players.length; i++) {
-    // Vote for the first answer that isn't theirs (answers are anonymous, index 0 is safe)
-    players[i].sock.emit('fitb:vote', { code, answerId: 0 });
+    const myIdx = perPlayerVoting[i]?.myAnswerIndex ?? -1;
+    // Pick the first answer index that isn't this player's own
+    const voteIdx = (votingStarted.answers || []).findIndex((_, idx) => idx !== myIdx);
+    players[i].sock.emit('fitb:vote', { code, answerId: voteIdx >= 0 ? voteIdx : 0 });
     await DELAY(50);
   }
   // Host can force results if not all voted

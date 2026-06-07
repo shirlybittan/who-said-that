@@ -2020,7 +2020,7 @@ io.on('connection', (socket) => {
     io.to(code).emit('draw:submission_received', { submittedCount, totalDrawers: playingPlayers.length, submittedPlayerIds });
     console.log(`[Server] Draw submission: ${submittedCount}/${playingPlayers.length} room=${code}`);
 
-    if (!isResubmit && submittedCount >= playingPlayers.length) {
+    if (submittedCount >= playingPlayers.length) {
       if (room.draw.timerRef) { clearInterval(room.draw.timerRef); room.draw.timerRef = null; }
       startDrawVoting(io, room, code);
     }
@@ -2999,9 +2999,17 @@ io.on('connection', (socket) => {
     if (!player || !player.isPlaying || !player.isConnected) return;
     if (room.caption.photos[player.id]) return; // already submitted
 
-    // Validate photo data (basic base64 check)
-    if (!photoData || typeof photoData !== 'string' || !photoData.startsWith('data:image/')) return;
-    if (photoData.length > 2 * 1024 * 1024) return; // 2MB limit
+    // Validate: accept cloud storage URL (from configured domain only) or Base64 data URI
+    if (!photoData || typeof photoData !== 'string') return;
+    const cloudBase = storageConfigured() ? getPublicBaseUrl() : null;
+    const isCloudUrl = cloudBase
+      ? (photoData.startsWith(cloudBase + '/') && /\.(jpg|jpeg|png|webp)(\?.*)?$/i.test(photoData))
+      : false;
+    const isBase64 = photoData.startsWith('data:image/jpeg;base64,') ||
+                     photoData.startsWith('data:image/png;base64,')  ||
+                     photoData.startsWith('data:image/webp;base64,');
+    if (!isCloudUrl && !isBase64) return;
+    if (isBase64 && photoData.length > 2 * 1024 * 1024) return;
 
     room.caption.photos[player.id] = photoData;
     // Persist photo for reuse across selfie-based mini games
@@ -3064,7 +3072,7 @@ io.on('connection', (socket) => {
       room.caption.captions[player.id] = { id: captionId, playerId: player.id, text: sanitized };
     }
 
-    const writers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const writers = room.players.filter(p => p.isConnected && p.isPlaying && p.id !== room.caption.featuredOwnerId);
     const submittedCount = Object.keys(room.caption.captions).length;
     io.to(code).emit('caption:caption_submitted', { playerId: player.id, submittedCount, totalCount: writers.length });
 
@@ -3101,6 +3109,8 @@ io.on('connection', (socket) => {
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
     if (room.caption.votes[player.id]) return; // already voted
+    // Featured owner doesn't vote (they're the subject of the photo)
+    if (player.id === room.caption.featuredOwnerId) return;
 
     // Validate captionId exists
     const captionExists = Object.values(room.caption.captions).some(c => c.id === captionId);
@@ -3111,11 +3121,11 @@ io.on('connection', (socket) => {
 
     room.caption.votes[player.id] = captionId;
 
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const voters = room.players.filter(p => p.isConnected && p.isPlaying && p.id !== room.caption.featuredOwnerId);
     const voteCount = Object.keys(room.caption.votes).length;
-    io.to(code).emit('caption:vote_received', { voteCount, totalVoters: playingPlayers.length, votedPlayerIds: Object.keys(room.caption.votes) });
+    io.to(code).emit('caption:vote_received', { voteCount, totalVoters: voters.length, votedPlayerIds: Object.keys(room.caption.votes) });
 
-    if (voteCount >= playingPlayers.length) {
+    if (voteCount >= voters.length) {
       endCaptionRound(io, room, code);
     }
   });
@@ -3300,8 +3310,17 @@ io.on('connection', (socket) => {
     if (!player || !player.isPlaying || !player.isConnected) return;
     if (room.photoVote.photos[player.id]) return;
 
-    if (!photoData || typeof photoData !== 'string' || !photoData.startsWith('data:image/')) return;
-    if (photoData.length > 2 * 1024 * 1024) return;
+    // Validate: accept cloud storage URL (from configured domain only) or Base64 data URI
+    if (!photoData || typeof photoData !== 'string') return;
+    const cloudBasePv = storageConfigured() ? getPublicBaseUrl() : null;
+    const isCloudUrlPv = cloudBasePv
+      ? (photoData.startsWith(cloudBasePv + '/') && /\.(jpg|jpeg|png|webp)(\?.*)?$/i.test(photoData))
+      : false;
+    const isBase64Pv = photoData.startsWith('data:image/jpeg;base64,') ||
+                       photoData.startsWith('data:image/png;base64,')  ||
+                       photoData.startsWith('data:image/webp;base64,');
+    if (!isCloudUrlPv && !isBase64Pv) return;
+    if (isBase64Pv && photoData.length > 2 * 1024 * 1024) return;
 
     room.photoVote.photos[player.id] = photoData;
     // Persist photo for reuse across selfie-based mini games

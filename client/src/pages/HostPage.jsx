@@ -1780,7 +1780,7 @@ function CaptionHostPanel({ captionData, players }) {
 
   if (phase === 'voting') {
     const voted = captionData.voteCount || 0;
-    const total = captionData.totalVoters || players.filter(p => p.isPlaying && p.isConnected).length;
+    const total = captionData.totalVoters || players.filter(p => p.isPlaying && p.isConnected && p.id !== captionData.featuredOwnerId).length;
     return (
       <div className="flex flex-col items-center gap-6 w-full max-w-xl">
         <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">💬 Selfie Captions{roundLabel}</h1>
@@ -1807,7 +1807,7 @@ function CaptionHostPanel({ captionData, players }) {
             <div className="bg-[#FFE66D] h-2 rounded-full transition-all" style={{ width: total ? `${(voted / total) * 100}%` : '0%' }} />
           </div>
           <div className="flex flex-wrap gap-3 justify-center mt-4">
-            {players.filter(p => p.isPlaying && p.isConnected).map(p => (
+            {players.filter(p => p.isPlaying && p.isConnected && p.id !== captionData.featuredOwnerId).map(p => (
               <PlayerAvatar key={p.id} player={p} size="sm" status={captionData.votedPlayerIds?.includes(p.id) ? 'voted' : 'waiting'} />
             ))}
           </div>
