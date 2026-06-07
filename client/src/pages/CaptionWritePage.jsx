@@ -70,28 +70,6 @@ export default function CaptionWritePage() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3, ease: 'easeOut' }}
       >
-        {isFeaturedOwner ? (
-          <>
-            <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8] mt-6 mb-2">It's Your Photo! 📸</h1>
-            <p className="text-gray-400 font-['Nunito'] text-sm text-center mb-4">
-              Round {caption.round} of {caption.totalRounds}
-            </p>
-            {caption.featuredPhotoData && (
-              <img
-                src={caption.featuredPhotoData}
-                className="w-56 h-56 object-cover rounded-2xl border-2 border-[#FD79A8] mb-3"
-                alt="Your selfie"
-              />
-            )}
-            <div className="w-full max-w-xs bg-[#FFE66D]/10 rounded-2xl px-4 py-3 mb-4 text-center">
-              <p className="text-[#FFE66D] font-['Nunito'] text-sm font-semibold">{caption.prompt}</p>
-            </div>
-            <p className="text-gray-500 font-['Nunito'] text-sm text-center animate-pulse">
-              Others are writing captions… ({caption.captionSubmittedCount || 0} / {caption.totalWriters || '?'})
-            </p>
-          </>
-        ) : (
-          <>
         <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8] mt-6 mb-1">Write a Caption! ✍️</h1>
         <div className="flex items-center gap-4 mb-1">
           <p className="text-gray-400 font-['Nunito'] text-sm text-center">
@@ -103,6 +81,9 @@ export default function CaptionWritePage() {
             </p>
           )}
         </div>
+        {isFeaturedOwner && (
+          <p className="text-xs text-[#FD79A8] font-['Nunito'] mb-1">📸 It's your photo — write a caption about yourself!</p>
+        )}
 
         {caption.featuredPhotoData && (
           <img
@@ -139,8 +120,6 @@ export default function CaptionWritePage() {
             </div>
           </div>
         </MiniGameWrapper>
-          </>
-        )}
       </motion.div>
     </GamePageWrapper>
   );

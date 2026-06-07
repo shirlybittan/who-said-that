@@ -34,29 +34,13 @@ export default function CaptionVotePage() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3, ease: 'easeOut' }}
       >
-        {isFeaturedOwner ? (
-          <>
-            <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8] mt-6 mb-1">Your Photo is Being Judged! 📸</h1>
-            <p className="text-gray-400 font-['Nunito'] text-sm text-center mb-4">
-              Others are voting on the best caption for your selfie!
-            </p>
-            {caption.featuredPhotoData && (
-              <img
-                src={caption.featuredPhotoData}
-                className="w-48 h-48 object-cover rounded-2xl border-2 border-[#FD79A8] mb-4"
-                alt="Your selfie"
-              />
-            )}
-            <p className="text-gray-500 font-['Nunito'] text-sm text-center animate-pulse">
-              {caption.voteCount} / {caption.totalVoters || '?'} votes in…
-            </p>
-          </>
-        ) : (
-          <>
         <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8] mt-6 mb-1">Vote for the Best! 🏆</h1>
         <p className="text-gray-400 font-['Nunito'] text-sm text-center mb-4">
           Which caption fits {caption.featuredOwnerName}'s photo?
         </p>
+        {isFeaturedOwner && (
+          <p className="text-xs text-[#FD79A8] font-['Nunito'] mb-2">📸 It's your photo — but you still get to vote!</p>
+        )}
 
         {caption.featuredPhotoData && (
           <img
@@ -122,8 +106,6 @@ export default function CaptionVotePage() {
               {caption.voteCount} / {caption.totalVoters} votes in
             </p>
           </div>
-        )}
-          </>
         )}
       </motion.div>
     </GamePageWrapper>

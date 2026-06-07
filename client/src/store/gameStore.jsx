@@ -1,7 +1,7 @@
 import React, { createContext, useReducer, useContext } from 'react';
 
 const initialState = {
-  playerId: localStorage.getItem('wst_playerId') || null,
+  playerId: sessionStorage.getItem('wst_playerId') || null,
   playerName: localStorage.getItem('wst_playerName') || null,
   roomCode: localStorage.getItem('wst_roomCode') || null,
   uploadToken: localStorage.getItem('wst_uploadToken') || null,
@@ -272,7 +272,8 @@ export const gameReducer = (state, action) => {
     case 'RESET_GAME':
       return initialState;
     case 'SET_PLAYER_ID':
-      localStorage.setItem('wst_playerId', action.payload);
+      // Use sessionStorage so each browser tab gets its own player ID (avoids sharing bugs in multi-tab testing)
+      try { sessionStorage.setItem('wst_playerId', action.payload); } catch (_) {}
       return { ...state, playerId: action.payload };
     case 'SET_ROOM':
       return {
@@ -697,7 +698,7 @@ export const gameReducer = (state, action) => {
     case 'SELFIE_PHOTO_RECEIVED':
       return {
         ...state,
-        selfie: { ...state.selfie, photoCount: action.payload.photoCount, totalPhotographers: action.payload.totalPlayers },
+        selfie: { ...state.selfie, photoCount: action.payload.photoCount, totalPhotographers: action.payload.totalPhotographers ?? state.selfie.totalPhotographers },
       };
     case 'SELFIE_MARK_PHOTO_SUBMITTED':
       return {

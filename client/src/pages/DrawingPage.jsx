@@ -57,7 +57,7 @@ export default function DrawingPage() {
     }
   }, [state.phase, draw.phase, navigate]);
 
-  // White canvas background on mount and new round
+  // White canvas background on mount, new round, or new word (skip word)
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -66,7 +66,8 @@ export default function DrawingPage() {
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-  }, [draw.round]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draw.round, draw.yourWord]);
 
   // ── Drawing event handlers (all phases of pointer/touch) ─────────────────
   const startDraw = useCallback((x, y) => {

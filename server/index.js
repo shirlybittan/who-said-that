@@ -1152,13 +1152,17 @@ io.on('connection', (socket) => {
     room.sit.votes[player.id] = answerId;
 
     const connectedPlayersCount = activePlayers(room).length;
+    const voteCount = Object.keys(room.sit.votes).length;
     io.to(code).emit('sit:vote_received', {
-      voteCount: Object.keys(room.sit.votes).length,
+      voteCount,
       totalVoters: connectedPlayersCount,
       votedPlayerIds: Object.keys(room.sit.votes),
     });
 
-    if (Object.keys(room.sit.votes).length >= connectedPlayersCount) {
+    // Close when all active players have voted, OR when all answer-authors have
+    // received a vote tally (covers edge cases where activePlayers count shifts).
+    const allVoted = activePlayers(room).every(p => room.sit.votes[p.id]);
+    if (voteCount >= connectedPlayersCount || allVoted) {
       closeSitVoting(io, room, code);
     }
   });
@@ -1276,7 +1280,9 @@ io.on('connection', (socket) => {
     const voteCount = Object.keys(room.tot.votesA).length + Object.keys(room.tot.votesB).length;
     io.to(code).emit('tot:vote_received', { voteCount, totalVoters: connectedPlayers.length, votedPlayerIds: [...Object.keys(room.tot.votesA), ...Object.keys(room.tot.votesB)] });
 
-    if (voteCount >= connectedPlayers.length) {
+    // Close when all active players have voted (covers activePlayers count drift).
+    const allVoted = connectedPlayers.every(p => room.tot.votesA[p.id] || room.tot.votesB[p.id]);
+    if (voteCount >= connectedPlayers.length || allVoted) {
       closeTotRound(io, room, code);
     }
   });
@@ -2486,7 +2492,7 @@ io.on('connection', (socket) => {
     }
 
     const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
-    io.to(code).emit('selfie:photo_phase', { round: 1, totalRounds, players });
+    io.to(code).emit('selfie:photo_phase', { round: 1, totalRounds, players, totalPhotographers: playingPlayers.length });
 
     // Notify players whose photos were pre-loaded so they see "saved selfie" UI
     playingPlayers.forEach(p => {
@@ -2593,7 +2599,7 @@ io.on('connection', (socket) => {
 
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
     const photoCount = Object.keys(room.selfie.photos).length;
-    io.to(code).emit('selfie:photo_received', { photoCount, totalPlayers: playingPlayers.length, submittedPlayerIds: Object.keys(room.selfie.photos) });
+    io.to(code).emit('selfie:photo_received', { photoCount, totalPhotographers: playingPlayers.length, submittedPlayerIds: Object.keys(room.selfie.photos) });
 
     if (photoCount >= playingPlayers.length) {
       assignSelfieDrawers(io, room, code);
@@ -2763,7 +2769,8 @@ io.on('connection', (socket) => {
     const voteCount = Object.keys(room.selfie.votes).length;
     io.to(code).emit('selfie:vote_received', { voteCount, totalVoters: playingPlayers.length, votedPlayerIds: Object.keys(room.selfie.votes) });
 
-    if (voteCount >= playingPlayers.length) {
+    const allVoted = playingPlayers.every(p => room.selfie.votes[p.id] !== undefined);
+    if (voteCount >= playingPlayers.length || allVoted) {
       resolveSelfieVoting(io, room, code);
     }
   });
@@ -2851,7 +2858,7 @@ io.on('connection', (socket) => {
       assignSelfieDrawers(io, room, code);
     } else {
       const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
-      io.to(code).emit('selfie:photo_phase', { round: room.selfie.round, totalRounds: room.selfie.totalRounds, players });
+      io.to(code).emit('selfie:photo_phase', { round: room.selfie.round, totalRounds: room.selfie.totalRounds, players, totalPhotographers: playingPlayers.length });
     }
   });
 
@@ -2908,7 +2915,7 @@ io.on('connection', (socket) => {
         assignSelfieDrawers(io, room, code);
       } else {
         const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
-        io.to(code).emit('selfie:photo_phase', { round: room.selfie.round, totalRounds: room.selfie.totalRounds, players });
+        io.to(code).emit('selfie:photo_phase', { round: room.selfie.round, totalRounds: room.selfie.totalRounds, players, totalPhotographers: playingPlayers.length });
       }
     }
   });
@@ -3049,7 +3056,7 @@ io.on('connection', (socket) => {
       featuredOwnerId: room.caption.featuredOwnerId,
       featuredOwnerName: owner?.name || '?',
       featuredPhotoData: room.caption.photos[room.caption.featuredOwnerId],
-      writers: playingPlayers.filter(p => p.id !== room.caption.featuredOwnerId).map(p => ({ id: p.id, name: p.name })),
+      writers: playingPlayers.map(p => ({ id: p.id, name: p.name })),
     });
   }
 
@@ -3072,16 +3079,18 @@ io.on('connection', (socket) => {
       room.caption.captions[player.id] = { id: captionId, playerId: player.id, text: sanitized };
     }
 
-    const writers = room.players.filter(p => p.isConnected && p.isPlaying && p.id !== room.caption.featuredOwnerId);
+    const writers = room.players.filter(p => p.isConnected && p.isPlaying);
     const submittedCount = Object.keys(room.caption.captions).length;
     io.to(code).emit('caption:caption_submitted', { playerId: player.id, submittedCount, totalCount: writers.length });
 
-    if (!isUpdate && submittedCount >= writers.length) {
+    const allSubmitted = writers.every(p => room.caption.captions[p.id]);
+    if (room.caption.phase === 'writing' && ((!isUpdate && submittedCount >= writers.length) || allSubmitted)) {
       startCaptionVotingPhase(io, room, code);
     }
   });
 
   function startCaptionVotingPhase(io, room, code) {
+    if (room.caption.phase !== 'writing') return; // guard against double-fire
     room.caption.phase = 'voting';
     const captionList = Object.values(room.caption.captions).map(c => ({ id: c.id, text: c.text }));
     // Shuffle so order doesn't reveal authorship
@@ -3109,8 +3118,6 @@ io.on('connection', (socket) => {
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
     if (room.caption.votes[player.id]) return; // already voted
-    // Featured owner doesn't vote (they're the subject of the photo)
-    if (player.id === room.caption.featuredOwnerId) return;
 
     // Validate captionId exists
     const captionExists = Object.values(room.caption.captions).some(c => c.id === captionId);
@@ -3121,11 +3128,12 @@ io.on('connection', (socket) => {
 
     room.caption.votes[player.id] = captionId;
 
-    const voters = room.players.filter(p => p.isConnected && p.isPlaying && p.id !== room.caption.featuredOwnerId);
+    const voters = room.players.filter(p => p.isConnected && p.isPlaying);
     const voteCount = Object.keys(room.caption.votes).length;
     io.to(code).emit('caption:vote_received', { voteCount, totalVoters: voters.length, votedPlayerIds: Object.keys(room.caption.votes) });
 
-    if (voteCount >= voters.length) {
+    const allVoted = voters.every(p => room.caption.votes[p.id]);
+    if (voteCount >= voters.length || allVoted) {
       endCaptionRound(io, room, code);
     }
   });
@@ -3160,6 +3168,7 @@ io.on('connection', (socket) => {
   });
 
   function endCaptionRound(io, room, code) {
+    if (room.caption.phase !== 'voting') return; // guard against double-fire
     room.caption.phase = 'results';
     // Tally votes: votes received = points
     const roundScores = {};
@@ -3396,7 +3405,8 @@ io.on('connection', (socket) => {
     const votedPlayerIds = Object.keys(room.photoVote.votes);
     io.to(code).emit('photovote:vote_received', { voteCount, totalVoters: playingPlayers.length, votedPlayerIds });
 
-    if (voteCount >= playingPlayers.length) {
+    const allVoted = playingPlayers.every(p => room.photoVote.votes[p.id]);
+    if (voteCount >= playingPlayers.length || allVoted) {
       endPhotoVoteRound(io, room, code);
     }
   });
@@ -3465,6 +3475,7 @@ io.on('connection', (socket) => {
   });
 
   function endPhotoVoteRound(io, room, code) {
+    if (room.photoVote.phase !== 'voting') return; // guard against double-fire
     room.photoVote.phase = 'results';
     // Tally: most votes wins, all voters for winner get 1pt, winner gets 1pt per vote received
     const voteCounts = {};
