@@ -164,7 +164,9 @@ export default function DrawTelDrawPage() {
     });
     dispatch({ type: 'DT_MARK_TURN_SUBMITTED' });
     setSubmitted(true);
-  }, [submitted, roomCode, turn?.promptId, sounds, dispatch]);
+    // Navigate to wait so we're in the right place for the next turn or guessing phase
+    navigate('/draw-tel-wait');
+  }, [submitted, roomCode, turn?.promptId, sounds, dispatch, navigate]);
 
   // Auto-submit at ≤1 second (belt-and-suspenders alongside dt:time_up)
   useEffect(() => {
@@ -172,8 +174,9 @@ export default function DrawTelDrawPage() {
       socket.emit('dt:submit_strokes', { code: roomCode, promptId: turn.promptId, strokes: strokesRef.current });
       dispatch({ type: 'DT_MARK_TURN_SUBMITTED' });
       setSubmitted(true);
+      navigate('/draw-tel-wait');
     }
-  }, [dt.currentTurn?.secondsLeft, submitted, turn, roomCode, dispatch]);
+  }, [dt.currentTurn?.secondsLeft, submitted, turn, roomCode, dispatch, navigate]);
 
   // Force-submit when server says time is up (ensures actual strokes reach server before fallback)
   useEffect(() => {
@@ -182,11 +185,12 @@ export default function DrawTelDrawPage() {
         socket.emit('dt:submit_strokes', { code: roomCode, promptId, strokes: strokesRef.current });
         dispatch({ type: 'DT_MARK_TURN_SUBMITTED' });
         setSubmitted(true);
+        navigate('/draw-tel-wait');
       }
     };
     socket.on('dt:time_up', onTimeUp);
     return () => socket.off('dt:time_up', onTimeUp);
-  }, [submitted, turn, roomCode, dispatch]);
+  }, [submitted, turn, roomCode, dispatch, navigate]);
 
   // Touch handlers
   const onTouchStart = (e) => {
@@ -221,12 +225,17 @@ export default function DrawTelDrawPage() {
           {/* Left: Prompt + Info */}
           <div className="flex-1 flex flex-col gap-3">
             <div className="bg-[#1A1A2E] rounded-2xl p-4 border border-[#FF6B6B]/30">
-              <p className="text-xs text-gray-400 font-['Nunito'] uppercase tracking-widest mb-1">
-                  Step {turn?.position || 1} of {turn?.totalPositions || 1}
-                </p>
-                <p className="text-lg text-white font-['Nunito']">
-                  {turn?.position > 1 ? "Draw over the previous drawing!" : "Draw this prompt!"}
-                </p>
+              {/* Timer row */}
+              <div className="flex items-center justify-between mb-2">
+                <div>
+                  <p className="text-xs text-gray-400 font-['Nunito'] uppercase tracking-widest mb-1">
+                    Step {turn?.position || 1} of {turn?.totalPositions || 1}
+                  </p>
+                  <p className="text-lg text-white font-['Nunito']">
+                    {turn?.position > 1 ? "Draw over the previous drawing!" : "Draw this prompt!"}
+                  </p>
+                </div>
+                <TimerRing secondsLeft={turn?.secondsLeft ?? 0} total={60} size={52} />
               </div>
 
               {/* Previous step content */}
@@ -235,6 +244,10 @@ export default function DrawTelDrawPage() {
                   {turn?.position > 1 ? "Previous Drawing" : "Your Prompt"}
                 </p>
                 {turn?.position > 1 ? (
+                  <>
+                    <p className="text-sm font-['Fredoka_One'] text-[#FFE66D] text-center mb-2">
+                      "{turn?.finalText}"
+                    </p>
                   <div className="bg-[#000] rounded-xl overflow-hidden relative" style={{ aspectRatio: `${CANVAS_W}/${CANVAS_H}` }}>
                     {selfieData && <img src={selfieData} alt="" className="absolute inset-0 w-full h-full object-cover" />}
                     <canvas
@@ -251,6 +264,7 @@ export default function DrawTelDrawPage() {
                       className="w-full h-auto absolute inset-0"
                     />
                   </div>
+                  </>
                 ) : (
                   <div className="h-full flex flex-col items-center justify-center p-2">
                     <p className="text-3xl font-['Fredoka_One'] text-[#FFE66D] text-center mb-4">
@@ -263,6 +277,7 @@ export default function DrawTelDrawPage() {
                 )}
               </div>
             </div>
+          </div>
 
           {/* Right: Canvas + Controls */}
           <div className="lg:w-[420px] flex flex-col gap-3">

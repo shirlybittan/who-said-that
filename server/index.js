@@ -9,17 +9,91 @@ const {
   getRoomBySocketId,
   removePlayerBySocketId,
   setGameOptions,
+  touchRoom,
+  evictStaleRooms,
 } = require('./game/roomManager');
 const { selectQuestions, selectSituationalQuestions, selectThisOrThatQuestions, selectDrawingQuestion, selectMixedQuestions, shuffleAnswers } = require('./game/gameLogic');
 const { buildMiniGameSnapshot } = require('./game/miniGameSnapshot');
 const mltPromptBank = require('./questions/mostLikelyTo');
 const { words: drawWordBank, prompts: drawPrompts } = require('./questions/drawing');
 const { selfiePrompts } = require('./questions/selfie');
+const { isConfigured: storageConfigured, createPresignedUpload, getPublicBaseUrl } = require('./storage/photoStorage');
+
+// ─── Per-player upload tokens (prevents unauthenticated presigned URL requests) ─
+// A token is issued over the socket on join_success and required for the HTTP
+// endpoint. Keys are unguessable UUIDs, values expire after 24h.
+const { randomUUID: generateToken } = require('crypto');
+const uploadTokens = new Map(); // token → { roomCode, playerId, expiresAt }
+
+const issueUploadToken = (roomCode, playerId) => {
+  const token = generateToken();
+  uploadTokens.set(token, { roomCode, playerId, expiresAt: Date.now() + 24 * 60 * 60 * 1000 });
+  return token;
+};
+
+const validateUploadToken = (token) => {
+  const entry = uploadTokens.get(token);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) { uploadTokens.delete(token); return null; }
+  return entry;
+};
+
+// Periodically clean up expired tokens
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, entry] of uploadTokens) {
+    if (now > entry.expiresAt) uploadTokens.delete(token);
+  }
+}, 60 * 60 * 1000);
 
 const app = express();
 app.use(cors());
+app.use(express.json());
 
 app.get('/ping', (req, res) => res.json({ status: 'awake' }));
+
+// ─── Presigned upload URL endpoint ───────────────────────────────────────────
+// Returns a short-lived PUT URL so clients upload photos directly to cloud
+// storage without routing binary data through the Node.js event loop.
+app.post('/api/upload-photo-url', async (req, res) => {
+  if (!storageConfigured()) {
+    return res.status(503).json({ error: 'Storage not configured — use base64 flow' });
+  }
+
+  const { roomCode, playerId, mimeType, uploadToken } = req.body || {};
+  if (!uploadToken) {
+    return res.status(401).json({ error: 'uploadToken is required' });
+  }
+
+  // Validate the upload token — prevents unauthenticated bucket writes
+  const tokenEntry = validateUploadToken(uploadToken);
+  if (!tokenEntry) {
+    return res.status(401).json({ error: 'Invalid or expired uploadToken' });
+  }
+  if (tokenEntry.roomCode !== roomCode || tokenEntry.playerId !== playerId) {
+    return res.status(403).json({ error: 'Token does not match roomCode/playerId' });
+  }
+
+  const validMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
+  const safeMime = validMimeTypes.includes(mimeType) ? mimeType : 'image/jpeg';
+
+  // Validate that the room and player actually exist before issuing a URL
+  const room = getRoom(roomCode);
+  if (!room) return res.status(404).json({ error: 'Room not found' });
+  const player = room.players.find(p => p.id === playerId);
+  if (!player) return res.status(404).json({ error: 'Player not found' });
+
+  // Touch the room so it isn't evicted while the client is uploading
+  touchRoom(roomCode);
+
+  try {
+    const { uploadUrl, publicUrl, objectKey } = await createPresignedUpload(roomCode, playerId, safeMime);
+    res.json({ uploadUrl, publicUrl, objectKey });
+  } catch (err) {
+    console.error('[upload-photo-url]', err);
+    res.status(500).json({ error: 'Failed to generate upload URL' });
+  }
+});
 
 const server = http.createServer(app);
 
@@ -45,6 +119,34 @@ const mergeToGlobalScores = (io, room, scores) => {
     .map(p => ({ id: p.id, name: p.name, color: p.color, score: room.globalScores[p.id] || 0 }))
     .sort((a, b) => b.score - a.score);
   io.to(room.code).emit('global_scores_updated', { globalScores: room.globalScores, leaderboard });
+};
+
+// ─── Room sanitizer ────────────────────────────────────────────────────────────
+// Strips all Node.js timer handles (Timeout / Interval) from the room object
+// before sending it to clients via Socket.io. JSON.stringify will throw a
+// "Maximum call stack size exceeded" error when it encounters these because the
+// internal Node.js Timeout objects have circular prototype chains.
+
+const sanitizeRoomForClient = (room) => {
+  const { answerTimerRef, timer, ...rest } = room;
+
+  return {
+    ...rest,
+    tot: room.tot ? { ...room.tot, timerRef: undefined } : room.tot,
+    mlt: room.mlt ? { ...room.mlt, timerRef: undefined } : room.mlt,
+    draw: room.draw ? { ...room.draw, timerRef: undefined } : room.draw,
+    fitb: room.fitb ? { ...room.fitb, timerRef: undefined } : room.fitb,
+    dt: room.dt ? {
+      ...room.dt,
+      promptTimerRef: undefined,
+      drawTimerRef: undefined,
+      guessTimerRef: undefined,
+      voteTimerRef: undefined,
+      chains: Object.fromEntries(
+        Object.entries(room.dt.chains || {}).map(([id, chain]) => [id, { ...chain, timerRef: undefined }])
+      ),
+    } : room.dt,
+  };
 };
 
 // ─── Answer-phase timer (WST / Situational answering) ─────────────────────────
@@ -359,6 +461,18 @@ const emitWstQuestion = (io, room, code) => {
   startAnswerTimer(io, room, code, roundDuration, () => {
     if (room.phase !== 'question') return;
     const connectedPlayersCount = activePlayers(room).length;
+    // Auto-submit fallback for any player who didn't answer in time
+    activePlayers(room).forEach(p => {
+      if (!room.answers.find(a => a.playerId === p.id)) {
+        const draft = (room.answerDrafts || {})[p.id] || '';
+        room.answers.push({
+          playerId: p.id,
+          playerName: p.name,
+          text: draft || "...",
+          votes: [],
+        });
+      }
+    });
     if (room.answers.length === 0) {
       // No one answered — skip to next question or end
       if (room.currentRound < room.totalRounds) {
@@ -483,14 +597,14 @@ const closeTotRound = (io, room, code) => {
   const connectedPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
   const countA = Object.keys(room.tot.votesA).length;
   const countB = Object.keys(room.tot.votesB).length;
-  const total = countA + countB || 1;
+  const total = countA + countB;
 
-  const pctA = Math.round((countA / total) * 100);
-  const pctB = 100 - pctA;
+  const pctA = total === 0 ? 0 : Math.round((countA / total) * 100);
+  const pctB = total === 0 ? 0 : 100 - pctA;
 
   // Scoring: majority side gets +1
-  const majorityChoice = countA >= countB ? 'a' : 'b';
   const tieRound = countA === countB;
+  const majorityChoice = tieRound ? null : (countA > countB ? 'a' : 'b');
 
   if (!tieRound) {
     const winners = majorityChoice === 'a' ? room.tot.votesA : room.tot.votesB;
@@ -614,6 +728,37 @@ function cancelAllTimers(room) {
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
+  // ─── Auto-rejoin via handshake auth ────────────────────────────────────────
+  // When a mobile player reconnects after a phone call / app switch, their
+  // stored playerId + roomCode arrive in socket.handshake.auth. Remap them
+  // immediately so they don't have to wait for the client to fire join_room.
+  (() => {
+    const { playerId, roomCode, playerName } = socket.handshake.auth || {};
+    if (!playerId || !roomCode) return;
+    try {
+      const { room, player, isRejoin } = joinRoom(roomCode, socket.id, playerName || '', playerId);
+      if (!isRejoin) return; // Only handle returning players here; fresh joins go through join_room
+      touchRoom(roomCode);
+      socket.join(room.code);
+      const uploadToken = issueUploadToken(room.code, player.id);
+      socket.emit('join_success', {
+        room: sanitizeRoomForClient(room),
+        playerId: player.id,
+        isRejoin: true,
+        uploadToken,
+        miniGameState: buildMiniGameSnapshot(room, player.id, {
+          dtPromptSeconds: DT_PROMPT_SECS,
+          dtGuessSeconds: DT_GUESS_SECS,
+          dtDrawSeconds: DT_DRAW_SECS,
+          dtVoteSeconds: DT_VOTE_SECS,
+        }),
+      });
+      socket.to(room.code).emit('player_reconnected', { playerId: player.id, playerName: player.name, players: room.players });
+    } catch (_) {
+      // Auth credentials no longer valid (room expired, etc.) — client will handle via join_room
+    }
+  })();
+
   socket.on('create_room', (data = {}) => {
     const playerName = data.playerName || 'Host';
     const gameType = data.gameType || 'most-likely-to';
@@ -636,6 +781,13 @@ io.on('connection', (socket) => {
   socket.on('join_room', ({ code, playerName, playerId }) => {
     try {
       const { room, player, isRejoin } = joinRoom(code, socket.id, playerName, playerId);
+      touchRoom(code);
+
+      // Guard against double-join: if the handshake auto-rejoin already mapped this
+      // socket to the room, skip the redundant player_joined broadcast. The client
+      // still gets join_success (idempotent) so state syncs correctly.
+      const alreadyInRoom = socket.rooms.has(room.code);
+
       // Prevent cast/screen-mirror devices from counting as players
       if (!isRejoin) {
         const castNames = ['screen cast', 'chromecast', 'cast screen', 'google cast', 'firestick'];
@@ -644,10 +796,12 @@ io.on('connection', (socket) => {
         }
       }
       socket.join(room.code);
+      const uploadToken = issueUploadToken(room.code, player.id);
       socket.emit('join_success', {
-        room,
+        room: sanitizeRoomForClient(room),
         playerId: player.id,
         isRejoin,
+        uploadToken,
         miniGameState: buildMiniGameSnapshot(room, player.id, {
           dtPromptSeconds: DT_PROMPT_SECS,
           dtGuessSeconds: DT_GUESS_SECS,
@@ -655,7 +809,11 @@ io.on('connection', (socket) => {
           dtVoteSeconds: DT_VOTE_SECS,
         }),
       });
-      socket.to(room.code).emit('player_joined', { players: room.players });
+      // Only broadcast player_joined for new joins; skip if socket was already
+      // in the room (handshake auto-rejoin already fired player_reconnected).
+      if (!alreadyInRoom || !isRejoin) {
+        socket.to(room.code).emit('player_joined', { players: room.players });
+      }
     } catch (err) {
       socket.emit('error', { message: err.message });
     }
@@ -916,9 +1074,19 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('answer_draft', ({ code, text }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'question') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isConnected || !player.isPlaying) return;
+    if (!room.answerDrafts) room.answerDrafts = {};
+    room.answerDrafts[player.id] = typeof text === 'string' ? text.trim().slice(0, 300) : '';
+  });
+
   socket.on('submit_answer', ({ code, text }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'question') return;
+    touchRoom(code);
 
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isConnected || !player.isPlaying) return;
@@ -978,20 +1146,23 @@ io.on('connection', (socket) => {
 
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isConnected || !player.isPlaying) return;
-
     if (answerId === player.id) return;           // can't vote own answer
     if (room.sit.votes[player.id]) return;        // already voted
 
     room.sit.votes[player.id] = answerId;
 
     const connectedPlayersCount = activePlayers(room).length;
+    const voteCount = Object.keys(room.sit.votes).length;
     io.to(code).emit('sit:vote_received', {
-      voteCount: Object.keys(room.sit.votes).length,
+      voteCount,
       totalVoters: connectedPlayersCount,
       votedPlayerIds: Object.keys(room.sit.votes),
     });
 
-    if (Object.keys(room.sit.votes).length >= connectedPlayersCount) {
+    // Close when all active players have voted, OR when all answer-authors have
+    // received a vote tally (covers edge cases where activePlayers count shifts).
+    const allVoted = activePlayers(room).every(p => room.sit.votes[p.id]);
+    if (voteCount >= connectedPlayersCount || allVoted) {
       closeSitVoting(io, room, code);
     }
   });
@@ -1038,6 +1209,7 @@ io.on('connection', (socket) => {
     }
 
     io.to(code).emit('vote_received', { votedCount: currentAnswer.votes.length, totalPlayers: expectedVotes, votedPlayerIds: currentAnswer.votes.map(v => v.voterId) });
+    console.log(`[Server] WST vote: ${currentAnswer.votes.length}/${expectedVotes} room=${code}`);
 
     if (currentAnswer.votes.length >= expectedVotes) {
       io.to(code).emit('all_votes_in', { currentIndex: room.currentAnswerIndex });
@@ -1108,7 +1280,9 @@ io.on('connection', (socket) => {
     const voteCount = Object.keys(room.tot.votesA).length + Object.keys(room.tot.votesB).length;
     io.to(code).emit('tot:vote_received', { voteCount, totalVoters: connectedPlayers.length, votedPlayerIds: [...Object.keys(room.tot.votesA), ...Object.keys(room.tot.votesB)] });
 
-    if (voteCount >= connectedPlayers.length) {
+    // Close when all active players have voted (covers activePlayers count drift).
+    const allVoted = connectedPlayers.every(p => room.tot.votesA[p.id] || room.tot.votesB[p.id]);
+    if (voteCount >= connectedPlayers.length || allVoted) {
       closeTotRound(io, room, code);
     }
   });
@@ -1182,6 +1356,38 @@ io.on('connection', (socket) => {
     room.currentRound++;
     room.currentQuestionIndex++;
     emitNextQuestion(io, room, code);
+  });
+
+  // Change the current question without advancing the round counter
+  socket.on('tot:change_question', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'tot') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+
+    stopTotTimer(room);
+    // Swap in a replacement question from the pool without incrementing round
+    const usedIndexes = new Set();
+    for (let i = 0; i <= room.currentQuestionIndex; i++) usedIndexes.add(i);
+
+    // Find next unused question of type 'this-or-that' in the list
+    let nextIdx = -1;
+    for (let i = room.currentQuestionIndex + 1; i < room.questions.length; i++) {
+      if (room.questions[i].type === 'this-or-that' || room.questions[i].a) {
+        nextIdx = i;
+        break;
+      }
+    }
+    if (nextIdx === -1) {
+      // No replacement available; just re-emit same question
+      emitTotQuestion(io, room, code);
+      return;
+    }
+    // Swap the question at currentQuestionIndex with the new one
+    const replacement = room.questions[nextIdx];
+    room.questions[nextIdx] = room.questions[room.currentQuestionIndex];
+    room.questions[room.currentQuestionIndex] = replacement;
+    emitTotQuestion(io, room, code);
   });
 
   socket.on('tot:pause', ({ code }) => {
@@ -1284,6 +1490,79 @@ io.on('connection', (socket) => {
           voteCount: Object.keys(room.sit.votes || {}).length,
           totalVoters: playingPlayers.length,
         },
+        // WST voting state (for reconnect recovery)
+        voting: room.phase === 'voting' ? {
+          answers: (room.answers || []).map(a => ({ text: a.text })),
+          currentIndex: room.currentAnswerIndex || 0,
+          voteCount: (room.answers?.[room.currentAnswerIndex]?.votes || []).length,
+          totalPlayers: playingPlayers.length,
+          votedPlayerIds: (room.answers?.[room.currentAnswerIndex]?.votes || []).map(v => v.voterId),
+        } : null,
+        // WST answering phase (answer submission count)
+        answeredCount: room.phase === 'question' ? (room.answers || []).length : 0,
+        // FITB state (for reconnect recovery — both answering and voting phases)
+        fitb: room.phase === 'fitb' ? {
+          phase: room.fitb.phase,
+          question: room.fitb.question || '',
+          answers: room.fitb.phase === 'voting' ? (room.fitb.answers || []).map((a, i) => ({ id: i, text: a.text })) : [],
+          voteCount: Object.keys(room.fitb._votes || {}).length,
+          totalVoters: playingPlayers.length,
+          votedPlayerIds: Object.keys(room.fitb._votes || {}),
+          answeredCount: (room.fitb.answers || []).length,
+          totalAnswerers: playingPlayers.length,
+          answeredPlayerIds: (room.fitb.answers || []).map(a => a.playerId),
+        } : null,
+        // Draw state — includes both drawing (submission) and voting phase details
+        draw: room.phase === 'drawing' ? {
+          phase: room.draw?.phase || 'drawing',
+          submittedCount: Object.keys(room.draw?.submissions || {}).length,
+          totalDrawers: playingPlayers.length,
+          submittedPlayerIds: Object.keys(room.draw?.submissions || {}),
+          voteCount: Object.keys(room.draw?.votes || {}).length,
+          totalVoters: playingPlayers.length,
+          votedPlayerIds: Object.keys(room.draw?.votes || {}),
+        } : null,
+        // Selfie state (for reconnect recovery)
+        selfie: room.phase === 'selfie' ? {
+          phase: room.selfie.phase,
+          photoCount: Object.keys(room.selfie.photos || {}).length,
+          totalPhotographers: playingPlayers.length,
+          submittedPlayerIds: Object.keys(room.selfie.photos || {}),
+          drawingCount: Object.keys(room.selfie.strokes || {}).length,
+          totalDrawers: playingPlayers.length,
+          drawnPlayerIds: Object.keys(room.selfie.strokes || {}),
+          voteCount: Object.keys(room.selfie.votes || {}).length,
+          totalVoters: playingPlayers.length,
+          votedPlayerIds: Object.keys(room.selfie.votes || {}),
+        } : null,
+        // Caption state (for reconnect recovery)
+        caption: room.phase === 'caption' ? {
+          phase: room.caption.phase,
+          captionCount: Object.keys(room.caption.captions || {}).length,
+          totalWriters: playingPlayers.length,
+          captionSubmittedPlayerIds: Object.keys(room.caption.captions || {}),
+          voteCount: Object.keys(room.caption.votes || {}).length,
+          totalVoters: playingPlayers.length,
+          votedPlayerIds: Object.keys(room.caption.votes || {}),
+        } : null,
+        // PhotoVote (pmatch / photoassoc) state (for reconnect recovery)
+        photoVote: room.phase === 'photovote' ? {
+          phase: room.photoVote?.phase || 'photo',
+          submittedPlayerIds: Object.keys(room.photoVote?.photos || {}),
+          voteCount: Object.keys(room.photoVote?.votes || {}).length,
+          totalVoters: playingPlayers.length,
+          votedPlayerIds: Object.keys(room.photoVote?.votes || {}),
+        } : null,
+        // DrawTel state (for reconnect recovery)
+        dt: (room.phase === 'dt' || room.phase?.startsWith('dt-')) ? {
+          phase: room.dt.phase,
+          promptsSubmittedCount: (room.dt.prompts || []).length,
+          totalPrompts: playingPlayers.length,
+          submittedPlayerIds: (room.dt.prompts || []).map(p => p.authorId).filter(Boolean),
+          guessedCount: Object.keys(room.dt.guesses || {}).length,
+          totalGuessers: playingPlayers.length,
+          guessedPlayerIds: Object.keys(room.dt.guesses || {}),
+        } : null,
       },
     });
   });
@@ -1375,6 +1654,7 @@ io.on('connection', (socket) => {
   socket.on('mlt:vote', ({ code, targetPlayerId }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'mlt' || room.mlt.roundState !== 'voting') return;
+    touchRoom(code);
 
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isConnected || !player.isPlaying) return;
@@ -1722,6 +2002,7 @@ io.on('connection', (socket) => {
   socket.on('draw:submit', ({ code, strokes }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'drawing' || !room.draw || room.draw.phase !== 'drawing') return;
+    touchRoom(code);
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isPlaying) return;
     const isResubmit = !!room.draw.submissions[player.id];
@@ -1743,8 +2024,9 @@ io.on('connection', (socket) => {
     const submittedCount = Object.keys(room.draw.submissions).length;
     const submittedPlayerIds = Object.keys(room.draw.submissions);
     io.to(code).emit('draw:submission_received', { submittedCount, totalDrawers: playingPlayers.length, submittedPlayerIds });
+    console.log(`[Server] Draw submission: ${submittedCount}/${playingPlayers.length} room=${code}`);
 
-    if (!isResubmit && submittedCount >= playingPlayers.length) {
+    if (submittedCount >= playingPlayers.length) {
       if (room.draw.timerRef) { clearInterval(room.draw.timerRef); room.draw.timerRef = null; }
       startDrawVoting(io, room, code);
     }
@@ -1765,13 +2047,20 @@ io.on('connection', (socket) => {
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isPlaying) return;
     if (room.draw.votes[player.id]) return; // already voted
-    if (votedForPlayerId === player.id) return; // no self-vote
-    if (!room.draw.submissions[votedForPlayerId]) return; // must vote for a submission
+    if (votedForPlayerId === player.id) {
+      socket.emit('draw:vote_rejected', { reason: 'no_self_vote' });
+      return;
+    }
+    if (!room.draw.submissions[votedForPlayerId]) {
+      socket.emit('draw:vote_rejected', { reason: 'invalid_submission' });
+      return;
+    }
 
     room.draw.votes[player.id] = votedForPlayerId;
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
     const voteCount = Object.keys(room.draw.votes).length;
     io.to(code).emit('draw:vote_received', { voteCount, totalVoters: playingPlayers.length, votedPlayerIds: Object.keys(room.draw.votes) });
+    console.log(`[Server] Draw vote: ${voteCount}/${playingPlayers.length} room=${code}`);
 
     if (voteCount >= playingPlayers.length) {
       resolveDrawVoting(io, room, code);
@@ -1892,13 +2181,14 @@ io.on('connection', (socket) => {
       if (!room.fitb || room.fitb.phase !== 'answering') return;
       io.to(code).emit('fitb:answer_timer', { secondsLeft: room.fitb.answerSecondsLeft });
       if (room.fitb.answerSecondsLeft <= 0) {
-        // Auto-submit default answer for any player who hasn't answered yet
+        // Auto-submit: use player's typed draft if available, otherwise default
         const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
         playingPlayers.forEach(p => {
           if (!room.fitb.answers.find(a => a.playerId === p.id)) {
+            const draftText = (room.fitb.drafts || {})[p.id] || '';
             room.fitb.answers.push({
               playerId: p.id, playerName: p.name, playerColor: p.color,
-              text: "I couldn't think of anything funny in time! 🕒",
+              text: draftText || "...",
               votes: 0,
             });
           }
@@ -1936,6 +2226,7 @@ io.on('connection', (socket) => {
       totalRounds,
       question: '',
       answers: [],
+      drafts: {},
       usedQuestions: [],
       targetPlayerIndex: 0,
       scores,
@@ -1953,6 +2244,16 @@ io.on('connection', (socket) => {
       timeLimit,
     });
     startFitbAnswerTimer(io, room, code, timeLimit);
+  });
+
+  socket.on('fitb:draft', ({ code, text }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'fitb' || room.fitb.phase !== 'answering') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isPlaying || !player.isConnected) return;
+    room.fitb.drafts = room.fitb.drafts || {};
+    room.fitb.drafts[player.id] = String(text || '').slice(0, 120);
+    touchRoom(code); // keep room alive while players are actively typing
   });
 
   socket.on('fitb:answer', ({ code, text }) => {
@@ -2120,6 +2421,7 @@ io.on('connection', (socket) => {
     room.fitb.round++;
     room.fitb.phase = 'answering';
     room.fitb.answers = [];
+    room.fitb.drafts = {};
     room.fitb._votes = {};
     room.fitb.question = pickFitbQuestion(room, room.players);
     const timeLimit = room.roomConfig?.roundDurationSecs || 30;
@@ -2190,7 +2492,7 @@ io.on('connection', (socket) => {
     }
 
     const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
-    io.to(code).emit('selfie:photo_phase', { round: 1, totalRounds, players });
+    io.to(code).emit('selfie:photo_phase', { round: 1, totalRounds, players, totalPhotographers: playingPlayers.length });
 
     // Notify players whose photos were pre-loaded so they see "saved selfie" UI
     playingPlayers.forEach(p => {
@@ -2204,18 +2506,30 @@ io.on('connection', (socket) => {
     const room = getRoom(code);
     if (!room) return;
 
+    // ── Validate: accept either a cloud storage HTTPS URL or a Base64 data URI ──
+    if (!photoData || typeof photoData !== 'string') return;
+    // Only accept cloud URLs from the configured public storage domain to prevent
+    // arbitrary external URL injection (tracking pixels, unexpected resources).
+    const cloudBase = storageConfigured() ? getPublicBaseUrl() : null;
+    const isCloudUrl = cloudBase
+      ? (photoData.startsWith(cloudBase + '/') && /\.(jpg|jpeg|png|webp)(\?.*)?$/i.test(photoData))
+      : false;
+    const isBase64 = photoData.startsWith('data:image/jpeg;base64,') ||
+                     photoData.startsWith('data:image/png;base64,')  ||
+                     photoData.startsWith('data:image/webp;base64,');
+    if (!isCloudUrl && !isBase64) return;
+    // Enforce size cap only on Base64 (cloud URLs are just short strings)
+    if (isBase64 && photoData.length > 2 * 1024 * 1024) return;
+
     // Handle DT selfie collection phase
     if (room.phase === 'dt' && room.dt.phase === 'selfie') {
       const player = room.players.find(p => p.socketId === socket.id);
       if (!player || !player.isPlaying || !player.isConnected) return;
       if (room.dt.selfiePhotos?.[player.id]) return; // already submitted
 
-      if (!photoData || typeof photoData !== 'string') return;
-      if (!photoData.startsWith('data:image/jpeg;base64,') && !photoData.startsWith('data:image/png;base64,') && !photoData.startsWith('data:image/webp;base64,')) return;
-      if (photoData.length > 2 * 1024 * 1024) return;
-
       if (!room.playerPhotos) room.playerPhotos = {};
       room.playerPhotos[player.id] = photoData;
+      touchRoom(code);
       if (!room.dt.selfiePhotos) room.dt.selfiePhotos = {};
       room.dt.selfiePhotos[player.id] = true;
 
@@ -2240,16 +2554,12 @@ io.on('connection', (socket) => {
     if (!player || !player.isPlaying || !player.isConnected) return;
     if (room.selfie.photos[player.id]) return; // already submitted (or not a retake)
 
-    // Basic data URI validation — must be JPEG or PNG base64
-    if (!photoData || typeof photoData !== 'string') return;
-    if (!photoData.startsWith('data:image/jpeg;base64,') && !photoData.startsWith('data:image/png;base64,') && !photoData.startsWith('data:image/webp;base64,')) return;
-    // Limit to ~2MB base64 (~1.5MB actual)
-    if (photoData.length > 2 * 1024 * 1024) return;
-
+    // Validation already performed above (cloud URL or Base64 check)
     room.selfie.photos[player.id] = photoData;
     // Persist photo for reuse across selfie-based mini games
     if (!room.playerPhotos) room.playerPhotos = {};
     room.playerPhotos[player.id] = photoData;
+    touchRoom(code);
 
     if (room.selfie.phase === 'drawing') {
       // Retake path: re-assign updated photo to the drawer, then return retaker to drawing screen
@@ -2289,7 +2599,7 @@ io.on('connection', (socket) => {
 
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
     const photoCount = Object.keys(room.selfie.photos).length;
-    io.to(code).emit('selfie:photo_received', { photoCount, totalPlayers: playingPlayers.length, submittedPlayerIds: Object.keys(room.selfie.photos) });
+    io.to(code).emit('selfie:photo_received', { photoCount, totalPhotographers: playingPlayers.length, submittedPlayerIds: Object.keys(room.selfie.photos) });
 
     if (photoCount >= playingPlayers.length) {
       assignSelfieDrawers(io, room, code);
@@ -2459,7 +2769,8 @@ io.on('connection', (socket) => {
     const voteCount = Object.keys(room.selfie.votes).length;
     io.to(code).emit('selfie:vote_received', { voteCount, totalVoters: playingPlayers.length, votedPlayerIds: Object.keys(room.selfie.votes) });
 
-    if (voteCount >= playingPlayers.length) {
+    const allVoted = playingPlayers.every(p => room.selfie.votes[p.id] !== undefined);
+    if (voteCount >= playingPlayers.length || allVoted) {
       resolveSelfieVoting(io, room, code);
     }
   });
@@ -2547,7 +2858,7 @@ io.on('connection', (socket) => {
       assignSelfieDrawers(io, room, code);
     } else {
       const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
-      io.to(code).emit('selfie:photo_phase', { round: room.selfie.round, totalRounds: room.selfie.totalRounds, players });
+      io.to(code).emit('selfie:photo_phase', { round: room.selfie.round, totalRounds: room.selfie.totalRounds, players, totalPhotographers: playingPlayers.length });
     }
   });
 
@@ -2604,7 +2915,7 @@ io.on('connection', (socket) => {
         assignSelfieDrawers(io, room, code);
       } else {
         const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
-        io.to(code).emit('selfie:photo_phase', { round: room.selfie.round, totalRounds: room.selfie.totalRounds, players });
+        io.to(code).emit('selfie:photo_phase', { round: room.selfie.round, totalRounds: room.selfie.totalRounds, players, totalPhotographers: playingPlayers.length });
       }
     }
   });
@@ -2695,9 +3006,17 @@ io.on('connection', (socket) => {
     if (!player || !player.isPlaying || !player.isConnected) return;
     if (room.caption.photos[player.id]) return; // already submitted
 
-    // Validate photo data (basic base64 check)
-    if (!photoData || typeof photoData !== 'string' || !photoData.startsWith('data:image/')) return;
-    if (photoData.length > 2 * 1024 * 1024) return; // 2MB limit
+    // Validate: accept cloud storage URL (from configured domain only) or Base64 data URI
+    if (!photoData || typeof photoData !== 'string') return;
+    const cloudBase = storageConfigured() ? getPublicBaseUrl() : null;
+    const isCloudUrl = cloudBase
+      ? (photoData.startsWith(cloudBase + '/') && /\.(jpg|jpeg|png|webp)(\?.*)?$/i.test(photoData))
+      : false;
+    const isBase64 = photoData.startsWith('data:image/jpeg;base64,') ||
+                     photoData.startsWith('data:image/png;base64,')  ||
+                     photoData.startsWith('data:image/webp;base64,');
+    if (!isCloudUrl && !isBase64) return;
+    if (isBase64 && photoData.length > 2 * 1024 * 1024) return;
 
     room.caption.photos[player.id] = photoData;
     // Persist photo for reuse across selfie-based mini games
@@ -2737,7 +3056,7 @@ io.on('connection', (socket) => {
       featuredOwnerId: room.caption.featuredOwnerId,
       featuredOwnerName: owner?.name || '?',
       featuredPhotoData: room.caption.photos[room.caption.featuredOwnerId],
-      writers: playingPlayers.filter(p => p.id !== room.caption.featuredOwnerId).map(p => ({ id: p.id, name: p.name })),
+      writers: playingPlayers.map(p => ({ id: p.id, name: p.name })),
     });
   }
 
@@ -2764,12 +3083,14 @@ io.on('connection', (socket) => {
     const submittedCount = Object.keys(room.caption.captions).length;
     io.to(code).emit('caption:caption_submitted', { playerId: player.id, submittedCount, totalCount: writers.length });
 
-    if (!isUpdate && submittedCount >= writers.length) {
+    const allSubmitted = writers.every(p => room.caption.captions[p.id]);
+    if (room.caption.phase === 'writing' && ((!isUpdate && submittedCount >= writers.length) || allSubmitted)) {
       startCaptionVotingPhase(io, room, code);
     }
   });
 
   function startCaptionVotingPhase(io, room, code) {
+    if (room.caption.phase !== 'writing') return; // guard against double-fire
     room.caption.phase = 'voting';
     const captionList = Object.values(room.caption.captions).map(c => ({ id: c.id, text: c.text }));
     // Shuffle so order doesn't reveal authorship
@@ -2807,11 +3128,12 @@ io.on('connection', (socket) => {
 
     room.caption.votes[player.id] = captionId;
 
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const voters = room.players.filter(p => p.isConnected && p.isPlaying);
     const voteCount = Object.keys(room.caption.votes).length;
-    io.to(code).emit('caption:vote_received', { voteCount, totalVoters: playingPlayers.length, votedPlayerIds: Object.keys(room.caption.votes) });
+    io.to(code).emit('caption:vote_received', { voteCount, totalVoters: voters.length, votedPlayerIds: Object.keys(room.caption.votes) });
 
-    if (voteCount >= playingPlayers.length) {
+    const allVoted = voters.every(p => room.caption.votes[p.id]);
+    if (voteCount >= voters.length || allVoted) {
       endCaptionRound(io, room, code);
     }
   });
@@ -2846,6 +3168,7 @@ io.on('connection', (socket) => {
   });
 
   function endCaptionRound(io, room, code) {
+    if (room.caption.phase !== 'voting') return; // guard against double-fire
     room.caption.phase = 'results';
     // Tally votes: votes received = points
     const roundScores = {};
@@ -2996,8 +3319,17 @@ io.on('connection', (socket) => {
     if (!player || !player.isPlaying || !player.isConnected) return;
     if (room.photoVote.photos[player.id]) return;
 
-    if (!photoData || typeof photoData !== 'string' || !photoData.startsWith('data:image/')) return;
-    if (photoData.length > 2 * 1024 * 1024) return;
+    // Validate: accept cloud storage URL (from configured domain only) or Base64 data URI
+    if (!photoData || typeof photoData !== 'string') return;
+    const cloudBasePv = storageConfigured() ? getPublicBaseUrl() : null;
+    const isCloudUrlPv = cloudBasePv
+      ? (photoData.startsWith(cloudBasePv + '/') && /\.(jpg|jpeg|png|webp)(\?.*)?$/i.test(photoData))
+      : false;
+    const isBase64Pv = photoData.startsWith('data:image/jpeg;base64,') ||
+                       photoData.startsWith('data:image/png;base64,')  ||
+                       photoData.startsWith('data:image/webp;base64,');
+    if (!isCloudUrlPv && !isBase64Pv) return;
+    if (isBase64Pv && photoData.length > 2 * 1024 * 1024) return;
 
     room.photoVote.photos[player.id] = photoData;
     // Persist photo for reuse across selfie-based mini games
@@ -3073,7 +3405,8 @@ io.on('connection', (socket) => {
     const votedPlayerIds = Object.keys(room.photoVote.votes);
     io.to(code).emit('photovote:vote_received', { voteCount, totalVoters: playingPlayers.length, votedPlayerIds });
 
-    if (voteCount >= playingPlayers.length) {
+    const allVoted = playingPlayers.every(p => room.photoVote.votes[p.id]);
+    if (voteCount >= playingPlayers.length || allVoted) {
       endPhotoVoteRound(io, room, code);
     }
   });
@@ -3142,6 +3475,7 @@ io.on('connection', (socket) => {
   });
 
   function endPhotoVoteRound(io, room, code) {
+    if (room.photoVote.phase !== 'voting') return; // guard against double-fire
     room.photoVote.phase = 'results';
     // Tally: most votes wins, all voters for winner get 1pt, winner gets 1pt per vote received
     const voteCounts = {};
@@ -3600,8 +3934,11 @@ io.on('connection', (socket) => {
 
     if (!templateText || typeof templateText !== 'string') return;
     const sanitized = templateText.trim().slice(0, 200);
-    // Must contain [name] placeholder
-    if (!sanitized.toLowerCase().includes('[name]')) return;
+    // Must contain [name] placeholder — notify the client so they can correct it
+    if (!sanitized.toLowerCase().includes('[name]')) {
+      socket.emit('dt:prompt_rejected', { reason: 'missing_name_placeholder' });
+      return;
+    }
 
     const promptId = `dt_${player.id}_${Date.now()}`;
     room.dt.prompts.push({ id: promptId, authorId: player.id, templateText: sanitized });
@@ -4021,3 +4358,13 @@ const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+
+// ─── Room eviction: drop rooms idle for >60 minutes every 10 minutes ─────────
+const ROOM_IDLE_TTL_MS = 60 * 60 * 1000;   // 60 min
+const EVICTION_INTERVAL_MS = 10 * 60 * 1000; // 10 min
+setInterval(() => {
+  const evicted = evictStaleRooms(ROOM_IDLE_TTL_MS);
+  if (evicted.length > 0) {
+    console.log(`[eviction] Dropped ${evicted.length} idle room(s):`, evicted);
+  }
+}, EVICTION_INTERVAL_MS).unref(); // .unref() so this timer doesn't keep the process alive during tests

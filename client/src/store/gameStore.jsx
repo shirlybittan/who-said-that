@@ -1,9 +1,10 @@
 import React, { createContext, useReducer, useContext } from 'react';
 
 const initialState = {
-  playerId: localStorage.getItem('wst_playerId') || null,
+  playerId: sessionStorage.getItem('wst_playerId') || null,
   playerName: localStorage.getItem('wst_playerName') || null,
   roomCode: localStorage.getItem('wst_roomCode') || null,
+  uploadToken: localStorage.getItem('wst_uploadToken') || null,
   isHost: false,
   isPlaying: true,
   joinedMidRound: false,
@@ -271,7 +272,8 @@ export const gameReducer = (state, action) => {
     case 'RESET_GAME':
       return initialState;
     case 'SET_PLAYER_ID':
-      localStorage.setItem('wst_playerId', action.payload);
+      // Use sessionStorage so each browser tab gets its own player ID (avoids sharing bugs in multi-tab testing)
+      try { sessionStorage.setItem('wst_playerId', action.payload); } catch (_) {}
       return { ...state, playerId: action.payload };
     case 'SET_ROOM':
       return {
@@ -285,6 +287,13 @@ export const gameReducer = (state, action) => {
       };
     case 'UPDATE_PLAYERS':
       return { ...state, players: action.payload };
+    case 'UPDATE_PLAYER_CONNECTION': {
+      const { playerId, isConnected } = action.payload;
+      return {
+        ...state,
+        players: state.players.map(p => p.id === playerId ? { ...p, isConnected } : p),
+      };
+    }
     case 'UPDATE_CUSTOM_QUESTIONS':
       return { ...state, customQuestions: action.payload };
     case 'SET_PHASE':
@@ -689,7 +698,7 @@ export const gameReducer = (state, action) => {
     case 'SELFIE_PHOTO_RECEIVED':
       return {
         ...state,
-        selfie: { ...state.selfie, photoCount: action.payload.photoCount, totalPhotographers: action.payload.totalPlayers },
+        selfie: { ...state.selfie, photoCount: action.payload.photoCount, totalPhotographers: action.payload.totalPhotographers ?? state.selfie.totalPhotographers },
       };
     case 'SELFIE_MARK_PHOTO_SUBMITTED':
       return {
@@ -878,6 +887,9 @@ export const gameReducer = (state, action) => {
       return { ...state, draw: { ...state.draw, voteCount: action.payload.voteCount, totalVoters: action.payload.totalVoters } };
     case 'DRAW_MARK_VOTED':
       return { ...state, draw: { ...state.draw, hasVoted: true, votedForPlayerId: action.payload.votedForPlayerId } };
+    case 'DRAW_VOTE_REJECTED':
+      // Server rejected our vote — reset so the player can try again
+      return { ...state, draw: { ...state.draw, hasVoted: false, votedForPlayerId: null } };
     case 'DRAW_SET_RESULTS':
       return {
         ...state,
@@ -1158,6 +1170,15 @@ export const gameReducer = (state, action) => {
           hasSubmittedPrompt: true,
         },
       };
+    case 'DT_PROMPT_REJECTED':
+      // Server rejected the prompt (e.g. missing [name]) — reopen input so player can fix it
+      return {
+        ...state,
+        dt: {
+          ...state.dt,
+          hasSubmittedPrompt: false,
+        },
+      };
     case 'DT_DRAWING_PHASE':
       return {
         ...state,
@@ -1167,7 +1188,8 @@ export const gameReducer = (state, action) => {
           totalChains: action.payload.totalChains,
           chainsCompletedCount: 0,
           chainProgress: {},
-          currentTurn: null,
+          // Preserve currentTurn if dt:your_turn already arrived (race condition guard)
+          currentTurn: state.dt.currentTurn || null,
           hasSubmittedTurn: false,
         },
       };
@@ -1237,6 +1259,8 @@ export const gameReducer = (state, action) => {
           totalGuessers: action.payload.totalGuessers,
           guessSecondsLeft: action.payload.secondsLeft || 60,
           guessedCount: 0,
+          // Preserve guessTurn if dt:your_guess already arrived (race condition guard)
+          guessTurn: state.dt.guessTurn || null,
         },
       };
     case 'DT_YOUR_GUESS':
@@ -1329,6 +1353,7 @@ export const gameReducer = (state, action) => {
             ...state.dt.reveal,
             voteCount: action.payload.voteCount,
             totalVoters: action.payload.totalVoters,
+            votedPlayerIds: action.payload.votedPlayerIds || state.dt.reveal.votedPlayerIds,
           },
         },
       };

@@ -48,6 +48,7 @@ export const getRouteForPhase = (phase, snapshot) => {
     case 'gameEnd':
       return '/game-end';
     case 'mlt':
+      if (snapshot?.roundState === 'results') return '/mlt-results';
       return '/mlt-vote';
     case 'mltEnd':
       return '/mlt-end';
@@ -714,11 +715,9 @@ const buildMiniGameRestore = (room, snapshot) => {
 export const buildJoinRestorePlan = ({ room, playerId, isRejoin, miniGameState }) => {
   const roomPayload = getBaseRoomPayload(room, playerId, isRejoin);
 
-  if (roomPayload.joinedMidRound) {
-    return { roomPayload, actions: [], route: '/lobby' };
-  }
-
-  const route = getRouteForPhase(room.phase, miniGameState);
+  // For mlt phase, pass room.mlt as snapshot so getRouteForPhase can check roundState
+  const snapshot = room.phase === 'mlt' ? room.mlt : miniGameState;
+  const route = getRouteForPhase(room.phase, snapshot);
   const actions = miniGameState
     ? buildMiniGameRestore(room, miniGameState)
     : buildClassicRestore(room, playerId);

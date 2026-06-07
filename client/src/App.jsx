@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, Component } from 'react';
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import { GameProvider, useGame } from './store/gameStore.jsx';
@@ -44,6 +44,39 @@ const SocketHandler = ({ children }) => {
   useSocket();
   return <>{children}</>;
 };
+
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, info) {
+    console.error('[ErrorBoundary]', error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-8 text-center">
+          <p className="text-4xl mb-4">😵</p>
+          <h1 className="text-2xl font-['Fredoka_One'] text-[#FFE66D] mb-2">Something went wrong</h1>
+          <p className="text-sm text-gray-400 mb-6 font-['Nunito']">
+            {this.state.error?.message || 'An unexpected error occurred.'}
+          </p>
+          <button
+            onClick={() => window.location.replace('/')}
+            className="bg-[#4ECDC4] text-black font-bold px-6 py-3 rounded-xl text-lg font-['Fredoka_One'] hover:bg-[#FFE66D] transition"
+          >
+            Return Home
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const AnimatedRoutes = () => {
   const location = useLocation();
@@ -160,17 +193,19 @@ function App() {
 
         {/* Player / phone routes */}
         <Route path="/*" element={
-          <GameProvider>
-            <SocketHandler>
-              <div className="font-['Nunito'] min-h-screen bg-[#0D0D1A] text-[#F7F7F7] relative">
-                <SoundToggle />
-                <LangSwitcher />
-                <RoomCodeBadge />
-                <GlobalTimerOverlay />
-                <AnimatedRoutes />
-              </div>
-            </SocketHandler>
-          </GameProvider>
+          <ErrorBoundary>
+            <GameProvider>
+              <SocketHandler>
+                <div className="font-['Nunito'] min-h-screen bg-[#0D0D1A] text-[#F7F7F7] relative">
+                  <SoundToggle />
+                  <LangSwitcher />
+                  <RoomCodeBadge />
+                  <GlobalTimerOverlay />
+                  <AnimatedRoutes />
+                </div>
+              </SocketHandler>
+            </GameProvider>
+          </ErrorBoundary>
         } />
       </Routes>
     </BrowserRouter>

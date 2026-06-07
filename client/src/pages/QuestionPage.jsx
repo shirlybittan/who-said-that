@@ -24,10 +24,10 @@ export default function QuestionPage() {
   const target = state.situationalTarget;
 
   const doSubmitAnswer = () => {
-    if (!answer.trim()) return;
+    const text = answer.trim() || t.fallbackAnswer;
     sounds.success();
-    socket.emit('submit_answer', { code: state.roomCode, text: answer.trim() });
-    dispatch({ type: 'MARK_ANSWERED', payload: { myAnswer: answer.trim() } });
+    socket.emit('submit_answer', { code: state.roomCode, text });
+    dispatch({ type: 'MARK_ANSWERED', payload: { myAnswer: text } });
   };
 
   const { hasConfirmed, confirm, editResponse, markConfirmed } = useMiniGameLifecycle({
@@ -45,27 +45,49 @@ export default function QuestionPage() {
   const autoSubmitRef = React.useRef({ answer });
   useEffect(() => { autoSubmitRef.current = { answer }; });
 
+  // Send a draft to the server on every keystroke (debounced 300 ms) so that
+  // the server can auto-submit the draft if the timer expires before the player
+  // manually confirms their answer.
+  const draftTimerRef = React.useRef(null);
+  const handleAnswerChange = (newText) => {
+    setAnswer(newText);
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    draftTimerRef.current = setTimeout(() => {
+      socket.emit('answer_draft', { code: state.roomCode, text: newText });
+    }, 300);
+  };
+
   const timerWasActiveRef = React.useRef(false);
   useEffect(() => {
     if (timerActive) timerWasActiveRef.current = true;
   }, [timerActive]);
 
-  // Auto-submit when server timer hits 0
+  // Send a localized fallback draft when the question changes so the server always has
+  // something to submit if the timer expires before the player types anything.
+  useEffect(() => {
+    if (!state.isPlaying || !state.roomCode || !state.currentQuestion) return;
+    socket.emit('answer_draft', { code: state.roomCode, text: t.fallbackAnswer });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.currentQuestion, state.roomCode]);
+
+  // Auto-submit when server timer hits 0.
+  // Guard: if the player has already submitted (state.hasAnswered), don't auto-submit again
+  // — that would overwrite an edit in progress.
   useEffect(() => {
     if (!state.isPlaying) return;
     if (hasConfirmed) return;
+    if (state.hasAnswered) return;   // already submitted — editing is the player's choice
     if (state.phase !== 'question') return;
     if (!timerWasActiveRef.current) return; // timer never started — don't fire
     if (serverTimeLeft <= 0 && timerActive === false) {
-      // Timer just expired
-      let textToSubmit = autoSubmitRef.current.answer.trim();
-      if (!textToSubmit) textToSubmit = "I couldn't think of anything funny in time! 🕒";
+      // Timer just expired — submit draft text or localized fallback
+      const textToSubmit = autoSubmitRef.current.answer.trim() || t.fallbackAnswer;
       socket.emit('submit_answer', { code: state.roomCode, text: textToSubmit });
       dispatch({ type: 'MARK_ANSWERED', payload: { myAnswer: textToSubmit } });
       markConfirmed();
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [serverTimeLeft, timerActive, hasConfirmed, state.isPlaying, state.phase]);
+  }, [serverTimeLeft, timerActive, hasConfirmed, state.isPlaying, state.phase, state.hasAnswered]);
 
   // Play tick sounds based on server timer
   useEffect(() => {
@@ -161,13 +183,14 @@ export default function QuestionPage() {
             onConfirm={confirm}
             onEditResponse={editResponse}
             onChangePrompt={state.isHost ? handleSkip : undefined}
-            confirmLabel={state.hasAnswered ? '↑ Update' : t.submitBtn}
-            disableConfirm={!answer.trim()}
+            confirmLabel={state.hasAnswered ? t.updateBtn : t.submitBtn}
+            editLabel={t.editBtn}
+            disableConfirm={false}
             isHost={state.isHost}
           >
             <textarea
               value={answer}
-              onChange={(e) => setAnswer(e.target.value)}
+              onChange={(e) => handleAnswerChange(e.target.value)}
               placeholder={isSituational && target ? `What would ${target.name} say?` : t.typeAnswerPlaceholder}
               className="w-full p-4 rounded-xl text-black bg-white focus:bg-[#FFF] font-['Nunito'] text-[16px] border-4 border-transparent focus:border-[#FFE66D] focus:outline-none resize-none h-32"
               maxLength={150}

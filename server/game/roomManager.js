@@ -160,8 +160,64 @@ const createRoom = (socketId, playerName = 'Host', gameType = 'most-likely-to', 
     },
   };
   
+  room.lastActivityAt = Date.now();
+
   rooms.set(code, room);
   return { room, player };
+};
+
+// ─── Activity tracking ────────────────────────────────────────────────────────
+
+/**
+ * Refresh the last-active timestamp for a room. Call this on any meaningful
+ * socket event (answers, votes, photo uploads, etc.) so idle detection stays
+ * accurate even for long-running games.
+ */
+const touchRoom = (code) => {
+  const room = rooms.get(code);
+  if (room) room.lastActivityAt = Date.now();
+};
+
+/**
+ * Evict rooms that have been completely idle for longer than maxAgeMs.
+ * Cancels all pending timers before dropping the room so Node can GC the
+ * closure references held by setInterval / setTimeout callbacks.
+ *
+ * @param {number} maxAgeMs - idle threshold (default: 60 minutes)
+ * @returns {string[]} codes of evicted rooms
+ */
+const evictStaleRooms = (maxAgeMs = 60 * 60 * 1000) => {
+  const now = Date.now();
+  const evicted = [];
+  for (const [code, room] of rooms.entries()) {
+    const age = now - (room.lastActivityAt || 0);
+    if (age < maxAgeMs) continue;
+
+    // Cancel all timer references to free event-loop slots
+    const timerFields = [
+      room.timer,
+      room.answerTimerRef,
+      room.mlt?.timerRef,
+      room.tot?.timerRef,
+      room.draw?.timerRef,
+      room.dt?.promptTimerRef,
+      room.dt?.drawTimerRef,
+      room.dt?.guessTimerRef,
+      room.dt?.voteTimerRef,
+    ];
+    timerFields.forEach(ref => { if (ref) { try { clearTimeout(ref); clearInterval(ref); } catch (_) {} } });
+
+    // Drop heavy asset blobs to free memory before GC
+    if (room.playerPhotos) room.playerPhotos = {};
+    if (room.selfie?.photos) room.selfie.photos = {};
+    if (room.selfie?.strokes) room.selfie.strokes = {};
+    if (room.draw?.submissions) room.draw.submissions = {};
+    if (room.dt?.chains) room.dt.chains = {};
+
+    rooms.delete(code);
+    evicted.push(code);
+  }
+  return evicted;
 };
 
 const joinRoom = (code, socketId, playerName, playerId) => {
@@ -296,4 +352,6 @@ module.exports = {
   generateRoomCode,
   generatePlayerColor,
   setGameOptions,
+  touchRoom,
+  evictStaleRooms,
 };

@@ -14,6 +14,10 @@ export default function CaptionWritePage() {
   const [text, setText] = useState(caption.myCaption || '');
   const MAX_LEN = 140;
 
+  const isFeaturedOwner = state.playerId === caption.featuredOwnerId;
+  const writingSecondsLeft = caption.writingSecondsLeft ?? 60;
+  const writingTimerActive = caption.writingTimerActive ?? false;
+
   const doSubmit = () => {
     const trimmed = text.trim();
     if (!trimmed) return;
@@ -25,26 +29,38 @@ export default function CaptionWritePage() {
     }
   };
 
-  const { hasConfirmed, confirm, editResponse } = useMiniGameLifecycle({
+  const { hasConfirmed, confirm, editResponse, markConfirmed } = useMiniGameLifecycle({
     onSubmit: doSubmit,
     resetKey: caption.round,
     initialConfirmed: caption.hasWrittenCaption,
   });
 
-  const autoSubmitRef = useRef({ text, hasConfirmed, state, dispatch });
-  useEffect(() => { autoSubmitRef.current = { text, hasConfirmed, state, dispatch }; });
+  // Keep latest text accessible to the timer effect without stale closures
+  const autoSubmitRef = useRef({ text });
+  useEffect(() => { autoSubmitRef.current = { text }; });
 
+  // Track whether the timer ever became active (guard against firing before the game starts)
+  const timerWasActiveRef = useRef(false);
   useEffect(() => {
-    return () => {
-      const { text: currText, hasConfirmed: currConfirmed, state: currState } = autoSubmitRef.current;
-      if (!currConfirmed) {
-        const trimmed = currText.trim();
-        if (trimmed) {
-          socket.emit('caption:submit_caption', { code: currState.roomCode, text: trimmed });
-        }
+    if (writingTimerActive) timerWasActiveRef.current = true;
+  }, [writingTimerActive]);
+
+  // Auto-submit when the server writing timer hits 0
+  useEffect(() => {
+    if (hasConfirmed) return;
+    if (caption.phase !== 'writing') return;
+    if (!timerWasActiveRef.current) return;
+    if (writingSecondsLeft <= 0 && writingTimerActive === false) {
+      const trimmed = autoSubmitRef.current.text.trim();
+      const textToSubmit = trimmed || "I couldn't think of anything funny in time! 🕒";
+      socket.emit('caption:submit_caption', { code: state.roomCode, text: textToSubmit });
+      if (!caption.hasWrittenCaption) {
+        dispatch({ type: 'CAPTION_MARK_CAPTION_WRITTEN' });
       }
-    };
-  }, []);
+      markConfirmed();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [writingSecondsLeft, writingTimerActive, hasConfirmed, caption.phase]);
 
   return (
     <GamePageWrapper>
@@ -55,9 +71,19 @@ export default function CaptionWritePage() {
         transition={{ duration: 0.3, ease: 'easeOut' }}
       >
         <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8] mt-6 mb-1">Write a Caption! ✍️</h1>
-        <p className="text-gray-400 font-['Nunito'] text-sm text-center mb-4">
-          Round {caption.round} of {caption.totalRounds}
-        </p>
+        <div className="flex items-center gap-4 mb-1">
+          <p className="text-gray-400 font-['Nunito'] text-sm text-center">
+            Round {caption.round} of {caption.totalRounds}
+          </p>
+          {writingTimerActive && !hasConfirmed && (
+            <p className={`text-sm font-bold font-['Nunito'] tabular-nums ${writingSecondsLeft <= 5 ? 'text-red-400 animate-pulse' : writingSecondsLeft <= 15 ? 'text-orange-400' : 'text-gray-400'}`}>
+              ⏳ {writingSecondsLeft}s
+            </p>
+          )}
+        </div>
+        {isFeaturedOwner && (
+          <p className="text-xs text-[#FD79A8] font-['Nunito'] mb-1">📸 It's your photo — write a caption about yourself!</p>
+        )}
 
         {caption.featuredPhotoData && (
           <img

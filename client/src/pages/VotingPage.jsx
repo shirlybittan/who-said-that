@@ -22,26 +22,36 @@ export default function VotingPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.currentAnswerIndex]);
 
+  const [pendingVoteId, setPendingVoteId] = useState(null);
+
   useEffect(() => {
     if (!state.isPlaying) return;   // cast screen never auto-votes
     if (state.hasVoted || isRevealed || state.allVotesIn) return;
     if (timeLeft <= 0) {
        const eligiblePlayers = state.players.filter(p => p.isConnected && p.id !== state.playerId);
        if (eligiblePlayers.length > 0) {
-         const randomPlayer = eligiblePlayers[Math.floor(Math.random() * eligiblePlayers.length)];
-         socket.emit('submit_vote', { code: state.roomCode, votedPlayerId: randomPlayer.id });
+         const target = pendingVoteId
+           ? eligiblePlayers.find(p => p.id === pendingVoteId) || eligiblePlayers[Math.floor(Math.random() * eligiblePlayers.length)]
+           : eligiblePlayers[Math.floor(Math.random() * eligiblePlayers.length)];
+         socket.emit('submit_vote', { code: state.roomCode, votedPlayerId: target.id });
          dispatch({ type: 'MARK_VOTED' });
        }
        return;
     }
     const timer = setInterval(() => setTimeLeft(prev => prev - 1), 1000);
     return () => clearInterval(timer);
-  }, [timeLeft, state.hasVoted, isRevealed, state.allVotesIn, state.players, state.playerId, state.roomCode, dispatch]);
+  }, [timeLeft, state.hasVoted, isRevealed, state.allVotesIn, state.players, state.playerId, state.roomCode, dispatch, pendingVoteId]);
 
   const handleVote = (votedPlayerId) => {
     if (state.hasVoted) return;
+    sounds.click?.();
+    setPendingVoteId(votedPlayerId);
+  };
+
+  const handleConfirmVote = () => {
+    if (!pendingVoteId || state.hasVoted) return;
     sounds.vote();
-    socket.emit('submit_vote', { code: state.roomCode, votedPlayerId });
+    socket.emit('submit_vote', { code: state.roomCode, votedPlayerId: pendingVoteId });
     dispatch({ type: 'MARK_VOTED' });
   };
 
@@ -122,7 +132,12 @@ export default function VotingPage() {
              key={p.id}
              onClick={() => handleVote(p.id)}
              variants={{ hidden: { opacity: 0, scale: 0.85 }, show: { opacity: 1, scale: 1, transition: { duration: 0.25 } } }}
-             className="flex flex-col items-center space-y-2 bg-[#1A1A2E] hover:bg-[#2D2D44] rounded-2xl py-6 px-4 transition-all duration-200 border-2 border-transparent hover:border-[#FFE66D]"
+             className={`flex flex-col items-center space-y-2 bg-[#1A1A2E] rounded-2xl py-6 px-4 transition-all duration-200 border-2
+               ${pendingVoteId === p.id
+                 ? 'border-[#FFE66D] bg-[#2D2D44] scale-[1.03]'
+                 : pendingVoteId
+                 ? 'border-transparent opacity-50'
+                 : 'border-transparent hover:bg-[#2D2D44] hover:border-[#FFE66D]'}`}
            >
               <div className="w-12 h-12 rounded-full flex items-center justify-center text-black font-bold shadow-sm text-xl border-2 border-white" style={{ backgroundColor: p.color }}>
                 {p.name.charAt(0).toUpperCase()}
@@ -131,6 +146,15 @@ export default function VotingPage() {
            </motion.button>
         ))}
       </motion.div>
+
+      {state.isPlaying && pendingVoteId && !state.hasVoted && !isRevealed && (
+        <button
+          onClick={handleConfirmVote}
+          className="mt-5 w-full max-w-md py-4 rounded-2xl bg-[#FFE66D] text-black font-['Fredoka_One'] text-2xl active:scale-95 transition-transform"
+        >
+          Confirm Vote ✓
+        </button>
+      )}
 
       {state.hasVoted && !isRevealed && !state.allVotesIn && (
         <VoteLocked

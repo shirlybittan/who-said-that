@@ -4,7 +4,7 @@ import HostLeftRail from '../host/HostLeftRail';
 import HostControlFooter from '../host/HostControlFooter';
 import PlayerStatusBubbles from '../host/PlayerStatusBubbles';
 
-export default function HostGameLayout({ frame, onPauseToggle, onChangeQuestion, onSkipMiniGame, centerContent, onOpenGamePicker, onOpenMainMenu, onCopyHostUrl }) {
+export default function HostGameLayout({ frame, onPauseToggle, onChangeQuestion, onNextRound, onSkipMiniGame, centerContent, onOpenGamePicker, onOpenMainMenu, onCopyHostUrl }) {
   return (
     <div className="host-shell min-h-screen bg-[#0D0D1A] text-[#F7F7F7] flex flex-col">
       <HostTopBar
@@ -28,6 +28,8 @@ export default function HostGameLayout({ frame, onPauseToggle, onChangeQuestion,
         paused={frame.paused}
         onPauseToggle={onPauseToggle}
         onChangeQuestion={onChangeQuestion}
+        onNextRound={onNextRound}
+        resultsVisible={frame.resultsVisible}
         onSkipMiniGame={onSkipMiniGame}
       />
     </div>

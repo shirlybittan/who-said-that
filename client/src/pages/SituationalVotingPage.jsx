@@ -12,14 +12,23 @@ export default function SituationalVotingPage() {
   const t = translations[state.lang].situational;
   const sit = state.sit;
   const sounds = useSounds();
+  const [pendingVote, setPendingVote] = React.useState(null);
 
-  const handleVote = (answerId) => {
+  const handleSelect = (answerId) => {
     if (sit.hasVoted) return;
-    if (answerId === state.playerId) return; // can't vote own answer
-    sounds.vote();
-    socket.emit('sit:vote', { code: state.roomCode, answerId });
-    dispatch({ type: 'SIT_MARK_VOTED', payload: { answerId } });
+    if (answerId === state.playerId) return;
+    sounds.click();
+    setPendingVote(answerId);
   };
+
+  const handleConfirm = () => {
+    if (!pendingVote || sit.hasVoted) return;
+    sounds.vote();
+    socket.emit('sit:vote', { code: state.roomCode, answerId: pendingVote });
+    dispatch({ type: 'SIT_MARK_VOTED', payload: { answerId: pendingVote } });
+  };
+
+  const handleVote = handleSelect; // backward compat
 
   const handleContinue = () => {
     sounds.click();
@@ -135,7 +144,9 @@ export default function SituationalVotingPage() {
                   className={`w-full text-left rounded-2xl p-4 border-2 transition transform
                     ${isSelected
                       ? 'border-[#4ECDC4] bg-[#4ECDC4]/15 scale-[1.02]'
-                      : isOwn
+                      : pendingVote === ans.id
+                        ? 'border-yellow-400 bg-yellow-400/10 scale-[1.02]'
+                        : isOwn
                         ? 'border-[#2D2D44] bg-[#1A1A2E] opacity-40 cursor-not-allowed'
                         : sit.hasVoted
                           ? 'border-[#2D2D44] bg-[#1A1A2E] opacity-60 cursor-not-allowed'
@@ -151,18 +162,27 @@ export default function SituationalVotingPage() {
             })}
           </div>
 
-          {sit.hasVoted && (
-            <div className="mt-6">
-              <VoteLocked
-                label={t.voteLockedMsg}
-                voteCount={sit.voteCount}
-                totalVoters={sit.totalVoters}
-                accentColor="#4ECDC4"
-              />
-            </div>
+            {pendingVote && !sit.hasVoted && (
+              <button
+                onClick={handleConfirm}
+                className="mt-4 w-full py-3 rounded-2xl bg-[#4ECDC4] text-white font-['Fredoka_One'] text-xl active:scale-95 transition-transform"
+              >
+                Confirm Vote ✓
+              </button>
+            )}
+
+              {sit.hasVoted && (
+              <div className="mt-6">
+                <VoteLocked
+                  label={t.voteLockedMsg}
+                  voteCount={sit.voteCount}
+                  totalVoters={sit.totalVoters}
+                  accentColor="#4ECDC4"
+                />
+              </div>
+            )}
+            </>
           )}
-        </>
-      )}
     </motion.div>
   );
 }

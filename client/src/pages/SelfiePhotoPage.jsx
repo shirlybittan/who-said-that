@@ -5,6 +5,49 @@ import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
 import { compressPhoto } from '../utils/imageUtils';
 
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
+
+/**
+ * Attempt a presigned PUT upload to cloud storage.
+ * Returns the public URL on success, or null if the server doesn't have
+ * storage configured (falls back to base64 socket path).
+ */
+async function tryCloudUpload(roomCode, playerId, dataUrl, uploadToken) {
+  // Derive mimeType from the data URI
+  const mimeMatch = dataUrl.match(/^data:(image\/[a-z]+);base64,/);
+  if (!mimeMatch) return null;
+  const mimeType = mimeMatch[1];
+
+  try {
+    const res = await fetch(`${SERVER_URL}/api/upload-photo-url`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roomCode, playerId, mimeType, uploadToken }),
+    });
+    if (!res.ok) return null; // Server returned 503 = storage not configured
+
+    const { uploadUrl, publicUrl } = await res.json();
+
+    // Convert base64 data URI to binary blob for the PUT request
+    const base64 = dataUrl.split(',')[1];
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes], { type: mimeType });
+
+    const putRes = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': mimeType },
+      body: blob,
+    });
+    if (!putRes.ok) return null;
+
+    return publicUrl;
+  } catch {
+    return null; // Network error — fall back to base64
+  }
+}
+
 export default function SelfiePhotoPage() {
   const { state, dispatch } = useGame();
   const selfie = state.selfie;
@@ -13,6 +56,8 @@ export default function SelfiePhotoPage() {
   const [preview, setPreview] = useState(null);
   const [compressed, setCompressed] = useState(null);
   const [processing, setProcessing] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState(false);
   const [usingSaved, setUsingSaved] = useState(false);
 
   // Pre-fill with saved selfie if available and photo not yet submitted
@@ -40,12 +85,28 @@ export default function SelfiePhotoPage() {
     }
   };
 
-  const handleSubmit = () => {
-    if (!compressed || selfie.hasSubmittedPhoto) return;
+  const handleSubmit = async () => {
+    if (!compressed || selfie.hasSubmittedPhoto || uploading) return;
     sounds.answer?.();
-    socket.emit('selfie:submit_photo', { code: state.roomCode, photoData: compressed });
+    setUploading(true);
+    setUploadError(false);
+
+    // Try cloud upload first; fall back to inline base64 if unavailable
+    let photoData = compressed;
+    const cloudUrl = await tryCloudUpload(state.roomCode, state.playerId, compressed, state.uploadToken);
+    if (cloudUrl) photoData = cloudUrl;
+
+    // Confirm we still have something to send
+    if (!photoData) {
+      setUploadError(true);
+      setUploading(false);
+      return;
+    }
+
+    socket.emit('selfie:submit_photo', { code: state.roomCode, photoData });
     dispatch({ type: 'SELFIE_MARK_PHOTO_SUBMITTED' });
-    dispatch({ type: 'SAVED_SELFIE_STORED', payload: compressed });
+    dispatch({ type: 'SAVED_SELFIE_STORED', payload: compressed }); // always cache base64 locally
+    setUploading(false);
   };
 
   const handleRetake = () => {
@@ -110,11 +171,17 @@ export default function SelfiePhotoPage() {
                 </button>
                 <button
                   onClick={handleSubmit}
-                  className="flex-1 bg-[#FF6B6B] text-white font-['Fredoka_One'] py-3 rounded-xl hover:bg-[#e05a5a] transition"
+                  disabled={uploading}
+                  className="flex-1 bg-[#FF6B6B] text-white font-['Fredoka_One'] py-3 rounded-xl hover:bg-[#e05a5a] transition disabled:opacity-60"
                 >
-                  {usingSaved ? 'Use This ✓' : 'Use This!'}
+                  {uploading ? 'Uploading…' : usingSaved ? 'Use This ✓' : 'Use This!'}
                 </button>
               </div>
+              {uploadError && (
+                <p className="text-[#FF6B6B] font-['Nunito'] text-sm text-center mt-1">
+                  Upload failed. Check your connection and try again.
+                </p>
+              )}
             </div>
           )}
         </>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { socket } from '../socket';
 import { useGame } from '../store/gameStore.jsx';
@@ -13,9 +13,19 @@ export default function HomePage() {
   const [joinNickname, setJoinNickname] = useState('');
   const [roomCode, setRoomCode] = useState(defaultJoin);
 
-  const { state } = useGame();
+  const { state, dispatch } = useGame();
   const t = translations[state.lang].home;
   const sounds = useSounds();
+
+  // Clear any stale session from a previous game so the onConnect handler
+  // in useSocket.js doesn't auto-rejoin a room that no longer exists and
+  // doesn't show every new tab under the same old player name.
+  useEffect(() => {
+    localStorage.removeItem('wst_playerId');
+    localStorage.removeItem('wst_roomCode');
+    dispatch({ type: 'CLEAR_SESSION' });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleJoinRoom = () => {
     if (!joinNickname.trim()) return alert('Please enter a nickname');

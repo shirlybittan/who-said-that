@@ -35,6 +35,7 @@ function TotVotingCenter({ prompt, roundLabel, a, b }) {
 // ─── Center content: results view ────────────────────────────────────────────
 
 function TotResultsCenter({ prompt, roundLabel, a, b, pctA, pctB, countA, countB, majorityChoice }) {
+  const isTie = majorityChoice === null;
   return (
     <div className="w-full flex flex-col items-center gap-6">
       <div className="text-center">
@@ -42,11 +43,14 @@ function TotResultsCenter({ prompt, roundLabel, a, b, pctA, pctB, countA, countB
           Results · {roundLabel}
         </p>
         <h2 className="text-2xl font-['Fredoka_One'] text-[#FFE66D]">{prompt}</h2>
+        {isTie && (
+          <p className="mt-2 text-lg font-['Fredoka_One'] text-[#4ECDC4]">🤝 It's a tie!</p>
+        )}
       </div>
       <div className="flex gap-6 w-full">
         {[
-          { key: 'a', label: a, pct: pctA, count: countA, isMajority: majorityChoice === 'a' },
-          { key: 'b', label: b, pct: pctB, count: countB, isMajority: majorityChoice === 'b' },
+          { key: 'a', label: a, pct: pctA, count: countA, isMajority: !isTie && majorityChoice === 'a' },
+          { key: 'b', label: b, pct: pctB, count: countB, isMajority: !isTie && majorityChoice === 'b' },
         ].map(({ key, label, pct, count, isMajority }) => (
           <div
             key={key}
@@ -117,6 +121,7 @@ export default function ThisOrThatHostView({ state, socket, onOpenGamePicker, on
       frame={frame}
       onPauseToggle={handlePauseToggle}
       onChangeQuestion={actions.changeQuestion}
+      onNextRound={actions.nextRound}
       onSkipMiniGame={onSkipMiniGame || actions.skipMiniGame}
       onOpenGamePicker={onOpenGamePicker}
       onOpenMainMenu={onOpenMainMenu}

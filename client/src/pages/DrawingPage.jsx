@@ -48,6 +48,7 @@ export default function DrawingPage() {
   const [color, setColor] = useState('#000000');
   const [width, setWidth] = useState(WIDTHS[1]);
   const [strokeCount, setStrokeCount] = useState(0); // proxy for undo button state
+  const [pendingVote, setPendingVote] = useState(null); // staged vote awaiting confirm
 
   // Redirect if not in a drawing game
   useEffect(() => {
@@ -56,7 +57,7 @@ export default function DrawingPage() {
     }
   }, [state.phase, draw.phase, navigate]);
 
-  // White canvas background on mount and new round
+  // White canvas background on mount, new round, or new word (skip word)
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -65,7 +66,8 @@ export default function DrawingPage() {
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-  }, [draw.round]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draw.round, draw.yourWord]);
 
   // ── Drawing event handlers (all phases of pointer/touch) ─────────────────
   const startDraw = useCallback((x, y) => {
@@ -204,9 +206,17 @@ export default function DrawingPage() {
 
   const handleVote = (votedForPlayerId) => {
     if (draw.hasVoted || votedForPlayerId === playerId) return;
-    socket.emit('draw:vote', { code: roomCode, votedForPlayerId });
-    dispatch({ type: 'DRAW_MARK_VOTED', payload: { votedForPlayerId } });
+    setPendingVote(votedForPlayerId);
   };
+
+  const handleConfirmVote = () => {
+    if (!pendingVote || draw.hasVoted) return;
+    socket.emit('draw:vote', { code: roomCode, votedForPlayerId: pendingVote });
+    dispatch({ type: 'DRAW_MARK_VOTED', payload: { votedForPlayerId: pendingVote } });
+    setPendingVote(null);
+  };
+
+  const handleCancelVote = () => setPendingVote(null);
 
   const handleSkipToVote = () => socket.emit('draw:skip_to_vote', { code: roomCode });
   const handleShowResults = () => socket.emit('draw:show_results', { code: roomCode });
@@ -375,6 +385,7 @@ export default function DrawingPage() {
           {subs.map(sub => {
             const isOwn = sub.playerId === playerId;
             const voted = draw.votedForPlayerId === sub.playerId;
+            const isPending = pendingVote === sub.playerId;
             const canVote = !draw.hasVoted && !isOwn;
             return (
               <button
@@ -383,6 +394,7 @@ export default function DrawingPage() {
                 disabled={draw.hasVoted || isOwn}
                 className={`rounded-2xl overflow-hidden border-4 transition-all ${
                   voted ? 'border-[#FFE66D] shadow-[0_0_12px_#FFE66D80]' :
+                  isPending ? 'border-[#C39BD3] shadow-[0_0_12px_#C39BD380]' :
                   isOwn ? 'border-[#2D2D44] opacity-60' :
                   canVote ? 'border-[#2D2D44] hover:border-[#C39BD3] hover:shadow-[0_0_10px_#C39BD380] cursor-pointer' :
                   'border-[#2D2D44]'
@@ -400,7 +412,8 @@ export default function DrawingPage() {
                         {isOwn ? `${t.yourCaption}` : '???'}
                       </span>
                     </div>
-                    {canVote && <span className="text-xs font-['Fredoka_One'] text-[#C39BD3]">{t.voteBtn}</span>}
+                    {isPending && <span className="text-xs font-['Fredoka_One'] text-[#C39BD3]">Selected</span>}
+                    {canVote && !isPending && <span className="text-xs font-['Fredoka_One'] text-[#C39BD3]">{t.voteBtn}</span>}
                     {voted && <span className="text-xs text-[#FFE66D]">✓</span>}
                   </div>
                 </div>
@@ -408,6 +421,27 @@ export default function DrawingPage() {
             );
           })}
         </div>
+
+        {/* Pending vote confirm UI */}
+        {pendingVote && !draw.hasVoted && (
+          <div className="w-full max-w-md mb-3 p-4 rounded-2xl bg-[#1A1A2E] border-2 border-[#C39BD3] text-center">
+            <p className="text-[#C39BD3] font-['Fredoka_One'] text-base mb-3">Confirm your vote?</p>
+            <div className="flex gap-3">
+              <button
+                onClick={handleCancelVote}
+                className="flex-1 py-2 rounded-xl font-['Fredoka_One'] text-gray-400 bg-[#2D2D44] hover:bg-[#3D3D54] transition"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmVote}
+                className="flex-1 py-2 rounded-xl font-['Fredoka_One'] text-black bg-[#C39BD3] hover:bg-[#b089c2] transition"
+              >
+                ✓ Confirm Vote
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* Voted confirmation or waiting state */}
         {draw.hasVoted && (
