@@ -17,9 +17,10 @@ export default function FillBlankPage() {
   // Server-driven answer timer (from fitb.answerTimeLeft in store)
   const answerTimeLeft = fitb.answerTimeLeft ?? 30;
 
+  const tQuestion = translations[state.lang]?.question || translations.en.question;
+
   const doSubmitAnswer = () => {
-    let textToSubmit = answerText.trim();
-    if (!textToSubmit) textToSubmit = "I couldn't think of anything funny in time! 🕒";
+    const textToSubmit = answerText.trim() || tQuestion.fallbackAnswer;
     sounds.answer?.();
     socket.emit('fitb:answer', { code: state.roomCode, text: textToSubmit });
     dispatch({ type: 'FITB_MARK_ANSWERED', payload: { myAnswer: textToSubmit } });
@@ -37,36 +38,48 @@ export default function FillBlankPage() {
   // Clear the input when a new question arrives
   useEffect(() => { setAnswerText(''); }, [fitb.question]);
 
-  // Guard: don't auto-submit until the timer has actually started ticking
+  // Guard: don't auto-submit until the timer has actually started ticking.
+  // Use fitb.timeLimit so this works for any configured duration, not just 30s.
   const timerWasActiveRef = useRef(false);
   useEffect(() => {
-    if (answerTimeLeft > 0 && answerTimeLeft < 30) timerWasActiveRef.current = true;
-  }, [answerTimeLeft]);
+    const limit = fitb.timeLimit || 30;
+    if (answerTimeLeft > 0 && answerTimeLeft < limit) timerWasActiveRef.current = true;
+  }, [answerTimeLeft, fitb.timeLimit]);
 
-  // Send draft to server as user types so server can use it on timer expiry
+  // On each new question, immediately register the localized fallback as the initial draft
+  // so the server always has something to submit if the timer expires.
   useEffect(() => {
-    if (fitb.hasAnswered || hasConfirmed) return;
+    if (!state.roomCode || fitb.phase !== 'answering') return;
+    socket.emit('fitb:draft', { code: state.roomCode, text: tQuestion.fallbackAnswer });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fitb.question, state.roomCode]);
+
+  // Send draft to server on every keystroke (debounced) so the server has the latest
+  // text on timer expiry. Also runs during editing after first submit (hasAnswered=true)
+  // so the server stores the updated draft in case of expiry mid-edit.
+  useEffect(() => {
+    if (hasConfirmed) return;          // confirmed — nothing to draft
     if (fitb.phase !== 'answering') return;
     const timeout = setTimeout(() => {
-      socket.emit('fitb:draft', { code: state.roomCode, text: answerText });
+      socket.emit('fitb:draft', { code: state.roomCode, text: answerText || tQuestion.fallbackAnswer });
     }, 300);
     return () => clearTimeout(timeout);
-  }, [answerText, fitb.hasAnswered, hasConfirmed, fitb.phase, state.roomCode]);
+  }, [answerText, hasConfirmed, fitb.phase, state.roomCode, tQuestion.fallbackAnswer]);
 
-  // Auto-submit when server timer hits 0 (server also auto-submits via stored draft as fallback)
+  // Auto-submit when server timer hits 0.
+  // Guard: if already submitted (fitb.hasAnswered), skip — editing is the player's choice.
   useEffect(() => {
-    if (fitb.hasAnswered) return;
+    if (fitb.hasAnswered) return;     // already submitted — don't overwrite an edit
     if (hasConfirmed) return;
     if (fitb.phase !== 'answering') return;
     if (!timerWasActiveRef.current) return;
     if (answerTimeLeft <= 0) {
-      let textToSubmit = autoSubmitRef.current.answerText.trim();
-      if (!textToSubmit) textToSubmit = "I couldn't think of anything funny in time! 🕒";
+      const textToSubmit = autoSubmitRef.current.answerText.trim() || tQuestion.fallbackAnswer;
       socket.emit('fitb:answer', { code: state.roomCode, text: textToSubmit });
       dispatch({ type: 'FITB_MARK_ANSWERED', payload: { myAnswer: textToSubmit } });
       markConfirmed();
     }
-  }, [answerTimeLeft, fitb.hasAnswered, hasConfirmed, fitb.phase, state.roomCode, dispatch, markConfirmed]);
+  }, [answerTimeLeft, fitb.hasAnswered, hasConfirmed, fitb.phase, state.roomCode, dispatch, markConfirmed, tQuestion.fallbackAnswer]);
 
   const handleVote = (id) => {
     if (fitb.hasVoted) return;
@@ -126,8 +139,9 @@ export default function FillBlankPage() {
             hasConfirmed={hasConfirmed}
             onConfirm={confirm}
             onEditResponse={editResponse}
-            confirmLabel={fitb.hasAnswered ? '↑ Update' : 'Submit'}
-            disableConfirm={!answerText.trim()}
+            confirmLabel={fitb.hasAnswered ? tQuestion.updateBtn : 'Submit'}
+            editLabel={tQuestion.editBtn}
+            disableConfirm={false}
             isHost={state.isHost}
           >
             <input
@@ -137,7 +151,7 @@ export default function FillBlankPage() {
               onChange={(e) => setAnswerText(e.target.value.slice(0, 120))}
               onKeyDown={(e) => e.key === 'Enter' && confirm()}
               maxLength={120}
-              autoFocus={!fitb.hasAnswered}
+              autoFocus={!hasConfirmed}
             />
           </MiniGameWrapper>
         </div>

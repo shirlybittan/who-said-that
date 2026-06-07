@@ -468,7 +468,7 @@ const emitWstQuestion = (io, room, code) => {
         room.answers.push({
           playerId: p.id,
           playerName: p.name,
-          text: draft || "I ran out of time! ⏰",
+          text: draft || "...",
           votes: [],
         });
       }
@@ -2182,7 +2182,7 @@ io.on('connection', (socket) => {
             const draftText = (room.fitb.drafts || {})[p.id] || '';
             room.fitb.answers.push({
               playerId: p.id, playerName: p.name, playerColor: p.color,
-              text: draftText || "I couldn't think of anything funny in time! 🕒",
+              text: draftText || "...",
               votes: 0,
             });
           }
