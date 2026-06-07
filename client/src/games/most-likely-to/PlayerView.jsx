@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useGame } from '../../store/gameStore.jsx';
 import { socket } from '../../socket';
 import { useSounds } from '../../hooks/useSounds';
@@ -32,6 +32,38 @@ function ChoiceList({ choices, onSelect, helperText }) {
   );
 }
 
+function ConfirmVoteCard({ choice, onConfirm, onChange, confirmLabel, changeLabel }) {
+  if (!choice) return null;
+  return (
+    <div className="flex flex-col items-center gap-4 mt-4">
+      <div className="w-full rounded-2xl p-6 text-center bg-[#1A1A2E] border-2 border-[#FFE66D]">
+        <p className="text-[#FFE66D] font-['Fredoka_One'] text-xl mb-2">Vote for…</p>
+        <div className="flex items-center justify-center gap-3 mb-4">
+          <div
+            className="w-10 h-10 rounded-full flex items-center justify-center text-black font-bold text-lg border-2 border-white/20 flex-shrink-0"
+            style={{ backgroundColor: choice.color }}
+          >
+            {choice.name.charAt(0).toUpperCase()}
+          </div>
+          <span className="font-['Fredoka_One'] text-2xl text-white">{choice.name}</span>
+        </div>
+        <button
+          onClick={onConfirm}
+          className="w-full py-3 rounded-xl bg-[#4ECDC4] text-[#0D0D1A] font-['Fredoka_One'] text-lg hover:bg-[#3dbdb5] transition mb-2"
+        >
+          {confirmLabel}
+        </button>
+        <button
+          onClick={onChange}
+          className="w-full py-2 rounded-xl border border-gray-600 text-gray-400 font-['Nunito'] text-sm hover:border-gray-400 hover:text-white transition"
+        >
+          {changeLabel}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function LockedVoteCard({ choice, voteCount, totalVoters, voteLockedLabel, youVotedForLabel, votesInLabel, jokerActive, jokerWillDoubleLabel }) {
   if (!choice) return null;
 
@@ -62,6 +94,7 @@ export default function MostLikelyToPlayerView() {
   const { state, dispatch } = useGame();
   const t = translations[state.lang].mlt;
   const sounds = useSounds();
+  const [pendingChoice, setPendingChoice] = useState(null);
   const { frame, actions } = usePlayerGameFrame({
     gameKey: 'most-likely-to',
     state,
@@ -81,13 +114,25 @@ export default function MostLikelyToPlayerView() {
       jokerActive={state.mlt.jokerActive}
       jokerWillDoubleLabel={t.jokerWillDouble}
     />
+  ) : pendingChoice ? (
+    <ConfirmVoteCard
+      choice={pendingChoice}
+      confirmLabel={t.confirmVote || 'Confirm Vote'}
+      changeLabel={t.changeVote || 'Change'}
+      onConfirm={() => {
+        actions.playChoiceClick(pendingChoice);
+        actions.submitChoice(pendingChoice);
+        setPendingChoice(null);
+      }}
+      onChange={() => setPendingChoice(null)}
+    />
   ) : (
     <ChoiceList
       choices={frame.choices}
       helperText={t.tapToVote}
       onSelect={(choice) => {
-        actions.playChoiceClick(choice);
-        actions.submitChoice(choice);
+        sounds.click?.();
+        setPendingChoice(choice);
       }}
     />
   );

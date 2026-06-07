@@ -735,7 +735,7 @@ export const gameReducer = (state, action) => {
           totalDrawers: action.payload.totalDrawers || state.selfie.totalPhotographers,
           promptTemplate: action.payload.promptTemplate || state.selfie.promptTemplate,
           secondsLeft: action.payload.secondsLeft ?? 90,
-          timeLimit: action.payload.secondsLeft ?? 90,
+          timeLimit: 90,
           paused: false,
         },
       };

@@ -191,17 +191,8 @@ export default function DrawTelDrawPage() {
     return () => socket.off('dt:time_up', onTimeUp);
   }, [submitted, turn, roomCode, dispatch]);
 
-  // When server assigns a new turn, reset canvas and submitted state
-  useEffect(() => {
-    const onYourTurn = (data) => {
-      dispatch({ type: 'DT_YOUR_TURN', payload: data });
-      strokesRef.current = [];
-      setStrokeCount(0);
-      setSubmitted(false);
-    };
-    socket.on('dt:your_turn', onYourTurn);
-    return () => socket.off('dt:your_turn', onYourTurn);
-  }, [dispatch]);
+  // Note: dt:your_turn is handled globally in useSocket.js (dispatches DT_YOUR_TURN + navigates here).
+  // Canvas reset happens in the turn?.promptId effect above when the new turn arrives.
 
   // Touch handlers
   const onTouchStart = (e) => {

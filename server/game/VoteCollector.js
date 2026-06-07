@@ -20,6 +20,11 @@
  * @param {object}   opts
  * @param {Function} opts.getExpectedCount   - () => number  Expected voter count at call-time
  * @param {Function} opts.onComplete         - () => void    Called once when threshold is reached
+ * @param {Function} [opts.onVote]           - (voterId, targetId, isAuthorFakeVote) => void
+ *                                             Side-effect hook fired synchronously BEFORE
+ *                                             checkComplete, so legacy state is in sync when
+ *                                             onComplete fires. Use this instead of syncing
+ *                                             room.*.votes manually after castVote returns.
  * @param {boolean}  [opts.allowSelfVote]    - default false — if false, castVote(id, id) returns false
  * @param {boolean}  [opts.allowAuthorVote]  - WST-specific: when true, the author IS allowed to
  *                                             cast a fake vote on their own answer. The vote is
@@ -28,7 +33,7 @@
  *
  * @returns {{ castVote, hasVoted, getVotes, getVoterIds, count, isComplete, reset }}
  */
-function create({ getExpectedCount, onComplete, allowSelfVote = false, allowAuthorVote = false }) {
+function create({ getExpectedCount, onComplete, onVote, allowSelfVote = false, allowAuthorVote = false }) {
   const votes = new Map(); // voterId → { targetId, isAuthorFakeVote }
   let completeFired = false;
 
@@ -61,6 +66,8 @@ function create({ getExpectedCount, onComplete, allowSelfVote = false, allowAuth
       if (isSelfVote && !allowSelfVote && !isAuthorFakeVote) return false;
 
       votes.set(voterId, { targetId, isAuthorFakeVote: isAuthorFakeVote || false });
+      // Sync legacy state BEFORE checkComplete fires, so onComplete sees consistent room state
+      if (onVote) onVote(voterId, targetId, isAuthorFakeVote || false);
       checkComplete();
       return true;
     },

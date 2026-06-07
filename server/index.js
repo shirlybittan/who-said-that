@@ -163,6 +163,12 @@ const startDrawTimer = (io, room, code, seconds) => {
   room._timers = room._timers || {};
   if (room._timers.draw) room._timers.draw.cancel();
   room.draw.secondsLeft = seconds;
+  room.draw.submissions = {};
+  room.draw._submissionTracker = SubmissionTracker.create({
+    getExpectedCount: () => room.players.filter(p => p.isConnected && p.isPlaying).length,
+    onRecord: (playerId, data) => { room.draw.submissions[playerId] = data; },
+    onComplete: () => { room._timers?.draw?.cancel(); startDrawVoting(io, room, code); },
+  });
   room._timers.draw = TimerManager.create({
     io,
     code,
@@ -181,6 +187,7 @@ const startDrawVoting = (io, room, code) => {
   room.draw._voteCollector = VoteCollector.create({
     getExpectedCount: () => room.players.filter(p => p.isConnected && p.isPlaying).length,
     allowSelfVote: false,
+    onVote: (voterId, targetId) => { room.draw.votes[voterId] = targetId; },
     onComplete: () => resolveDrawVoting(io, room, code),
   });
   const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
@@ -255,21 +262,17 @@ const closeMltVoting = (io, room, code) => {
   // Only non-host players can be voted for
   const votablePlayers = room.players.filter(p => p.isConnected && p.isPlaying);
 
-  // Use VoteCollector's map when available — it is already updated before onComplete fires,
-  // whereas room.mlt.votes is updated on the line AFTER castVote() returns.
-  const allVotes = room.mlt._voteCollector?.getVotesMap() ?? room.mlt.votes;
-
   // Tally votes on votable players only
   const voteCounts = {};
   votablePlayers.forEach(p => { voteCounts[p.id] = 0; });
-  Object.entries(allVotes).forEach(([, targetId]) => {
+  Object.entries(room.mlt.votes).forEach(([, targetId]) => {
     if (voteCounts[targetId] !== undefined) {
       voteCounts[targetId]++;
       room.mlt.totalVotes[targetId] = (room.mlt.totalVotes[targetId] || 0) + 1;
     }
   });
 
-  const totalVotesCount = Object.keys(allVotes).length;
+  const totalVotesCount = Object.keys(room.mlt.votes).length;
 
   const results = votablePlayers.map(p => ({
     playerId: p.id,
@@ -413,7 +416,7 @@ const emitWstQuestion = (io, room, code) => {
   room.skipVotes = [];
   room._answerTracker = SubmissionTracker.create({
     getExpectedCount: () => activePlayers(room).length,
-    onComplete: () => {},
+    onComplete: () => advanceWstAnswerPhase(io, room, code),
   });
 
   const roundDuration = room.roomConfig?.roundDurationSecs || 60;
@@ -463,6 +466,7 @@ const emitWstQuestion = (io, room, code) => {
       room.sit._voteCollector = VoteCollector.create({
         getExpectedCount: () => activePlayers(room).length,
         allowSelfVote: false,
+        onVote: (voterId, targetId) => { room.sit.votes[voterId] = targetId; },
         onComplete: () => closeSitVoting(io, room, code),
       });
       const mappedAnswers = room.answers.map(a => ({ id: a.playerId, text: a.text }));
@@ -1069,42 +1073,49 @@ io.on('connection', (socket) => {
     io.to(code).emit('answer_received', { answeredCount, totalPlayers: connectedPlayersCount, answeredPlayerIds });
 
     if ((room._answerTracker?.isComplete()) || answeredCount >= connectedPlayersCount) {
-      room._timers?.answer?.cancel();
-      room.answers = shuffleAnswers(room.answers);
-      const q = room.questions[room.currentQuestionIndex];
-
-      if (q?.type === 'situational') {
-        // Situational: show all answers at once, vote for best
-        room.phase = 'sit-voting';
-        room.sit.votes = {};
-        room.sit._voteCollector = VoteCollector.create({
-          getExpectedCount: () => activePlayers(room).length,
-          allowSelfVote: false,
-          onComplete: () => closeSitVoting(io, room, code),
-        });
-        const mappedAnswers = room.answers.map(a => ({ id: a.playerId, text: a.text }));
-        io.to(code).emit('sit:voting_started', {
-          answers: mappedAnswers,
-          question: room.currentQuestion,
-          totalVoters: connectedPlayersCount,
-        });
-      } else {
-        // WST: reveal one answer at a time, guess who wrote it
-        room.phase = 'voting';
-        room.currentAnswerIndex = 0;
-        const mappedAnswers = room.answers.map(a => ({ text: a.text }));
-        const expectedVotes = connectedPlayersCount;
-        io.to(code).emit('phase_timer', { secondsLeft: 0 }); // clear answering timer
-        io.to(code).emit('voting_started', { answers: mappedAnswers, currentIndex: 0, totalPlayers: expectedVotes });
-        room.answers.forEach((answer, idx) => {
-          const authorPlayer = room.players.find(p => p.id === answer.playerId);
-          if (authorPlayer?.socketId) {
-            io.to(authorPlayer.socketId).emit('my_answer_index', { index: idx });
-          }
-        });
-      }
+      advanceWstAnswerPhase(io, room, code);
     }
   });
+
+  function advanceWstAnswerPhase(io, room, code) {
+    if (room.phase !== 'question') return; // guard against double-fire
+    const connectedPlayersCount = activePlayers(room).length;
+    room._timers?.answer?.cancel();
+    room.answers = shuffleAnswers(room.answers);
+    const q = room.questions[room.currentQuestionIndex];
+
+    if (q?.type === 'situational') {
+      // Situational: show all answers at once, vote for best
+      room.phase = 'sit-voting';
+      room.sit.votes = {};
+      room.sit._voteCollector = VoteCollector.create({
+        getExpectedCount: () => activePlayers(room).length,
+        allowSelfVote: false,
+        onVote: (voterId, targetId) => { room.sit.votes[voterId] = targetId; },
+        onComplete: () => closeSitVoting(io, room, code),
+      });
+      const mappedAnswers = room.answers.map(a => ({ id: a.playerId, text: a.text }));
+      io.to(code).emit('sit:voting_started', {
+        answers: mappedAnswers,
+        question: room.currentQuestion,
+        totalVoters: connectedPlayersCount,
+      });
+    } else {
+      // WST: reveal one answer at a time, guess who wrote it
+      room.phase = 'voting';
+      room.currentAnswerIndex = 0;
+      const mappedAnswers = room.answers.map(a => ({ text: a.text }));
+      const expectedVotes = connectedPlayersCount;
+      io.to(code).emit('phase_timer', { secondsLeft: 0 }); // clear answering timer
+      io.to(code).emit('voting_started', { answers: mappedAnswers, currentIndex: 0, totalPlayers: expectedVotes });
+      room.answers.forEach((answer, idx) => {
+        const authorPlayer = room.players.find(p => p.id === answer.playerId);
+        if (authorPlayer?.socketId) {
+          io.to(authorPlayer.socketId).emit('my_answer_index', { index: idx });
+        }
+      });
+    }
+  }
 
   socket.on('sit:vote', ({ code, answerId }) => {
     const room = getRoom(code);
@@ -1609,6 +1620,7 @@ io.on('connection', (socket) => {
     room.mlt._voteCollector = VoteCollector.create({
       getExpectedCount: () => activePlayers(room).length,
       allowSelfVote: true,
+      onVote: (voterId, targetId) => { room.mlt.votes[voterId] = targetId; },
       onComplete: () => closeMltVoting(io, room, code),
     });
 
@@ -1992,14 +2004,23 @@ io.on('connection', (socket) => {
       })) : [],
     }));
 
-    room.draw.submissions[player.id] = { strokes: sanitized, submittedAt: Date.now() };
+    const data = { strokes: sanitized, submittedAt: Date.now() };
+    if (room.draw._submissionTracker) {
+      room.draw._submissionTracker.recordOrUpdate(player.id, data, () => data);
+    } else {
+      room.draw.submissions[player.id] = data;
+    }
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
-    const submittedCount = Object.keys(room.draw.submissions).length;
-    const submittedPlayerIds = Object.keys(room.draw.submissions);
+    const submittedCount = room.draw._submissionTracker
+      ? room.draw._submissionTracker.count()
+      : Object.keys(room.draw.submissions).length;
+    const submittedPlayerIds = room.draw._submissionTracker
+      ? room.draw._submissionTracker.getPlayerIds()
+      : Object.keys(room.draw.submissions);
     io.to(code).emit('draw:submission_received', { submittedCount, totalDrawers: playingPlayers.length, submittedPlayerIds });
     console.log(`[Server] Draw submission: ${submittedCount}/${playingPlayers.length} room=${code}`);
 
-    if (submittedCount >= playingPlayers.length) {
+    if (!room.draw._submissionTracker && submittedCount >= playingPlayers.length) {
       room._timers?.draw?.cancel();
       startDrawVoting(io, room, code);
     }
@@ -2207,7 +2228,7 @@ io.on('connection', (socket) => {
     };
     room.fitb._submissionTracker = SubmissionTracker.create({
       getExpectedCount: () => room.players.filter(p => p.isConnected && p.isPlaying).length,
-      onComplete: () => {},
+      onComplete: () => startFitbVoting(io, room, code),
     });
     room.fitb.question = pickFitbQuestion(room, room.players);
 
@@ -2256,7 +2277,8 @@ io.on('connection', (socket) => {
     const answeredPlayerIds = room.fitb._submissionTracker?.getPlayerIds() ?? room.fitb.answers.map(a => a.playerId);
     io.to(code).emit('fitb:answer_received', { answeredCount, totalPlayers: playingPlayers.length, answeredPlayerIds });
 
-    if ((room.fitb._submissionTracker?.isComplete()) || answeredCount >= playingPlayers.length) {
+    // onComplete handles threshold when tracker exists; fallback for edge cases
+    if (!room.fitb._submissionTracker && answeredCount >= playingPlayers.length) {
       startFitbVoting(io, room, code);
     }
   });
@@ -2269,6 +2291,12 @@ io.on('connection', (socket) => {
     room.fitb._voteCollector = VoteCollector.create({
       getExpectedCount: () => room.players.filter(p => p.isConnected && p.isPlaying).length,
       allowSelfVote: false,
+      onVote: (voterId, idxStr) => {
+        if (!room.fitb._votes) room.fitb._votes = {};
+        const i = Number(idxStr);
+        room.fitb._votes[voterId] = i;
+        if (room.fitb.answers[i]) room.fitb.answers[i].votes++;
+      },
       onComplete: () => resolveFitbVoting(io, room, code),
     });
     // Shuffle answers so order doesn't reveal authorship
@@ -2338,15 +2366,17 @@ io.on('connection', (socket) => {
     // Prevent voting for own answer
     if (room.fitb.answers[idx].playerId === player.id) return;
 
-    // Use VoteCollector for dedup + threshold
+    // Use VoteCollector for dedup + threshold (onVote handles legacy sync)
     const accepted = room.fitb._voteCollector
       ? room.fitb._voteCollector.castVote(player.id, String(idx))
       : !room.fitb._votes?.[player.id];
     if (!accepted) return;
 
-    if (!room.fitb._votes) room.fitb._votes = {};
-    room.fitb._votes[player.id] = idx; // keep legacy map in sync
-    room.fitb.answers[idx].votes++;
+    if (!room.fitb._voteCollector) {
+      if (!room.fitb._votes) room.fitb._votes = {};
+      room.fitb._votes[player.id] = idx;
+      room.fitb.answers[idx].votes++;
+    }
 
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
     const voteCount = room.fitb._voteCollector?.count() ?? Object.keys(room.fitb._votes).length;
@@ -2360,7 +2390,7 @@ io.on('connection', (socket) => {
   const resolveFitbVoting = (io, room, code) => {
     if (room.fitb.phase !== 'voting') return;
     room.fitb.phase = 'results';
-    // Award points: +1 per vote received
+    // Award points: +1 per vote received (a.votes synced by VoteCollector.onVote)
     room.fitb.answers.forEach(a => {
       room.fitb.scores[a.playerId] = (room.fitb.scores[a.playerId] || 0) + a.votes;
     });
@@ -2664,10 +2694,11 @@ io.on('connection', (socket) => {
       onExpire: () => {
         if (room.selfie.phase !== 'drawing') return;
         io.to(code).emit('selfie:drawing_ending');
-        setTimeout(() => {
+        const gracePeriod = setTimeout(() => {
           if (room.selfie.phase !== 'drawing') return;
           startSelfieVoting(io, room, code);
         }, 1500);
+        room._timers.selfieGrace = { cancel: () => clearTimeout(gracePeriod) };
       },
     });
   };
@@ -2718,7 +2749,14 @@ io.on('connection', (socket) => {
   const startSelfieVoting = (io, room, code) => {
     if (room.selfie.phase !== 'drawing') return;
     room.selfie.phase = 'voting';
+    room.selfie.votes = {};
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    room.selfie._voteCollector = VoteCollector.create({
+      getExpectedCount: () => room.players.filter(p => p.isConnected && p.isPlaying).length,
+      allowSelfVote: false,
+      onVote: (voterId, targetId) => { room.selfie.votes[voterId] = targetId; },
+      onComplete: () => resolveSelfieVoting(io, room, code),
+    });
 
     // Auto-fill empty strokes for drawers who never submitted (so all photos appear in voting)
     Object.keys(room.selfie.assignments).forEach(drawerId => {
@@ -2759,13 +2797,16 @@ io.on('connection', (socket) => {
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isHost) return;
     room._timers?.selfie?.cancel();
+    room._timers?.selfieGrace?.cancel();
     // Signal all clients to auto-submit their current drawings
     io.to(code).emit('selfie:drawing_ending');
     // Give clients 1.5 s to submit, then advance regardless
-    setTimeout(() => {
+    const gracePeriod = setTimeout(() => {
       if (room.selfie.phase !== 'drawing') return; // already advanced
       startSelfieVoting(io, room, code);
     }, 1500);
+    room._timers = room._timers || {};
+    room._timers.selfieGrace = { cancel: () => clearTimeout(gracePeriod) };
   });
 
   socket.on('selfie:pause', ({ code }) => {
@@ -2791,18 +2832,25 @@ io.on('connection', (socket) => {
     if (!room || room.phase !== 'selfie' || room.selfie.phase !== 'voting') return;
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
-    if (room.selfie.votes[player.id] !== undefined) return; // already voted
-    if (drawerId === player.id) return; // no self-vote
     if (!room.selfie.strokes[drawerId]) return; // invalid target
 
-    room.selfie.votes[player.id] = drawerId;
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
-    const voteCount = Object.keys(room.selfie.votes).length;
-    io.to(code).emit('selfie:vote_received', { voteCount, totalVoters: playingPlayers.length, votedPlayerIds: Object.keys(room.selfie.votes) });
+    const accepted = room.selfie._voteCollector
+      ? room.selfie._voteCollector.castVote(player.id, drawerId)
+      : room.selfie.votes[player.id] === undefined && drawerId !== player.id;
+    if (!accepted) return;
 
-    const allVoted = playingPlayers.every(p => room.selfie.votes[p.id] !== undefined);
-    if (voteCount >= playingPlayers.length || allVoted) {
-      resolveSelfieVoting(io, room, code);
+    if (!room.selfie._voteCollector) {
+      room.selfie.votes[player.id] = drawerId;
+    }
+    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const voteCount = room.selfie._voteCollector?.count() ?? Object.keys(room.selfie.votes).length;
+    io.to(code).emit('selfie:vote_received', { voteCount, totalVoters: playingPlayers.length, votedPlayerIds: room.selfie._voteCollector?.getVoterIds() ?? Object.keys(room.selfie.votes) });
+
+    if (!room.selfie._voteCollector) {
+      const allVoted = playingPlayers.every(p => room.selfie.votes[p.id] !== undefined);
+      if (voteCount >= playingPlayers.length || allVoted) {
+        resolveSelfieVoting(io, room, code);
+      }
     }
   });
 
@@ -3123,6 +3171,13 @@ io.on('connection', (socket) => {
   function startCaptionVotingPhase(io, room, code) {
     if (room.caption.phase !== 'writing') return; // guard against double-fire
     room.caption.phase = 'voting';
+    room.caption.votes = {};
+    room.caption._voteCollector = VoteCollector.create({
+      getExpectedCount: () => room.players.filter(p => p.isConnected && p.isPlaying).length,
+      allowSelfVote: true, // self-vote validated manually in handler before castVote
+      onVote: (voterId, captionId) => { room.caption.votes[voterId] = captionId; },
+      onComplete: () => endCaptionRound(io, room, code),
+    });
     const captionList = Object.values(room.caption.captions).map(c => ({ id: c.id, text: c.text }));
     // Shuffle so order doesn't reveal authorship
     captionList.sort(() => Math.random() - 0.5);
@@ -3148,7 +3203,6 @@ io.on('connection', (socket) => {
     if (!room || room.phase !== 'caption' || room.caption.phase !== 'voting') return;
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
-    if (room.caption.votes[player.id]) return; // already voted
 
     // Validate captionId exists
     const captionExists = Object.values(room.caption.captions).some(c => c.id === captionId);
@@ -3157,15 +3211,23 @@ io.on('connection', (socket) => {
     const ownCaption = room.caption.captions[player.id];
     if (ownCaption && ownCaption.id === captionId) return;
 
-    room.caption.votes[player.id] = captionId;
+    const accepted = room.caption._voteCollector
+      ? room.caption._voteCollector.castVote(player.id, captionId)
+      : !room.caption.votes[player.id];
+    if (!accepted) return;
 
+    if (!room.caption._voteCollector) {
+      room.caption.votes[player.id] = captionId;
+    }
     const voters = room.players.filter(p => p.isConnected && p.isPlaying);
-    const voteCount = Object.keys(room.caption.votes).length;
-    io.to(code).emit('caption:vote_received', { voteCount, totalVoters: voters.length, votedPlayerIds: Object.keys(room.caption.votes) });
+    const voteCount = room.caption._voteCollector?.count() ?? Object.keys(room.caption.votes).length;
+    io.to(code).emit('caption:vote_received', { voteCount, totalVoters: voters.length, votedPlayerIds: room.caption._voteCollector?.getVoterIds() ?? Object.keys(room.caption.votes) });
 
-    const allVoted = voters.every(p => room.caption.votes[p.id]);
-    if (voteCount >= voters.length || allVoted) {
-      endCaptionRound(io, room, code);
+    if (!room.caption._voteCollector) {
+      const allVoted = voters.every(p => room.caption.votes[p.id]);
+      if (voteCount >= voters.length || allVoted) {
+        endCaptionRound(io, room, code);
+      }
     }
   });
 
@@ -3390,6 +3452,12 @@ io.on('connection', (socket) => {
   function startPhotoVoteRound(io, room, code) {
     room.photoVote.phase = 'voting';
     room.photoVote.votes = {};
+    room.photoVote._voteCollector = VoteCollector.create({
+      getExpectedCount: () => room.players.filter(p => p.isConnected && p.isPlaying).length,
+      allowSelfVote: false,
+      onVote: (voterId, targetId) => { room.photoVote.votes[voterId] = targetId; },
+      onComplete: () => endPhotoVoteRound(io, room, code),
+    });
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
     let prompt;
     if (room.photoVote.pendingPrompt) {
@@ -3422,23 +3490,28 @@ io.on('connection', (socket) => {
     if (!room || room.phase !== 'photovote' || room.photoVote.phase !== 'voting') return;
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
-    if (room.photoVote.votes[player.id]) return;
 
     const target = room.players.find(p => p.id === targetPlayerId && p.isPlaying);
     if (!target) return;
-    // Can't vote for yourself
-    if (targetPlayerId === player.id) return;
 
-    room.photoVote.votes[player.id] = targetPlayerId;
+    const accepted = room.photoVote._voteCollector
+      ? room.photoVote._voteCollector.castVote(player.id, targetPlayerId)
+      : !room.photoVote.votes[player.id] && targetPlayerId !== player.id;
+    if (!accepted) return;
 
+    if (!room.photoVote._voteCollector) {
+      room.photoVote.votes[player.id] = targetPlayerId;
+    }
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
-    const voteCount = Object.keys(room.photoVote.votes).length;
-    const votedPlayerIds = Object.keys(room.photoVote.votes);
+    const voteCount = room.photoVote._voteCollector?.count() ?? Object.keys(room.photoVote.votes).length;
+    const votedPlayerIds = room.photoVote._voteCollector?.getVoterIds() ?? Object.keys(room.photoVote.votes);
     io.to(code).emit('photovote:vote_received', { voteCount, totalVoters: playingPlayers.length, votedPlayerIds });
 
-    const allVoted = playingPlayers.every(p => room.photoVote.votes[p.id]);
-    if (voteCount >= playingPlayers.length || allVoted) {
-      endPhotoVoteRound(io, room, code);
+    if (!room.photoVote._voteCollector) {
+      const allVoted = playingPlayers.every(p => room.photoVote.votes[p.id]);
+      if (voteCount >= playingPlayers.length || allVoted) {
+        endPhotoVoteRound(io, room, code);
+      }
     }
   });
 
@@ -3452,6 +3525,7 @@ io.on('connection', (socket) => {
       room.photoVote.phase = 'photo';
       room.photoVote.photos = {};
       room.photoVote.votes = {};
+      room.photoVote._voteCollector = null;
       room.photoVote.currentPromptIndex++;
       
       const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
@@ -3472,6 +3546,7 @@ io.on('connection', (socket) => {
 
     // Reset votes and pick the next prompt
     room.photoVote.votes = {};
+    room.photoVote._voteCollector = null;
     const playingPlayersForPrompt = room.players.filter(p => p.isConnected && p.isPlaying);
     const nextIndex = room.photoVote.currentPromptIndex % room.photoVote.prompts.length;
     const rawNextPrompt = room.photoVote.prompts[nextIndex];
@@ -3571,6 +3646,7 @@ io.on('connection', (socket) => {
         room.photoVote.phase = 'photo';
         room.photoVote.photos = {};
         room.photoVote.votes = {};
+        room.photoVote._voteCollector = null;
         
         const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
         const rawNextPrompt = room.photoVote.prompts[room.photoVote.currentPromptIndex];
@@ -3587,6 +3663,7 @@ io.on('connection', (socket) => {
       } else {
         room.photoVote.phase = 'voting';
         room.photoVote.votes = {};
+        room.photoVote._voteCollector = null;
         startPhotoVoteRound(io, room, code);
       }
     }
