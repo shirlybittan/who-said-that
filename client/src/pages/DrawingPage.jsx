@@ -336,16 +336,6 @@ export default function DrawingPage() {
               🗑 {t.clear}
             </button>
           </div>
-
-          {/* Host controls */}
-          {isHost && (
-            <button
-              onClick={handleSkipToVote}
-              className="w-full py-2 rounded-lg text-xs font-['Nunito'] text-gray-400 border border-gray-600 hover:border-gray-400 transition"
-            >
-              {t.skipToVote} →
-            </button>
-          )}
         </div>
 
         {/* Unified confirm / waiting controls */}

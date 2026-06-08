@@ -14,6 +14,9 @@ const {
 } = require('./game/roomManager');
 const { selectQuestions, selectSituationalQuestions, selectThisOrThatQuestions, selectDrawingQuestion, selectMixedQuestions, shuffleAnswers } = require('./game/gameLogic');
 const { buildMiniGameSnapshot } = require('./game/miniGameSnapshot');
+const TimerManager = require('./game/TimerManager');
+const SubmissionTracker = require('./game/SubmissionTracker');
+const VoteCollector = require('./game/VoteCollector');
 const mltPromptBank = require('./questions/mostLikelyTo');
 const { words: drawWordBank, prompts: drawPrompts } = require('./questions/drawing');
 const { selfiePrompts } = require('./questions/selfie');
@@ -127,49 +130,27 @@ const mergeToGlobalScores = (io, room, scores) => {
 // "Maximum call stack size exceeded" error when it encounters these because the
 // internal Node.js Timeout objects have circular prototype chains.
 
-const sanitizeRoomForClient = (room) => {
-  const { answerTimerRef, timer, ...rest } = room;
-
-  return {
-    ...rest,
-    tot: room.tot ? { ...room.tot, timerRef: undefined } : room.tot,
-    mlt: room.mlt ? { ...room.mlt, timerRef: undefined } : room.mlt,
-    draw: room.draw ? { ...room.draw, timerRef: undefined } : room.draw,
-    fitb: room.fitb ? { ...room.fitb, timerRef: undefined } : room.fitb,
-    dt: room.dt ? {
-      ...room.dt,
-      promptTimerRef: undefined,
-      drawTimerRef: undefined,
-      guessTimerRef: undefined,
-      voteTimerRef: undefined,
-      chains: Object.fromEntries(
-        Object.entries(room.dt.chains || {}).map(([id, chain]) => [id, { ...chain, timerRef: undefined }])
-      ),
-    } : room.dt,
-  };
-};
+const sanitizeRoomForClient = (room) => TimerManager.sanitizeForClient(room);
 
 // ─── Answer-phase timer (WST / Situational answering) ─────────────────────────
 
-const stopAnswerTimer = (room) => {
-  if (room.answerTimerRef) { clearInterval(room.answerTimerRef); room.answerTimerRef = null; }
-};
-
 const startAnswerTimer = (io, room, code, seconds, onExpire) => {
-  stopAnswerTimer(room);
+  room._timers = room._timers || {};
+  if (room._timers.answer) room._timers.answer.cancel();
   room.answerSecondsLeft = seconds;
   room.answerPaused = false;
-  io.to(code).emit('phase_timer', { secondsLeft: seconds, phase: 'answering' });
-  room.answerTimerRef = setInterval(() => {
-    if (room.phase !== 'question') { stopAnswerTimer(room); return; }
-    if (room.answerPaused) return;
-    room.answerSecondsLeft = Math.max(0, (room.answerSecondsLeft || 0) - 1);
-    io.to(code).emit('phase_timer', { secondsLeft: room.answerSecondsLeft, phase: 'answering' });
-    if (room.answerSecondsLeft <= 0) {
-      stopAnswerTimer(room);
-      onExpire();
-    }
-  }, 1000);
+  room._timers.answer = TimerManager.create({
+    io,
+    code,
+    seconds,
+    tickEvent: 'phase_timer',
+    extraData: { phase: 'answering' },
+    isActive: () => room.phase === 'question',
+    onTick: (s) => { room.answerSecondsLeft = s; },
+    onPause: () => { room.answerPaused = true; },
+    onResume: () => { room.answerPaused = false; },
+    onExpire,
+  });
 };
 
 // ─── Draw helpers ─────────────────────────────────────────────────────────────
@@ -179,24 +160,36 @@ const pickDrawWord = () => {
 };
 
 const startDrawTimer = (io, room, code, seconds) => {
-  if (room.draw.timerRef) { clearInterval(room.draw.timerRef); room.draw.timerRef = null; }
+  room._timers = room._timers || {};
+  if (room._timers.draw) room._timers.draw.cancel();
   room.draw.secondsLeft = seconds;
-  room.draw.timerRef = setInterval(() => {
-    if (!room.draw || room.draw.phase !== 'drawing') {
-      clearInterval(room.draw.timerRef); room.draw.timerRef = null; return;
-    }
-    room.draw.secondsLeft = Math.max(0, room.draw.secondsLeft - 1);
-    io.to(code).emit('draw:timer', { secondsLeft: room.draw.secondsLeft });
-    if (room.draw.secondsLeft <= 0) {
-      clearInterval(room.draw.timerRef); room.draw.timerRef = null;
-      startDrawVoting(io, room, code);
-    }
-  }, 1000);
+  room.draw.submissions = {};
+  room.draw._submissionTracker = SubmissionTracker.create({
+    getExpectedCount: () => room.players.filter(p => p.isConnected && p.isPlaying).length,
+    onRecord: (playerId, data) => { room.draw.submissions[playerId] = data; },
+    onComplete: () => { room._timers?.draw?.cancel(); startDrawVoting(io, room, code); },
+  });
+  room._timers.draw = TimerManager.create({
+    io,
+    code,
+    seconds,
+    tickEvent: 'draw:timer',
+    isActive: () => room.draw?.phase === 'drawing',
+    onTick: (s) => { room.draw.secondsLeft = s; },
+    onExpire: () => startDrawVoting(io, room, code),
+  });
 };
 
 const startDrawVoting = (io, room, code) => {
   if (!room.draw || room.draw.phase !== 'drawing') return;
   room.draw.phase = 'voting';
+  room.draw.votes = {};
+  room.draw._voteCollector = VoteCollector.create({
+    getExpectedCount: () => room.players.filter(p => p.isConnected && p.isPlaying).length,
+    allowSelfVote: false,
+    onVote: (voterId, targetId) => { room.draw.votes[voterId] = targetId; },
+    onComplete: () => resolveDrawVoting(io, room, code),
+  });
   const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
   const submissions = Object.entries(room.draw.submissions).map(([playerId, sub]) => {
     const player = room.players.find(p => p.id === playerId);
@@ -240,41 +233,28 @@ const resolveDrawVoting = (io, room, code) => {
 
 // ─── ToT timer ───────────────────────────────────────────────────────────────
 
-const stopTotTimer = (room) => {
-  if (room.tot.timerRef) { clearTimeout(room.tot.timerRef); room.tot.timerRef = null; }
-};
-
 const startTotTimer = (io, room, code, seconds) => {
-  stopTotTimer(room);
-  let remaining = seconds;
-  room.tot.secondsLeft = remaining;
+  room._timers = room._timers || {};
+  if (room._timers.tot) room._timers.tot.cancel();
+  room.tot.secondsLeft = seconds;
   room.tot.paused = false;
-
-  const tick = () => {
-    if (room.phase !== 'tot' || room.tot.roundState !== 'voting' || room.tot.paused) {
-      room.tot.timerRef = null;
-      return;
-    }
-    room.tot.secondsLeft = remaining;
-    io.to(code).emit('tot:timer', { secondsLeft: remaining });
-    if (remaining === 0) {
-      closeTotRound(io, room, code);
-      return;
-    }
-    remaining--;
-    room.tot.timerRef = setTimeout(tick, 1000);
-  };
-
-  tick();
+  room._timers.tot = TimerManager.create({
+    io,
+    code,
+    seconds,
+    tickEvent: 'tot:timer',
+    isActive: () => room.phase === 'tot' && room.tot.roundState === 'voting',
+    onTick: (s) => { room.tot.secondsLeft = s; },
+    onPause: () => { room.tot.paused = true; },
+    onResume: () => { room.tot.paused = false; },
+    onExpire: () => closeTotRound(io, room, code),
+  });
 };
 
 // ─── MLT helpers ─────────────────────────────────────────────────────────────
 
 const closeMltVoting = (io, room, code) => {
-  if (room.mlt.timerRef) {
-    clearTimeout(room.mlt.timerRef);
-    room.mlt.timerRef = null;
-  }
+  if (room._timers?.mlt) { room._timers.mlt.cancel(); room._timers.mlt = null; }
   if (room.mlt.roundState !== 'voting') return;
   room.mlt.roundState = 'results';
   room.mlt.paused = false;
@@ -346,31 +326,21 @@ const closeMltVoting = (io, room, code) => {
 };
 
 const startMltTimer = (io, room, code, seconds) => {
-  if (room.mlt.timerRef) {
-    clearTimeout(room.mlt.timerRef);
-    room.mlt.timerRef = null;
-  }
-
-  let remaining = seconds;
-  room.mlt.secondsLeft = remaining;
+  room._timers = room._timers || {};
+  if (room._timers.mlt) room._timers.mlt.cancel();
+  room.mlt.secondsLeft = seconds;
   room.mlt.paused = false;
-
-  const tick = () => {
-    if (room.phase !== 'mlt' || room.mlt.roundState !== 'voting' || room.mlt.paused) {
-      room.mlt.timerRef = null;
-      return;
-    }
-    room.mlt.secondsLeft = remaining;
-    io.to(code).emit('mlt:timer', { secondsLeft: remaining });
-    if (remaining === 0) {
-      closeMltVoting(io, room, code);
-      return;
-    }
-    remaining--;
-    room.mlt.timerRef = setTimeout(tick, 1000);
-  };
-
-  tick();
+  room._timers.mlt = TimerManager.create({
+    io,
+    code,
+    seconds,
+    tickEvent: 'mlt:timer',
+    isActive: () => room.phase === 'mlt' && room.mlt.roundState === 'voting',
+    onTick: (s) => { room.mlt.secondsLeft = s; },
+    onPause: () => { room.mlt.paused = true; },
+    onResume: () => { room.mlt.paused = false; },
+    onExpire: () => closeMltVoting(io, room, code),
+  });
 };
 
 const assignMltTitles = (leaderboard) => {
@@ -444,6 +414,10 @@ const emitWstQuestion = (io, room, code) => {
   room.currentQuestion = questionText;
   room.answers = [];
   room.skipVotes = [];
+  room._answerTracker = SubmissionTracker.create({
+    getExpectedCount: () => activePlayers(room).length,
+    onComplete: () => advanceWstAnswerPhase(io, room, code),
+  });
 
   const roundDuration = room.roomConfig?.roundDurationSecs || 60;
 
@@ -463,14 +437,11 @@ const emitWstQuestion = (io, room, code) => {
     const connectedPlayersCount = activePlayers(room).length;
     // Auto-submit fallback for any player who didn't answer in time
     activePlayers(room).forEach(p => {
-      if (!room.answers.find(a => a.playerId === p.id)) {
+      if (!room._answerTracker?.has(p.id)) {
         const draft = (room.answerDrafts || {})[p.id] || '';
-        room.answers.push({
-          playerId: p.id,
-          playerName: p.name,
-          text: draft || "...",
-          votes: [],
-        });
+        const answerData = { playerId: p.id, playerName: p.name, text: draft || '...', votes: [] };
+        room._answerTracker?.record(p.id, answerData);
+        room.answers.push(answerData);
       }
     });
     if (room.answers.length === 0) {
@@ -492,6 +463,12 @@ const emitWstQuestion = (io, room, code) => {
     if (q?.type === 'situational') {
       room.phase = 'sit-voting';
       room.sit.votes = {};
+      room.sit._voteCollector = VoteCollector.create({
+        getExpectedCount: () => activePlayers(room).length,
+        allowSelfVote: false,
+        onVote: (voterId, targetId) => { room.sit.votes[voterId] = targetId; },
+        onComplete: () => closeSitVoting(io, room, code),
+      });
       const mappedAnswers = room.answers.map(a => ({ id: a.playerId, text: a.text }));
       io.to(code).emit('sit:voting_started', {
         answers: mappedAnswers,
@@ -568,7 +545,6 @@ const emitNextQuestion = (io, room, code) => {
       submissions: {},
       votes: {},
       scores: drawScores,
-      timerRef: null,
       mixedMode: true,
     };
     const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
@@ -591,7 +567,7 @@ const emitNextQuestion = (io, room, code) => {
 
 // Close a ToT voting round and broadcast results
 const closeTotRound = (io, room, code) => {
-  stopTotTimer(room);
+  if (room._timers?.tot) { room._timers.tot.cancel(); room._timers.tot = null; }
   room.tot.roundState = 'results';
 
   const connectedPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
@@ -709,20 +685,7 @@ const activePlayers = (room) => room.players.filter(p => p.isConnected && p.isPl
 
 // Cancel all active game timers for a room (called before starting a new game)
 function cancelAllTimers(room) {
-  if (room.mlt?.timerRef) { clearTimeout(room.mlt.timerRef); room.mlt.timerRef = null; }
-  if (room.draw?.timerRef) { clearInterval(room.draw.timerRef); room.draw.timerRef = null; }
-  if (room.fitb?.timerRef) { clearTimeout(room.fitb.timerRef); room.fitb.timerRef = null; }
-  if (room.fitb?.answerTimerRef) { clearTimeout(room.fitb.answerTimerRef); room.fitb.answerTimerRef = null; }
-  // Cancel all per-chain drawing timers for draw-telephone
-  if (room.dt?.chains) {
-    for (const chain of Object.values(room.dt.chains)) {
-      if (chain.timerRef) { clearInterval(chain.timerRef); chain.timerRef = null; }
-    }
-  }
-  if (room.dt?.promptTimerRef) { clearTimeout(room.dt.promptTimerRef); room.dt.promptTimerRef = null; }
-  if (room.dt?.guessTimerRef) { clearTimeout(room.dt.guessTimerRef); room.dt.guessTimerRef = null; }
-  if (room.dt?.voteTimerRef) { clearTimeout(room.dt.voteTimerRef); room.dt.voteTimerRef = null; }
-  stopAnswerTimer(room);
+  TimerManager.cancelAll(room);
 }
 
 io.on('connection', (socket) => {
@@ -918,17 +881,18 @@ io.on('connection', (socket) => {
       emitTotQuestion(io, room, code);
       io.to(code).emit('question_changed', { code });
     } else if (qType === 'situational' && (room.phase === 'question' || room.phase === 'sit-voting' || room.phase === 'sit-results')) {
-      stopAnswerTimer(room);
+      room._timers?.answer?.cancel();
       const [replacement] = selectSituationalQuestions(1);
       room.questions[room.currentQuestionIndex] = replacement;
       room.answers = [];
       room.sit.votes = {};
+      room.sit._voteCollector?.reset();
       room.skipVotes = [];
       room.phase = 'question';
       emitWstQuestion(io, room, code);
       io.to(code).emit('question_changed', { code });
     } else if (qType === 'wst' && (room.phase === 'question' || room.phase === 'voting')) {
-      stopAnswerTimer(room);
+      room._timers?.answer?.cancel();
       const [replacement] = selectQuestions(room.mode, 1, room.customQuestions);
       room.questions[room.currentQuestionIndex] = replacement;
       room.answers = [];
@@ -1003,6 +967,7 @@ io.on('connection', (socket) => {
     room.skipVotes = [];
     room.sit = room.sit || {};
     room.sit.votes = {};
+    room.sit._voteCollector?.reset();
     room.tot = room.tot || {};
     room.tot.votesA = {};
     room.tot.votesB = {};
@@ -1095,50 +1060,62 @@ io.on('connection', (socket) => {
     if (existingAnswer) {
       existingAnswer.text = text;
       existingAnswer.votes = [];
+      room._answerTracker?.update(player.id, (prev) => ({ ...prev, text, votes: [] }));
     } else {
-      room.answers.push({
-        playerId: player.id,
-        playerName: player.name,
-        text,
-        votes: []
-      });
+      const answerData = { playerId: player.id, playerName: player.name, text, votes: [] };
+      room._answerTracker?.record(player.id, answerData);
+      room.answers.push(answerData);
     }
 
     const connectedPlayersCount = activePlayers(room).length;
-    io.to(code).emit('answer_received', { answeredCount: room.answers.length, totalPlayers: connectedPlayersCount, answeredPlayerIds: room.answers.map(a => a.playerId) });
+    const answeredCount = room._answerTracker?.count() ?? room.answers.length;
+    const answeredPlayerIds = room._answerTracker?.getPlayerIds() ?? room.answers.map(a => a.playerId);
+    io.to(code).emit('answer_received', { answeredCount, totalPlayers: connectedPlayersCount, answeredPlayerIds });
 
-    if (room.answers.length >= connectedPlayersCount) {
-      stopAnswerTimer(room);
-      room.answers = shuffleAnswers(room.answers);
-      const q = room.questions[room.currentQuestionIndex];
-
-      if (q?.type === 'situational') {
-        // Situational: show all answers at once, vote for best
-        room.phase = 'sit-voting';
-        room.sit.votes = {};
-        const mappedAnswers = room.answers.map(a => ({ id: a.playerId, text: a.text }));
-        io.to(code).emit('sit:voting_started', {
-          answers: mappedAnswers,
-          question: room.currentQuestion,
-          totalVoters: connectedPlayersCount,
-        });
-      } else {
-        // WST: reveal one answer at a time, guess who wrote it
-        room.phase = 'voting';
-        room.currentAnswerIndex = 0;
-        const mappedAnswers = room.answers.map(a => ({ text: a.text }));
-        const expectedVotes = connectedPlayersCount;
-        io.to(code).emit('phase_timer', { secondsLeft: 0 }); // clear answering timer
-        io.to(code).emit('voting_started', { answers: mappedAnswers, currentIndex: 0, totalPlayers: expectedVotes });
-        room.answers.forEach((answer, idx) => {
-          const authorPlayer = room.players.find(p => p.id === answer.playerId);
-          if (authorPlayer?.socketId) {
-            io.to(authorPlayer.socketId).emit('my_answer_index', { index: idx });
-          }
-        });
-      }
+    if ((room._answerTracker?.isComplete()) || answeredCount >= connectedPlayersCount) {
+      advanceWstAnswerPhase(io, room, code);
     }
   });
+
+  function advanceWstAnswerPhase(io, room, code) {
+    if (room.phase !== 'question') return; // guard against double-fire
+    const connectedPlayersCount = activePlayers(room).length;
+    room._timers?.answer?.cancel();
+    room.answers = shuffleAnswers(room.answers);
+    const q = room.questions[room.currentQuestionIndex];
+
+    if (q?.type === 'situational') {
+      // Situational: show all answers at once, vote for best
+      room.phase = 'sit-voting';
+      room.sit.votes = {};
+      room.sit._voteCollector = VoteCollector.create({
+        getExpectedCount: () => activePlayers(room).length,
+        allowSelfVote: false,
+        onVote: (voterId, targetId) => { room.sit.votes[voterId] = targetId; },
+        onComplete: () => closeSitVoting(io, room, code),
+      });
+      const mappedAnswers = room.answers.map(a => ({ id: a.playerId, text: a.text }));
+      io.to(code).emit('sit:voting_started', {
+        answers: mappedAnswers,
+        question: room.currentQuestion,
+        totalVoters: connectedPlayersCount,
+      });
+    } else {
+      // WST: reveal one answer at a time, guess who wrote it
+      room.phase = 'voting';
+      room.currentAnswerIndex = 0;
+      const mappedAnswers = room.answers.map(a => ({ text: a.text }));
+      const expectedVotes = connectedPlayersCount;
+      io.to(code).emit('phase_timer', { secondsLeft: 0 }); // clear answering timer
+      io.to(code).emit('voting_started', { answers: mappedAnswers, currentIndex: 0, totalPlayers: expectedVotes });
+      room.answers.forEach((answer, idx) => {
+        const authorPlayer = room.players.find(p => p.id === answer.playerId);
+        if (authorPlayer?.socketId) {
+          io.to(authorPlayer.socketId).emit('my_answer_index', { index: idx });
+        }
+      });
+    }
+  }
 
   socket.on('sit:vote', ({ code, answerId }) => {
     const room = getRoom(code);
@@ -1147,23 +1124,29 @@ io.on('connection', (socket) => {
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isConnected || !player.isPlaying) return;
     if (answerId === player.id) return;           // can't vote own answer
-    if (room.sit.votes[player.id]) return;        // already voted
 
-    room.sit.votes[player.id] = answerId;
+    // Use VoteCollector for dedup + threshold detection
+    const accepted = room.sit._voteCollector
+      ? room.sit._voteCollector.castVote(player.id, answerId)
+      : !room.sit.votes[player.id];
+    if (!accepted) return;
+
+    room.sit.votes[player.id] = answerId; // keep legacy map in sync
 
     const connectedPlayersCount = activePlayers(room).length;
-    const voteCount = Object.keys(room.sit.votes).length;
+    const voteCount = room.sit._voteCollector?.count() ?? Object.keys(room.sit.votes).length;
     io.to(code).emit('sit:vote_received', {
       voteCount,
       totalVoters: connectedPlayersCount,
-      votedPlayerIds: Object.keys(room.sit.votes),
+      votedPlayerIds: room.sit._voteCollector?.getVoterIds() ?? Object.keys(room.sit.votes),
     });
 
-    // Close when all active players have voted, OR when all answer-authors have
-    // received a vote tally (covers edge cases where activePlayers count shifts).
-    const allVoted = activePlayers(room).every(p => room.sit.votes[p.id]);
-    if (voteCount >= connectedPlayersCount || allVoted) {
-      closeSitVoting(io, room, code);
+    // Fallback close if no VoteCollector (onComplete handles threshold when collector exists)
+    if (!room.sit._voteCollector) {
+      const allVoted = activePlayers(room).every(p => room.sit.votes[p.id]);
+      if (voteCount >= connectedPlayersCount || allVoted) {
+        closeSitVoting(io, room, code);
+      }
     }
   });
 
@@ -1175,6 +1158,7 @@ io.on('connection', (socket) => {
     if (!player || !player.isHost) return;
 
     room.sit.votes = {};
+    room.sit._voteCollector?.reset();
     // Skip round-end phase — go directly to next question or end the game
     if (room.currentRound < room.totalRounds) {
       room.currentRound++;
@@ -1352,7 +1336,7 @@ io.on('connection', (socket) => {
       return;
     }
 
-    stopTotTimer(room);
+    room._timers?.tot?.cancel();
     room.currentRound++;
     room.currentQuestionIndex++;
     emitNextQuestion(io, room, code);
@@ -1365,7 +1349,7 @@ io.on('connection', (socket) => {
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isHost) return;
 
-    stopTotTimer(room);
+    room._timers?.tot?.cancel();
     // Swap in a replacement question from the pool without incrementing round
     const usedIndexes = new Set();
     for (let i = 0; i <= room.currentQuestionIndex; i++) usedIndexes.add(i);
@@ -1395,8 +1379,7 @@ io.on('connection', (socket) => {
     if (!room || room.phase !== 'tot' || room.tot.roundState !== 'voting') return;
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isHost) return;
-    stopTotTimer(room);
-    room.tot.paused = true;
+    room._timers?.tot?.pause();
     io.to(code).emit('tot:paused', { secondsLeft: room.tot.secondsLeft });
   });
 
@@ -1405,9 +1388,8 @@ io.on('connection', (socket) => {
     if (!room || room.phase !== 'tot' || room.tot.roundState !== 'voting') return;
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isHost) return;
-    room.tot.paused = false;
+    room._timers?.tot?.resume();
     io.to(code).emit('tot:resumed', { secondsLeft: room.tot.secondsLeft });
-    startTotTimer(io, room, code, room.tot.secondsLeft);
   });
 
   socket.on('answer:pause', ({ code }) => {
@@ -1415,8 +1397,7 @@ io.on('connection', (socket) => {
     if (!room || room.phase !== 'question') return;
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isHost) return;
-    room.answerPaused = true;
-    io.to(code).emit('phase_timer', { secondsLeft: room.answerSecondsLeft, phase: 'answering', paused: true });
+    room._timers?.answer?.pause();
   });
 
   socket.on('answer:resume', ({ code }) => {
@@ -1424,8 +1405,7 @@ io.on('connection', (socket) => {
     if (!room || room.phase !== 'question') return;
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isHost) return;
-    room.answerPaused = false;
-    io.to(code).emit('phase_timer', { secondsLeft: room.answerSecondsLeft, phase: 'answering', paused: false });
+    room._timers?.answer?.resume();
   });
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -1575,9 +1555,9 @@ io.on('connection', (socket) => {
     if (room) {
       const { player, newHost } = removePlayerBySocketId(socket.id, false);
       // If an MLT timer is running and room is now empty, clean it up
-      if (room.phase === 'mlt' && room.mlt.timerRef && room.players.filter(p => p.isConnected).length === 0) {
-        clearTimeout(room.mlt.timerRef);
-        room.mlt.timerRef = null;
+      if (room.phase === 'mlt' && room._timers?.mlt && room.players.filter(p => p.isConnected).length === 0) {
+        room._timers.mlt.cancel();
+        room._timers.mlt = null;
       }
       io.to(room.code).emit('player_disconnected', { playerId: player.id, playerName: player.name });
       if (newHost) {
@@ -1636,8 +1616,13 @@ io.on('connection', (socket) => {
       allowSelfVote: true,
       paused: false,
       secondsLeft: 30,
-      timerRef: null,
     };
+    room.mlt._voteCollector = VoteCollector.create({
+      getExpectedCount: () => activePlayers(room).length,
+      allowSelfVote: true,
+      onVote: (voterId, targetId) => { room.mlt.votes[voterId] = targetId; },
+      onComplete: () => closeMltVoting(io, room, code),
+    });
 
     io.to(code).emit('mlt:prompt', {
       prompt: room.mlt.currentPrompt,
@@ -1659,20 +1644,21 @@ io.on('connection', (socket) => {
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isConnected || !player.isPlaying) return;
 
-    // Self-vote is allowed — no guard needed
+    // One vote per player per round — use VoteCollector for dedup + threshold
+    const accepted = room.mlt._voteCollector
+      ? room.mlt._voteCollector.castVote(player.id, targetPlayerId)
+      : room.mlt.votes[player.id] === undefined;
+    if (!accepted) return;
 
-    // One vote per player per round
-    if (room.mlt.votes[player.id] !== undefined) return;
-
-    room.mlt.votes[player.id] = targetPlayerId;
+    room.mlt.votes[player.id] = targetPlayerId; // keep legacy map in sync
 
     const nonHostPlayers = activePlayers(room);
-    const voteCount = Object.keys(room.mlt.votes).length;
+    const voteCount = room.mlt._voteCollector?.count() ?? Object.keys(room.mlt.votes).length;
     const totalVoters = nonHostPlayers.length;
 
-    io.to(code).emit('mlt:vote_received', { voteCount, totalVoters, votedPlayerIds: Object.keys(room.mlt.votes) });
+    io.to(code).emit('mlt:vote_received', { voteCount, totalVoters, votedPlayerIds: room.mlt._voteCollector?.getVoterIds() ?? Object.keys(room.mlt.votes) });
 
-    if (voteCount >= totalVoters) {
+    if (!room.mlt._voteCollector && voteCount >= totalVoters) {
       closeMltVoting(io, room, code);
     }
   });
@@ -1692,6 +1678,7 @@ io.on('connection', (socket) => {
     room.mlt.round++;
     room.mlt.currentPrompt = room.mlt.prompts[room.mlt.round - 1];
     room.mlt.votes = {};
+    room.mlt._voteCollector?.reset();
     room.mlt.jokersThisRound = {};
     room.mlt.roundState = 'voting';
     room.mlt.paused = false;
@@ -1741,7 +1728,7 @@ io.on('connection', (socket) => {
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isHost) return;
 
-    if (room.mlt.timerRef) { clearTimeout(room.mlt.timerRef); room.mlt.timerRef = null; }
+    room._timers?.mlt?.cancel();
 
     // Pick a new prompt not already used — draw from full bank to avoid same question
     const usedPrompts = new Set(room.mlt.prompts.slice(0, room.mlt.round - 1));
@@ -1756,6 +1743,7 @@ io.on('connection', (socket) => {
     room.mlt.currentPrompt = candidate;
     room.mlt.prompts[room.mlt.round - 1] = candidate;
     room.mlt.votes = {};
+    room.mlt._voteCollector?.reset();
     room.mlt.jokersThisRound = {};
     room.mlt.roundState = 'voting';
     room.mlt.paused = false;
@@ -1780,7 +1768,7 @@ io.on('connection', (socket) => {
     if (!player || !player.isHost) return;
 
     // Cancel timer
-    if (room.mlt.timerRef) { clearTimeout(room.mlt.timerRef); room.mlt.timerRef = null; }
+    room._timers?.mlt?.cancel();
 
     // If this was the last round, go to end
     if (room.mlt.round >= room.mlt.totalRounds) {
@@ -1792,6 +1780,7 @@ io.on('connection', (socket) => {
     room.mlt.round++;
     room.mlt.currentPrompt = room.mlt.prompts[room.mlt.round - 1];
     room.mlt.votes = {};
+    room.mlt._voteCollector?.reset();
     room.mlt.jokersThisRound = {};
     room.mlt.roundState = 'voting';
     room.mlt.paused = false;
@@ -1820,7 +1809,7 @@ io.on('connection', (socket) => {
     if (!player || !player.isHost) return;
 
     // Clear any stale timer
-    if (room.mlt.timerRef) { clearTimeout(room.mlt.timerRef); room.mlt.timerRef = null; }
+    room._timers?.mlt?.cancel();
 
     // Keep config from previous game
     const prevTotalRounds = room.mlt.totalRounds;
@@ -1841,7 +1830,6 @@ io.on('connection', (socket) => {
       allowSelfVote: true,
       paused: false,
       secondsLeft: 30,
-      timerRef: null,
     };
 
     room.players.forEach(p => { p.isReady = false; });
@@ -1863,8 +1851,7 @@ io.on('connection', (socket) => {
 
     if (room.mlt.paused) return; // already paused
 
-    if (room.mlt.timerRef) { clearTimeout(room.mlt.timerRef); room.mlt.timerRef = null; }
-    room.mlt.paused = true;
+    room._timers?.mlt?.pause();
     io.to(code).emit('mlt:paused', { secondsLeft: room.mlt.secondsLeft });
   });
 
@@ -1877,9 +1864,8 @@ io.on('connection', (socket) => {
 
     if (!room.mlt.paused) return; // not paused
 
-    room.mlt.paused = false;
+    room._timers?.mlt?.resume();
     io.to(code).emit('mlt:resumed', { secondsLeft: room.mlt.secondsLeft });
-    startMltTimer(io, room, code, room.mlt.secondsLeft);
   });
 
   // ─── Drawing (Sketch It!) handlers ────────────────────────────────────────
@@ -1911,7 +1897,6 @@ io.on('connection', (socket) => {
       submissions: {},
       votes: {},
       scores,
-      timerRef: null,
       mode: drawMode,
       skipCount: 0,
       playerWords: {},
@@ -1986,7 +1971,7 @@ io.on('connection', (socket) => {
       const newWord = pickDrawWord();
       room.draw.word = newWord;
       room.draw.submissions = {};
-      if (room.draw.timerRef) { clearInterval(room.draw.timerRef); room.draw.timerRef = null; }
+      room._timers?.draw?.cancel();
       io.to(code).emit('draw:word_changed', {
         word: newWord,
         skippedBy: isHostAction ? null : player.id,
@@ -2019,15 +2004,24 @@ io.on('connection', (socket) => {
       })) : [],
     }));
 
-    room.draw.submissions[player.id] = { strokes: sanitized, submittedAt: Date.now() };
+    const data = { strokes: sanitized, submittedAt: Date.now() };
+    if (room.draw._submissionTracker) {
+      room.draw._submissionTracker.recordOrUpdate(player.id, data, () => data);
+    } else {
+      room.draw.submissions[player.id] = data;
+    }
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
-    const submittedCount = Object.keys(room.draw.submissions).length;
-    const submittedPlayerIds = Object.keys(room.draw.submissions);
+    const submittedCount = room.draw._submissionTracker
+      ? room.draw._submissionTracker.count()
+      : Object.keys(room.draw.submissions).length;
+    const submittedPlayerIds = room.draw._submissionTracker
+      ? room.draw._submissionTracker.getPlayerIds()
+      : Object.keys(room.draw.submissions);
     io.to(code).emit('draw:submission_received', { submittedCount, totalDrawers: playingPlayers.length, submittedPlayerIds });
     console.log(`[Server] Draw submission: ${submittedCount}/${playingPlayers.length} room=${code}`);
 
-    if (submittedCount >= playingPlayers.length) {
-      if (room.draw.timerRef) { clearInterval(room.draw.timerRef); room.draw.timerRef = null; }
+    if (!room.draw._submissionTracker && submittedCount >= playingPlayers.length) {
+      room._timers?.draw?.cancel();
       startDrawVoting(io, room, code);
     }
   });
@@ -2037,7 +2031,7 @@ io.on('connection', (socket) => {
     if (!room || room.phase !== 'drawing' || !room.draw || room.draw.phase !== 'drawing') return;
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isHost) return;
-    if (room.draw.timerRef) { clearInterval(room.draw.timerRef); room.draw.timerRef = null; }
+    room._timers?.draw?.cancel();
     startDrawVoting(io, room, code);
   });
 
@@ -2046,7 +2040,6 @@ io.on('connection', (socket) => {
     if (!room || room.phase !== 'drawing' || !room.draw || room.draw.phase !== 'voting') return;
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isPlaying) return;
-    if (room.draw.votes[player.id]) return; // already voted
     if (votedForPlayerId === player.id) {
       socket.emit('draw:vote_rejected', { reason: 'no_self_vote' });
       return;
@@ -2056,13 +2049,19 @@ io.on('connection', (socket) => {
       return;
     }
 
-    room.draw.votes[player.id] = votedForPlayerId;
+    // Use VoteCollector for dedup + threshold
+    const accepted = room.draw._voteCollector
+      ? room.draw._voteCollector.castVote(player.id, votedForPlayerId)
+      : !room.draw.votes[player.id];
+    if (!accepted) return;
+
+    room.draw.votes[player.id] = votedForPlayerId; // keep legacy map in sync
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
-    const voteCount = Object.keys(room.draw.votes).length;
-    io.to(code).emit('draw:vote_received', { voteCount, totalVoters: playingPlayers.length, votedPlayerIds: Object.keys(room.draw.votes) });
+    const voteCount = room.draw._voteCollector?.count() ?? Object.keys(room.draw.votes).length;
+    io.to(code).emit('draw:vote_received', { voteCount, totalVoters: playingPlayers.length, votedPlayerIds: room.draw._voteCollector?.getVoterIds() ?? Object.keys(room.draw.votes) });
     console.log(`[Server] Draw vote: ${voteCount}/${playingPlayers.length} room=${code}`);
 
-    if (voteCount >= playingPlayers.length) {
+    if (!room.draw._voteCollector && voteCount >= playingPlayers.length) {
       resolveDrawVoting(io, room, code);
     }
   });
@@ -2111,6 +2110,7 @@ io.on('connection', (socket) => {
     room.draw.phase = 'drawing';
     room.draw.submissions = {};
     room.draw.votes = {};
+    room.draw._voteCollector?.reset();
     room.draw.secondsLeft = room.draw.timeLimit;
     room.draw.skipCount = 0;
 
@@ -2138,9 +2138,9 @@ io.on('connection', (socket) => {
     if (!room) return;
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isHost) return;
-    if (room.draw?.timerRef) { clearInterval(room.draw.timerRef); room.draw.timerRef = null; }
+    room._timers?.draw?.cancel();
     room.phase = 'lobby';
-    room.draw = { phase: 'waiting', round: 0, totalRounds: room.draw?.totalRounds || 3, word: null, submissions: {}, votes: {}, scores: {}, timerRef: null, secondsLeft: 90 };
+    room.draw = { phase: 'waiting', round: 0, totalRounds: room.draw?.totalRounds || 3, word: null, submissions: {}, votes: {}, scores: {}, secondsLeft: 90 };
     room.players.forEach(p => { p.isReady = false; });
     io.to(code).emit('draw:restarted', { code, players: room.players });
   });
@@ -2167,20 +2167,18 @@ io.on('connection', (socket) => {
   };
 
   // ── FitB answer-phase timer ────────────────────────────────────────────────
-  const stopFitbAnswerTimer = (room) => {
-    if (room.fitb?.answerTimerRef) {
-      clearTimeout(room.fitb.answerTimerRef);
-      room.fitb.answerTimerRef = null;
-    }
-  };
-
   const startFitbAnswerTimer = (io, room, code, seconds) => {
-    stopFitbAnswerTimer(room);
+    room._timers = room._timers || {};
+    if (room._timers.fitbAnswer) room._timers.fitbAnswer.cancel();
     room.fitb.answerSecondsLeft = seconds;
-    const tick = () => {
-      if (!room.fitb || room.fitb.phase !== 'answering') return;
-      io.to(code).emit('fitb:answer_timer', { secondsLeft: room.fitb.answerSecondsLeft });
-      if (room.fitb.answerSecondsLeft <= 0) {
+    room._timers.fitbAnswer = TimerManager.create({
+      io,
+      code,
+      seconds,
+      tickEvent: 'fitb:answer_timer',
+      isActive: () => room.fitb?.phase === 'answering',
+      onTick: (s) => { room.fitb.answerSecondsLeft = s; },
+      onExpire: () => {
         // Auto-submit: use player's typed draft if available, otherwise default
         const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
         playingPlayers.forEach(p => {
@@ -2188,18 +2186,14 @@ io.on('connection', (socket) => {
             const draftText = (room.fitb.drafts || {})[p.id] || '';
             room.fitb.answers.push({
               playerId: p.id, playerName: p.name, playerColor: p.color,
-              text: draftText || "...",
+              text: draftText || '...',
               votes: 0,
             });
           }
         });
         startFitbVoting(io, room, code);
-        return;
-      }
-      room.fitb.answerSecondsLeft--;
-      room.fitb.answerTimerRef = setTimeout(tick, 1000);
-    };
-    room.fitb.answerTimerRef = setTimeout(tick, 0);
+      },
+    });
   };
 
   socket.on('fitb:start', ({ code, rounds }) => {
@@ -2230,9 +2224,12 @@ io.on('connection', (socket) => {
       usedQuestions: [],
       targetPlayerIndex: 0,
       scores,
-      answerTimerRef: null,
       answerSecondsLeft: timeLimit,
     };
+    room.fitb._submissionTracker = SubmissionTracker.create({
+      getExpectedCount: () => room.players.filter(p => p.isConnected && p.isPlaying).length,
+      onComplete: () => startFitbVoting(io, room, code),
+    });
     room.fitb.question = pickFitbQuestion(room, room.players);
 
     const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
@@ -2268,29 +2265,40 @@ io.on('connection', (socket) => {
     const existingFitb = room.fitb.answers.find(a => a.playerId === player.id);
     if (existingFitb) {
       existingFitb.text = sanitizedText;
+      room.fitb._submissionTracker?.update(player.id, (prev) => ({ ...prev, text: sanitizedText }));
     } else {
-      room.fitb.answers.push({
-        playerId: player.id,
-        playerName: player.name,
-        playerColor: player.color,
-        text: sanitizedText,
-        votes: 0,
-      });
+      const entry = { playerId: player.id, playerName: player.name, playerColor: player.color, text: sanitizedText, votes: 0 };
+      room.fitb._submissionTracker?.record(player.id, entry);
+      room.fitb.answers.push(entry);
     }
 
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
-    const answeredCount = room.fitb.answers.length;
-    io.to(code).emit('fitb:answer_received', { answeredCount, totalPlayers: playingPlayers.length, answeredPlayerIds: room.fitb.answers.map(a => a.playerId) });
+    const answeredCount = room.fitb._submissionTracker?.count() ?? room.fitb.answers.length;
+    const answeredPlayerIds = room.fitb._submissionTracker?.getPlayerIds() ?? room.fitb.answers.map(a => a.playerId);
+    io.to(code).emit('fitb:answer_received', { answeredCount, totalPlayers: playingPlayers.length, answeredPlayerIds });
 
-    if (answeredCount >= playingPlayers.length) {
+    // onComplete handles threshold when tracker exists; fallback for edge cases
+    if (!room.fitb._submissionTracker && answeredCount >= playingPlayers.length) {
       startFitbVoting(io, room, code);
     }
   });
 
   const startFitbVoting = (io, room, code) => {
     if (room.fitb.phase !== 'answering') return;
-    stopFitbAnswerTimer(room);
+    room._timers?.fitbAnswer?.cancel();
     room.fitb.phase = 'voting';
+    room.fitb._votes = {};
+    room.fitb._voteCollector = VoteCollector.create({
+      getExpectedCount: () => room.players.filter(p => p.isConnected && p.isPlaying).length,
+      allowSelfVote: false,
+      onVote: (voterId, idxStr) => {
+        if (!room.fitb._votes) room.fitb._votes = {};
+        const i = Number(idxStr);
+        room.fitb._votes[voterId] = i;
+        if (room.fitb.answers[i]) room.fitb.answers[i].votes++;
+      },
+      onComplete: () => resolveFitbVoting(io, room, code),
+    });
     // Shuffle answers so order doesn't reveal authorship
     const shuffled = [...room.fitb.answers].sort(() => Math.random() - 0.5);
     room.fitb.answers = shuffled;
@@ -2330,9 +2338,10 @@ io.on('connection', (socket) => {
     if (!room || room.phase !== 'fitb' || room.fitb.phase !== 'answering') return;
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isHost) return;
-    stopFitbAnswerTimer(room);
+    room._timers?.fitbAnswer?.cancel();
     const timeLimit = room.roomConfig?.roundDurationSecs || 30;
     room.fitb.answers = [];
+    room.fitb._submissionTracker?.reset();
     room.fitb._votes = {};
     room.fitb.question = pickFitbQuestion(room, room.players);
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
@@ -2352,22 +2361,28 @@ io.on('connection', (socket) => {
     if (!room || room.phase !== 'fitb' || room.fitb.phase !== 'voting') return;
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
-    // Prevent double-vote
-    if (!room.fitb._votes) room.fitb._votes = {};
-    if (room.fitb._votes[player.id] !== undefined) return;
     const idx = parseInt(answerId);
     if (isNaN(idx) || idx < 0 || idx >= room.fitb.answers.length) return;
     // Prevent voting for own answer
     if (room.fitb.answers[idx].playerId === player.id) return;
 
-    room.fitb._votes[player.id] = idx;
-    room.fitb.answers[idx].votes++;
+    // Use VoteCollector for dedup + threshold (onVote handles legacy sync)
+    const accepted = room.fitb._voteCollector
+      ? room.fitb._voteCollector.castVote(player.id, String(idx))
+      : !room.fitb._votes?.[player.id];
+    if (!accepted) return;
+
+    if (!room.fitb._voteCollector) {
+      if (!room.fitb._votes) room.fitb._votes = {};
+      room.fitb._votes[player.id] = idx;
+      room.fitb.answers[idx].votes++;
+    }
 
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
-    const voteCount = Object.keys(room.fitb._votes).length;
-    io.to(code).emit('fitb:vote_received', { voteCount, totalVoters: playingPlayers.length, votedPlayerIds: Object.keys(room.fitb._votes) });
+    const voteCount = room.fitb._voteCollector?.count() ?? Object.keys(room.fitb._votes).length;
+    io.to(code).emit('fitb:vote_received', { voteCount, totalVoters: playingPlayers.length, votedPlayerIds: room.fitb._voteCollector?.getVoterIds() ?? Object.keys(room.fitb._votes) });
 
-    if (voteCount >= playingPlayers.length) {
+    if (!room.fitb._voteCollector && voteCount >= playingPlayers.length) {
       resolveFitbVoting(io, room, code);
     }
   });
@@ -2375,7 +2390,7 @@ io.on('connection', (socket) => {
   const resolveFitbVoting = (io, room, code) => {
     if (room.fitb.phase !== 'voting') return;
     room.fitb.phase = 'results';
-    // Award points: +1 per vote received
+    // Award points: +1 per vote received (a.votes synced by VoteCollector.onVote)
     room.fitb.answers.forEach(a => {
       room.fitb.scores[a.playerId] = (room.fitb.scores[a.playerId] || 0) + a.votes;
     });
@@ -2421,6 +2436,7 @@ io.on('connection', (socket) => {
     room.fitb.round++;
     room.fitb.phase = 'answering';
     room.fitb.answers = [];
+    room.fitb._submissionTracker?.reset();
     room.fitb.drafts = {};
     room.fitb._votes = {};
     room.fitb.question = pickFitbQuestion(room, room.players);
@@ -2658,9 +2674,33 @@ io.on('connection', (socket) => {
       }
     });
 
-    // Broadcast drawing phase start
+    // Broadcast drawing phase start + start timer
     const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
-    io.to(code).emit('selfie:drawing_phase', { players, totalDrawers: drawerIds.length, promptTemplate: room.selfie.promptTemplate });
+    const SELFIE_DRAW_SECS = 90;
+    room.selfie.secondsLeft = SELFIE_DRAW_SECS;
+    room.selfie.paused = false;
+    io.to(code).emit('selfie:drawing_phase', { players, totalDrawers: drawerIds.length, promptTemplate: room.selfie.promptTemplate, secondsLeft: SELFIE_DRAW_SECS });
+
+    room._timers = room._timers || {};
+    if (room._timers.selfie) room._timers.selfie.cancel();
+    room._timers.selfie = TimerManager.create({
+      io, code,
+      seconds: SELFIE_DRAW_SECS,
+      tickEvent: 'selfie:timer',
+      isActive: () => room.phase === 'selfie' && room.selfie.phase === 'drawing',
+      onTick: (s) => { room.selfie.secondsLeft = s; },
+      onPause: () => { room.selfie.paused = true; },
+      onResume: () => { room.selfie.paused = false; },
+      onExpire: () => {
+        if (room.selfie.phase !== 'drawing') return;
+        io.to(code).emit('selfie:drawing_ending');
+        const gracePeriod = setTimeout(() => {
+          if (room.selfie.phase !== 'drawing') return;
+          startSelfieVoting(io, room, code);
+        }, 1500);
+        room._timers.selfieGrace = { cancel: () => clearTimeout(gracePeriod) };
+      },
+    });
   };
 
   socket.on('selfie:skip_to_drawing', ({ code }) => {
@@ -2678,7 +2718,7 @@ io.on('connection', (socket) => {
     if (!room || room.phase !== 'selfie' || room.selfie.phase !== 'drawing') return;
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
-    if (room.selfie.strokes[player.id]) return; // already submitted
+    const isUpdate = !!room.selfie.strokes[player.id];
 
     // Sanitize strokes
     if (!Array.isArray(strokes)) return;
@@ -2696,9 +2736,12 @@ io.on('connection', (socket) => {
 
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying && room.selfie.assignments[p.id]);
     const drawingCount = Object.keys(room.selfie.strokes).length;
-    io.to(code).emit('selfie:drawing_received', { drawingCount, totalDrawers: playingPlayers.length, drawnPlayerIds: Object.keys(room.selfie.strokes) });
+    // Only broadcast count change for first submissions (updates don't change the count)
+    if (!isUpdate) {
+      io.to(code).emit('selfie:drawing_received', { drawingCount, totalDrawers: playingPlayers.length, drawnPlayerIds: Object.keys(room.selfie.strokes) });
+    }
 
-    if (drawingCount >= playingPlayers.length) {
+    if (!isUpdate && drawingCount >= playingPlayers.length) {
       startSelfieVoting(io, room, code);
     }
   });
@@ -2706,7 +2749,14 @@ io.on('connection', (socket) => {
   const startSelfieVoting = (io, room, code) => {
     if (room.selfie.phase !== 'drawing') return;
     room.selfie.phase = 'voting';
+    room.selfie.votes = {};
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    room.selfie._voteCollector = VoteCollector.create({
+      getExpectedCount: () => room.players.filter(p => p.isConnected && p.isPlaying).length,
+      allowSelfVote: false,
+      onVote: (voterId, targetId) => { room.selfie.votes[voterId] = targetId; },
+      onComplete: () => resolveSelfieVoting(io, room, code),
+    });
 
     // Auto-fill empty strokes for drawers who never submitted (so all photos appear in voting)
     Object.keys(room.selfie.assignments).forEach(drawerId => {
@@ -2746,13 +2796,35 @@ io.on('connection', (socket) => {
     if (!room || room.phase !== 'selfie' || room.selfie.phase !== 'drawing') return;
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isHost) return;
+    room._timers?.selfie?.cancel();
+    room._timers?.selfieGrace?.cancel();
     // Signal all clients to auto-submit their current drawings
     io.to(code).emit('selfie:drawing_ending');
     // Give clients 1.5 s to submit, then advance regardless
-    setTimeout(() => {
+    const gracePeriod = setTimeout(() => {
       if (room.selfie.phase !== 'drawing') return; // already advanced
       startSelfieVoting(io, room, code);
     }, 1500);
+    room._timers = room._timers || {};
+    room._timers.selfieGrace = { cancel: () => clearTimeout(gracePeriod) };
+  });
+
+  socket.on('selfie:pause', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'selfie' || room.selfie.phase !== 'drawing') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+    room._timers?.selfie?.pause();
+    io.to(code).emit('selfie:paused', { secondsLeft: room.selfie.secondsLeft });
+  });
+
+  socket.on('selfie:resume', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'selfie' || room.selfie.phase !== 'drawing') return;
+    const player = room.players.find(p => p.socketId === socket.id);
+    if (!player || !player.isHost) return;
+    room._timers?.selfie?.resume();
+    io.to(code).emit('selfie:resumed', { secondsLeft: room.selfie.secondsLeft });
   });
 
   socket.on('selfie:vote', ({ code, drawerId }) => {
@@ -2760,18 +2832,25 @@ io.on('connection', (socket) => {
     if (!room || room.phase !== 'selfie' || room.selfie.phase !== 'voting') return;
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
-    if (room.selfie.votes[player.id] !== undefined) return; // already voted
-    if (drawerId === player.id) return; // no self-vote
     if (!room.selfie.strokes[drawerId]) return; // invalid target
 
-    room.selfie.votes[player.id] = drawerId;
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
-    const voteCount = Object.keys(room.selfie.votes).length;
-    io.to(code).emit('selfie:vote_received', { voteCount, totalVoters: playingPlayers.length, votedPlayerIds: Object.keys(room.selfie.votes) });
+    const accepted = room.selfie._voteCollector
+      ? room.selfie._voteCollector.castVote(player.id, drawerId)
+      : room.selfie.votes[player.id] === undefined && drawerId !== player.id;
+    if (!accepted) return;
 
-    const allVoted = playingPlayers.every(p => room.selfie.votes[p.id] !== undefined);
-    if (voteCount >= playingPlayers.length || allVoted) {
-      resolveSelfieVoting(io, room, code);
+    if (!room.selfie._voteCollector) {
+      room.selfie.votes[player.id] = drawerId;
+    }
+    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const voteCount = room.selfie._voteCollector?.count() ?? Object.keys(room.selfie.votes).length;
+    io.to(code).emit('selfie:vote_received', { voteCount, totalVoters: playingPlayers.length, votedPlayerIds: room.selfie._voteCollector?.getVoterIds() ?? Object.keys(room.selfie.votes) });
+
+    if (!room.selfie._voteCollector) {
+      const allVoted = playingPlayers.every(p => room.selfie.votes[p.id] !== undefined);
+      if (voteCount >= playingPlayers.length || allVoted) {
+        resolveSelfieVoting(io, room, code);
+      }
     }
   });
 
@@ -3092,6 +3171,13 @@ io.on('connection', (socket) => {
   function startCaptionVotingPhase(io, room, code) {
     if (room.caption.phase !== 'writing') return; // guard against double-fire
     room.caption.phase = 'voting';
+    room.caption.votes = {};
+    room.caption._voteCollector = VoteCollector.create({
+      getExpectedCount: () => room.players.filter(p => p.isConnected && p.isPlaying).length,
+      allowSelfVote: true, // self-vote validated manually in handler before castVote
+      onVote: (voterId, captionId) => { room.caption.votes[voterId] = captionId; },
+      onComplete: () => endCaptionRound(io, room, code),
+    });
     const captionList = Object.values(room.caption.captions).map(c => ({ id: c.id, text: c.text }));
     // Shuffle so order doesn't reveal authorship
     captionList.sort(() => Math.random() - 0.5);
@@ -3117,7 +3203,6 @@ io.on('connection', (socket) => {
     if (!room || room.phase !== 'caption' || room.caption.phase !== 'voting') return;
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
-    if (room.caption.votes[player.id]) return; // already voted
 
     // Validate captionId exists
     const captionExists = Object.values(room.caption.captions).some(c => c.id === captionId);
@@ -3126,15 +3211,23 @@ io.on('connection', (socket) => {
     const ownCaption = room.caption.captions[player.id];
     if (ownCaption && ownCaption.id === captionId) return;
 
-    room.caption.votes[player.id] = captionId;
+    const accepted = room.caption._voteCollector
+      ? room.caption._voteCollector.castVote(player.id, captionId)
+      : !room.caption.votes[player.id];
+    if (!accepted) return;
 
+    if (!room.caption._voteCollector) {
+      room.caption.votes[player.id] = captionId;
+    }
     const voters = room.players.filter(p => p.isConnected && p.isPlaying);
-    const voteCount = Object.keys(room.caption.votes).length;
-    io.to(code).emit('caption:vote_received', { voteCount, totalVoters: voters.length, votedPlayerIds: Object.keys(room.caption.votes) });
+    const voteCount = room.caption._voteCollector?.count() ?? Object.keys(room.caption.votes).length;
+    io.to(code).emit('caption:vote_received', { voteCount, totalVoters: voters.length, votedPlayerIds: room.caption._voteCollector?.getVoterIds() ?? Object.keys(room.caption.votes) });
 
-    const allVoted = voters.every(p => room.caption.votes[p.id]);
-    if (voteCount >= voters.length || allVoted) {
-      endCaptionRound(io, room, code);
+    if (!room.caption._voteCollector) {
+      const allVoted = voters.every(p => room.caption.votes[p.id]);
+      if (voteCount >= voters.length || allVoted) {
+        endCaptionRound(io, room, code);
+      }
     }
   });
 
@@ -3359,6 +3452,12 @@ io.on('connection', (socket) => {
   function startPhotoVoteRound(io, room, code) {
     room.photoVote.phase = 'voting';
     room.photoVote.votes = {};
+    room.photoVote._voteCollector = VoteCollector.create({
+      getExpectedCount: () => room.players.filter(p => p.isConnected && p.isPlaying).length,
+      allowSelfVote: false,
+      onVote: (voterId, targetId) => { room.photoVote.votes[voterId] = targetId; },
+      onComplete: () => endPhotoVoteRound(io, room, code),
+    });
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
     let prompt;
     if (room.photoVote.pendingPrompt) {
@@ -3391,23 +3490,28 @@ io.on('connection', (socket) => {
     if (!room || room.phase !== 'photovote' || room.photoVote.phase !== 'voting') return;
     const player = room.players.find(p => p.socketId === socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
-    if (room.photoVote.votes[player.id]) return;
 
     const target = room.players.find(p => p.id === targetPlayerId && p.isPlaying);
     if (!target) return;
-    // Can't vote for yourself
-    if (targetPlayerId === player.id) return;
 
-    room.photoVote.votes[player.id] = targetPlayerId;
+    const accepted = room.photoVote._voteCollector
+      ? room.photoVote._voteCollector.castVote(player.id, targetPlayerId)
+      : !room.photoVote.votes[player.id] && targetPlayerId !== player.id;
+    if (!accepted) return;
 
+    if (!room.photoVote._voteCollector) {
+      room.photoVote.votes[player.id] = targetPlayerId;
+    }
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
-    const voteCount = Object.keys(room.photoVote.votes).length;
-    const votedPlayerIds = Object.keys(room.photoVote.votes);
+    const voteCount = room.photoVote._voteCollector?.count() ?? Object.keys(room.photoVote.votes).length;
+    const votedPlayerIds = room.photoVote._voteCollector?.getVoterIds() ?? Object.keys(room.photoVote.votes);
     io.to(code).emit('photovote:vote_received', { voteCount, totalVoters: playingPlayers.length, votedPlayerIds });
 
-    const allVoted = playingPlayers.every(p => room.photoVote.votes[p.id]);
-    if (voteCount >= playingPlayers.length || allVoted) {
-      endPhotoVoteRound(io, room, code);
+    if (!room.photoVote._voteCollector) {
+      const allVoted = playingPlayers.every(p => room.photoVote.votes[p.id]);
+      if (voteCount >= playingPlayers.length || allVoted) {
+        endPhotoVoteRound(io, room, code);
+      }
     }
   });
 
@@ -3421,6 +3525,7 @@ io.on('connection', (socket) => {
       room.photoVote.phase = 'photo';
       room.photoVote.photos = {};
       room.photoVote.votes = {};
+      room.photoVote._voteCollector = null;
       room.photoVote.currentPromptIndex++;
       
       const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
@@ -3441,6 +3546,7 @@ io.on('connection', (socket) => {
 
     // Reset votes and pick the next prompt
     room.photoVote.votes = {};
+    room.photoVote._voteCollector = null;
     const playingPlayersForPrompt = room.players.filter(p => p.isConnected && p.isPlaying);
     const nextIndex = room.photoVote.currentPromptIndex % room.photoVote.prompts.length;
     const rawNextPrompt = room.photoVote.prompts[nextIndex];
@@ -3540,6 +3646,7 @@ io.on('connection', (socket) => {
         room.photoVote.phase = 'photo';
         room.photoVote.photos = {};
         room.photoVote.votes = {};
+        room.photoVote._voteCollector = null;
         
         const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
         const rawNextPrompt = room.photoVote.prompts[room.photoVote.currentPromptIndex];
@@ -3556,6 +3663,7 @@ io.on('connection', (socket) => {
       } else {
         room.photoVote.phase = 'voting';
         room.photoVote.votes = {};
+        room.photoVote._voteCollector = null;
         startPhotoVoteRound(io, room, code);
       }
     }

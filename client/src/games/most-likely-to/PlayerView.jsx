@@ -1,35 +1,59 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useGame } from '../../store/gameStore.jsx';
 import { socket } from '../../socket';
 import { useSounds } from '../../hooks/useSounds';
 import { translations } from '../../locales/translations';
 import PlayerGameLayout from '../../game-core/layouts/PlayerGameLayout';
 import { usePlayerGameFrame } from '../../game-core/hooks/usePlayerGameFrame';
-import { useVoteConfirmation } from '../../game-core/hooks/useVoteConfirmation';
-import ConfirmVoteCard from '../../game-core/player/ConfirmVoteCard';
 import JokerButton from '../../game-core/player/JokerButton';
 
-function ChoiceList({ choices, onSelect, helperText }) {
+/**
+ * Keeps every choice visible at all times.
+ * Tapping a card highlights it; a sticky Confirm button appears at the bottom.
+ * Tapping a different card swaps the highlight. Confirm fires onConfirm(selected).
+ */
+function ChoiceList({ choices, selectedChoice, onSelect, onConfirm, helperText, confirmLabel }) {
   return (
     <>
       <p className="text-center text-gray-400 font-['Nunito'] text-sm mb-4">{helperText}</p>
-      <div className="flex flex-col gap-3 mb-5">
-        {choices.map((choice) => (
-          <button
-            key={choice.id}
-            onClick={() => onSelect(choice)}
-            className="flex items-center gap-4 w-full bg-[#1A1A2E] hover:bg-[#2D2D44] border-2 border-[#2D2D44] hover:border-[#4ECDC4] rounded-2xl p-4 transition"
-          >
-            <div
-              className="w-10 h-10 rounded-full flex items-center justify-center text-black font-bold text-lg flex-shrink-0 border-2 border-white/20"
-              style={{ backgroundColor: choice.color }}
+      <div className="flex flex-col gap-3 mb-4">
+        {choices.map((choice) => {
+          const isSelected = selectedChoice?.id === choice.id;
+          return (
+            <button
+              key={choice.id}
+              onClick={() => onSelect(choice)}
+              className={`flex items-center gap-4 w-full rounded-2xl p-4 transition border-2 ${
+                isSelected
+                  ? 'bg-[#4ECDC4]/15 border-[#4ECDC4]'
+                  : 'bg-[#1A1A2E] border-[#2D2D44] hover:border-[#4ECDC4]/60'
+              }`}
             >
-              {choice.name.charAt(0).toUpperCase()}
-            </div>
-            <span className="font-['Fredoka_One'] text-xl text-white">{choice.name}</span>
-          </button>
-        ))}
+              <div
+                className="w-10 h-10 rounded-full flex items-center justify-center text-black font-bold text-lg flex-shrink-0 border-2 border-white/20"
+                style={{ backgroundColor: choice.color }}
+              >
+                {choice.name.charAt(0).toUpperCase()}
+              </div>
+              <span className={`font-['Fredoka_One'] text-xl flex-1 text-left ${isSelected ? 'text-[#4ECDC4]' : 'text-white'}`}>
+                {choice.name}
+              </span>
+              {isSelected && (
+                <span className="text-[#4ECDC4] text-xl leading-none">✓</span>
+              )}
+            </button>
+          );
+        })}
       </div>
+
+      {selectedChoice && (
+        <button
+          onClick={() => onConfirm(selectedChoice)}
+          className="w-full py-3 rounded-2xl bg-[#4ECDC4] text-[#0D0D1A] font-['Fredoka_One'] text-lg hover:bg-[#3dbdb5] active:scale-95 transition"
+        >
+          {confirmLabel}
+        </button>
+      )}
     </>
   );
 }
@@ -64,17 +88,13 @@ export default function MostLikelyToPlayerView() {
   const { state, dispatch } = useGame();
   const t = translations[state.lang].mlt;
   const sounds = useSounds();
+  const [pendingChoice, setPendingChoice] = useState(null);
   const { frame, actions } = usePlayerGameFrame({
     gameKey: 'most-likely-to',
     state,
     socket,
     dispatch,
     context: { sounds, labels: t },
-  });
-
-  const vote = useVoteConfirmation({
-    onConfirmSubmit: actions.submitChoice,
-    resetKey: `${state.mlt.round}-${state.mlt.prompt}`,
   });
 
   const selectionUI = frame.hasSubmitted ? (
@@ -91,10 +111,17 @@ export default function MostLikelyToPlayerView() {
   ) : (
     <ChoiceList
       choices={frame.choices}
+      selectedChoice={pendingChoice}
       helperText={t.tapToVote}
+      confirmLabel={t.confirmVote || 'Confirm Vote'}
       onSelect={(choice) => {
+        sounds.click?.();
+        setPendingChoice(choice);
+      }}
+      onConfirm={(choice) => {
         actions.playChoiceClick(choice);
-        vote.choose(choice);
+        actions.submitChoice(choice);
+        setPendingChoice(null);
       }}
     />
   );
@@ -103,16 +130,6 @@ export default function MostLikelyToPlayerView() {
     <PlayerGameLayout
       frame={frame}
       selectionUI={selectionUI}
-      confirmUI={vote.pending && !vote.confirmed ? (
-        <ConfirmVoteCard
-          vote={vote.pending}
-          onConfirm={vote.confirm}
-          onChange={vote.change}
-          titleLabel={t.confirmVoteLabel}
-          confirmLabel={t.confirmVote}
-          changeLabel={t.changeVote}
-        />
-      ) : null}
       jokerUI={
         <JokerButton
           left={frame.joker.left}

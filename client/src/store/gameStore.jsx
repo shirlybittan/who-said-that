@@ -271,6 +271,11 @@ export const gameReducer = (state, action) => {
       return { ...state, savedSelfie: action.payload };
     case 'RESET_GAME':
       return initialState;
+    case 'CLEAR_SESSION':
+      // Clear the session-scoped playerId so this tab gets a fresh identity on
+      // next join, while preserving persistent preferences (lang, savedSelfie).
+      try { sessionStorage.removeItem('wst_playerId'); } catch (_) {}
+      return { ...state, playerId: null, roomCode: null };
     case 'SET_PLAYER_ID':
       // Use sessionStorage so each browser tab gets its own player ID (avoids sharing bugs in multi-tab testing)
       try { sessionStorage.setItem('wst_playerId', action.payload); } catch (_) {}
@@ -408,6 +413,7 @@ export const gameReducer = (state, action) => {
         answers: [],
         currentQuestion: null,
         gameEnded: false,
+        phaseTimer: { secondsLeft: 0, active: false, paused: false },
         mlt:       { ...initialState.mlt,      totalRounds: state.mlt.totalRounds, allowSelfVote: state.mlt.allowSelfVote },
         draw:      { ...initialState.draw },
         fitb:      { ...initialState.fitb },
@@ -728,8 +734,17 @@ export const gameReducer = (state, action) => {
           drawingCount: 0,
           totalDrawers: action.payload.totalDrawers || state.selfie.totalPhotographers,
           promptTemplate: action.payload.promptTemplate || state.selfie.promptTemplate,
+          secondsLeft: action.payload.secondsLeft ?? 90,
+          timeLimit: 90,
+          paused: false,
         },
       };
+    case 'SELFIE_TIMER':
+      return { ...state, selfie: { ...state.selfie, secondsLeft: action.payload.secondsLeft } };
+    case 'SELFIE_PAUSED':
+      return { ...state, selfie: { ...state.selfie, paused: true, secondsLeft: action.payload.secondsLeft ?? state.selfie.secondsLeft } };
+    case 'SELFIE_RESUMED':
+      return { ...state, selfie: { ...state.selfie, paused: false, secondsLeft: action.payload.secondsLeft ?? state.selfie.secondsLeft } };
     case 'SELFIE_DRAWING_RECEIVED':
       return {
         ...state,

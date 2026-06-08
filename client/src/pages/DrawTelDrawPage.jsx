@@ -141,18 +141,20 @@ export default function DrawTelDrawPage() {
       sounds.undo?.();
       strokesRef.current.pop();
       setStrokeCount(strokesRef.current.length);
-      redrawAll(strokesRef.current);
+      const existing = turn?.existingStrokes || [];
+      redrawAll([...existing, ...strokesRef.current]);
     }
-  }, [redrawAll, sounds]);
+  }, [redrawAll, sounds, turn?.existingStrokes]);
 
   const handleClear = useCallback(() => {
     if (strokesRef.current.length > 0) {
       sounds.clear?.();
       strokesRef.current = [];
       setStrokeCount(0);
-      redrawAll([]);
+      const existing = turn?.existingStrokes || [];
+      redrawAll([...existing]);
     }
-  }, [redrawAll, sounds]);
+  }, [redrawAll, sounds, turn?.existingStrokes]);
 
   const handleSubmit = useCallback(() => {
     if (submitted || strokesRef.current.length === 0) return;
@@ -164,9 +166,8 @@ export default function DrawTelDrawPage() {
     });
     dispatch({ type: 'DT_MARK_TURN_SUBMITTED' });
     setSubmitted(true);
-    // Navigate to wait so we're in the right place for the next turn or guessing phase
-    navigate('/draw-tel-wait');
-  }, [submitted, roomCode, turn?.promptId, sounds, dispatch, navigate]);
+    // Stay on this page — show submitted overlay; next dt:your_turn will reset
+  }, [submitted, roomCode, turn?.promptId, sounds, dispatch]);
 
   // Auto-submit at ≤1 second (belt-and-suspenders alongside dt:time_up)
   useEffect(() => {
@@ -174,23 +175,24 @@ export default function DrawTelDrawPage() {
       socket.emit('dt:submit_strokes', { code: roomCode, promptId: turn.promptId, strokes: strokesRef.current });
       dispatch({ type: 'DT_MARK_TURN_SUBMITTED' });
       setSubmitted(true);
-      navigate('/draw-tel-wait');
     }
-  }, [dt.currentTurn?.secondsLeft, submitted, turn, roomCode, dispatch, navigate]);
+  }, [dt.currentTurn?.secondsLeft, submitted, turn, roomCode, dispatch]);
 
-  // Force-submit when server says time is up (ensures actual strokes reach server before fallback)
+  // Force-submit when server says time is up
   useEffect(() => {
     const onTimeUp = ({ promptId }) => {
       if (!submitted && turn?.promptId === promptId) {
         socket.emit('dt:submit_strokes', { code: roomCode, promptId, strokes: strokesRef.current });
         dispatch({ type: 'DT_MARK_TURN_SUBMITTED' });
         setSubmitted(true);
-        navigate('/draw-tel-wait');
       }
     };
     socket.on('dt:time_up', onTimeUp);
     return () => socket.off('dt:time_up', onTimeUp);
-  }, [submitted, turn, roomCode, dispatch, navigate]);
+  }, [submitted, turn, roomCode, dispatch]);
+
+  // Note: dt:your_turn is handled globally in useSocket.js (dispatches DT_YOUR_TURN + navigates here).
+  // Canvas reset happens in the turn?.promptId effect above when the new turn arrives.
 
   // Touch handlers
   const onTouchStart = (e) => {
