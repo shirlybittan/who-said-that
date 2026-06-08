@@ -295,7 +295,7 @@ const closeMltVoting = (io, room, code) => {
 
   // Score every playing player
   room.players.filter(p => p.isConnected && p.isPlaying).forEach(voter => {
-    const votedFor = allVotes[voter.id];
+    const votedFor = room.mlt.votes[voter.id];
     let points = 0;
 
     // +1 if voted for any majority player
