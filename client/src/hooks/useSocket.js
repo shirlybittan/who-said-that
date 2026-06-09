@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { socket } from '../socket';
 import { useGame } from '../store/gameStore.jsx';
 import { useNavigate } from 'react-router-dom';
@@ -7,6 +7,11 @@ import { buildJoinRestorePlan } from '../utils/rejoinState.js';
 export const useSocket = () => {
   const { state, dispatch } = useGame();
   const navigate = useNavigate();
+
+  // Always-current ref to game type — prevents stale DT navigation events from
+  // overriding the UI when the game has already been switched to a different type.
+  const gameTypeRef = useRef(state.gameType);
+  useEffect(() => { gameTypeRef.current = state.gameType; });
 
   useEffect(() => {
     const onConnect = () => {
@@ -563,6 +568,7 @@ export const useSocket = () => {
       dispatch({ type: 'DT_PROMPT_REJECTED' });
     };
     const onDtDrawingPhase = (data) => {
+      if (gameTypeRef.current !== 'draw-telephone') return;
       dispatch({ type: 'DT_DRAWING_PHASE', payload: data });
       navigate('/draw-tel-wait');
     };
@@ -580,12 +586,14 @@ export const useSocket = () => {
       dispatch({ type: 'DT_DRAWING_PROGRESS', payload: data });
     };
     const onDtGuessingPhase = (data) => {
+      if (gameTypeRef.current !== 'draw-telephone') return;
       dispatch({ type: 'DT_GUESSING_PHASE', payload: data });
       // Only navigate to guess page if there's a guessTurn coming (via dt:your_guess)
       // otherwise stay on wait page
       navigate('/draw-tel-wait');
     };
     const onDtYourGuess = (data) => {
+      if (gameTypeRef.current !== 'draw-telephone') return;
       dispatch({ type: 'DT_YOUR_GUESS', payload: data });
       navigate('/draw-tel-guess');
     };
