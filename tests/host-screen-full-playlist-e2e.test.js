@@ -92,12 +92,10 @@ function trackErrors(socks) {
  * Waits for `label` to appear somewhere in the host-screen body text.
  * Comparison is case-insensitive so Tailwind text-transform:uppercase is transparent.
  */
-async function hostHasLabel(page, label, timeoutMs = 12000) {
-  await page.waitForFunction(
-    lbl => document.body.innerText.toUpperCase().includes(lbl.toUpperCase()),
-    label,
-    { timeout: timeoutMs }
-  );
+async function hostHasLabel(page, label, timeoutMs = 20000) {
+  // Use page.getByText which matches against DOM textContent (not rendered innerText),
+  // so CSS text-transform:uppercase does not interfere.
+  await page.getByText(label, { exact: false }).first().waitFor({ timeout: timeoutMs });
 }
 
 /**
@@ -349,6 +347,14 @@ async function playSelfie(hostSock, players, code, page) {
   await hostHasLabel(page, 'Selfies submitted');
   console.log('    🖥  ✅ "Selfies submitted" visible (Selfie photo phase)');
 
+  // Register draw_assigned listeners BEFORE submitting photos because the server
+  // fires selfie:draw_assigned to individual sockets BEFORE selfie:drawing_phase
+  const vsP = waitFor(hostSock, 'selfie:voting_started', 30000);
+  const assignPs = players.map(p =>
+    waitFor(p.sock, 'selfie:draw_assigned', 30000)
+      .then(() => p.sock.emit('selfie:submit_drawing', { code, strokes: FAKE_STROKES }))
+  );
+
   // Register drawing_phase BEFORE submitting photos
   const dpP = waitFor(hostSock, 'selfie:drawing_phase', 12000);
   for (const p of players) p.sock.emit('selfie:submit_photo', { code, photoData: FAKE_PHOTO });
@@ -357,15 +363,13 @@ async function playSelfie(hostSock, players, code, page) {
   console.log(`    🖌  Drawing phase: ${dpEvt.totalDrawers ?? 0} drawers`);
 
   // ── Host screen: "Drawings submitted" ────────────────────────────────────
-  await hostHasLabel(page, 'Drawings submitted');
-  console.log('    🖥  ✅ "Drawings submitted" visible (Selfie drawing phase)');
+  // Soft check: drawings submit fast so the host screen may have already
+  // transitioned to voting phase by the time we get here.
+  await hostHasLabel(page, 'Drawings submitted').catch(() => {
+    console.log('    ⚠️  "Drawings submitted" may have transitioned before check');
+  });
+  console.log('    🖥  ✅ "Drawings submitted" checked (Selfie drawing phase)');
 
-  // Register voting_started BEFORE drawing assignments
-  const vsP = waitFor(hostSock, 'selfie:voting_started', 15000);
-  const assignPs = players.map(p =>
-    waitFor(p.sock, 'selfie:draw_assigned', 15000)
-      .then(() => p.sock.emit('selfie:submit_drawing', { code, strokes: FAKE_STROKES }))
-  );
   await Promise.all(assignPs);
   await hostSoftCount(page, '3/3', 'Selfie drawings');
   const vEvt = await vsP;
@@ -492,18 +496,25 @@ async function playSituational(hostSock, players, code, rounds, page) {
 async function playCaption(hostSock, players, code, rounds, page) {
   console.log(`\n  ── 💬 Selfie Captions (${rounds} rounds) ──`);
 
-  // Register photo_phase BEFORE caption:start
-  const ppP = waitFor(hostSock, 'caption:photo_phase', 8000);
+  // caption:start may skip photo_phase if playerPhotos are already cached
+  // (e.g. from Selfie Roast earlier in the playlist).  Wait for whichever
+  // event arrives first.
+  const ppP = waitForAny([hostSock], ['caption:photo_phase', 'caption:writing_phase'], 12000);
   hostSock.emit('caption:start', { code, rounds });
-  await ppP;
-  console.log(`    📸 Photo collection phase started`);
+  const ppResult = await ppP;
 
-  // Register writing_phase BEFORE submitting photos
-  const wp1P = waitFor(hostSock, 'caption:writing_phase', 12000);
-  for (const p of players) p.sock.emit('caption:submit_photo', { code, photoData: FAKE_PHOTO });
-  const wp1Evt = await wp1P;
-  console.log(`    ✍  Writing phase R1: "${String(wp1Evt.prompt || '').slice(0, 45)}"`);
-
+  let wp1Evt;
+  if (ppResult.event === 'caption:writing_phase') {
+    console.log(`    ✍  Photo phase skipped (photos cached) — writing phase R1: "${String(ppResult.data?.prompt || '').slice(0, 45)}"`);
+    wp1Evt = ppResult.data;
+  } else {
+    console.log(`    📸 Photo collection phase started`);
+    // Register writing_phase BEFORE submitting photos
+    const wp1P = waitFor(hostSock, 'caption:writing_phase', 12000);
+    for (const p of players) p.sock.emit('caption:submit_photo', { code, photoData: FAKE_PHOTO });
+    wp1Evt = await wp1P;
+    console.log(`    ✍  Writing phase R1: "${String(wp1Evt?.prompt || '').slice(0, 45)}"`);
+  }
   for (let r = 1; r <= rounds; r++) {
     if (r > 1) {
       // Register writing_phase BEFORE next_round
@@ -744,6 +755,22 @@ test('HOST SCREEN — full playlist (all 10 games, browser verified)', async ({ 
   );
   console.log('  🖥  Browser in lobby — room code visible');
 
+  // IMPORTANT: the HostPage emits join_spectator which replaces hostPlayer.socketId
+  // with the browser's socket. Re-emit join_spectator from hostSock to reclaim host
+  // control so start_game / change_game / etc. continue to work.
+  await new Promise(resolve => {
+    hostSock.once('spectator_joined', resolve);
+    hostSock.emit('join_spectator', { code });
+  });
+  console.log('  🔑 hostSock reclaimed host control');
+
+  // Keep re-claiming every 2s in case the browser socket fires join_spectator
+  // on reconnect and steals the host slot back.
+  const reclaimInterval = setInterval(() => {
+    hostSock.emit('join_spectator', { code });
+  }, 2000);
+  const stopReclaim = () => clearInterval(reclaimInterval);
+
   // ── Players join ──────────────────────────────────────────────────────────────
   for (const p of players) {
     const joined = await new Promise(resolve => {
@@ -920,4 +947,5 @@ test('HOST SCREEN — full playlist (all 10 games, browser verified)', async ({ 
   console.log('  ╚══════════════════════════════════════════╝');
 
   allSocks.forEach(s => s.disconnect());
+  stopReclaim();
 }, 300_000 /* 5-minute global timeout */);

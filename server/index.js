@@ -397,6 +397,47 @@ const pickSituationalTarget = (room) => {
   return eligible[idx];
 };
 
+// Advance WST/Situational answer phase to voting (called when all answer or timer expires)
+const advanceWstAnswerPhase = (io, room, code) => {
+  if (room.phase !== 'question') return; // guard against double-fire
+  const connectedPlayersCount = activePlayers(room).length;
+  room._timers?.answer?.cancel();
+  room.answers = shuffleAnswers(room.answers);
+  const q = room.questions[room.currentQuestionIndex];
+
+  if (q?.type === 'situational') {
+    // Situational: show all answers at once, vote for best
+    room.phase = 'sit-voting';
+    room.sit.votes = {};
+    room.sit._voteCollector = VoteCollector.create({
+      getExpectedCount: () => activePlayers(room).length,
+      allowSelfVote: false,
+      onVote: (voterId, targetId) => { room.sit.votes[voterId] = targetId; },
+      onComplete: () => closeSitVoting(io, room, code),
+    });
+    const mappedAnswers = room.answers.map(a => ({ id: a.playerId, text: a.text }));
+    io.to(code).emit('sit:voting_started', {
+      answers: mappedAnswers,
+      question: room.currentQuestion,
+      totalVoters: connectedPlayersCount,
+    });
+  } else {
+    // WST: reveal one answer at a time, guess who wrote it
+    room.phase = 'voting';
+    room.currentAnswerIndex = 0;
+    const mappedAnswers = room.answers.map(a => ({ text: a.text }));
+    const expectedVotes = connectedPlayersCount;
+    io.to(code).emit('phase_timer', { secondsLeft: 0 }); // clear answering timer
+    io.to(code).emit('voting_started', { answers: mappedAnswers, currentIndex: 0, totalPlayers: expectedVotes });
+    room.answers.forEach((answer, idx) => {
+      const authorPlayer = room.players.find(p => p.id === answer.playerId);
+      if (authorPlayer?.socketId) {
+        io.to(getPlayerSocket(authorPlayer)).emit('my_answer_index', { index: idx });
+      }
+    });
+  }
+};
+
 // Emit the right 'new_question' event for a WST/Situational question
 const emitWstQuestion = (io, room, code) => {
   const q = room.questions[room.currentQuestionIndex];
@@ -434,14 +475,15 @@ const emitWstQuestion = (io, room, code) => {
   // Server-side answer timer — auto-starts voting when time expires (handles disconnected players)
   startAnswerTimer(io, room, code, roundDuration, () => {
     if (room.phase !== 'question') return;
-    const connectedPlayersCount = activePlayers(room).length;
-    // Auto-submit fallback for any player who didn't answer in time
+    // Auto-submit fallback for any player who didn't answer in time.
+    // Push to room.answers BEFORE record() so that if onComplete fires
+    // synchronously inside record(), advanceWstAnswerPhase sees all answers.
     activePlayers(room).forEach(p => {
       if (!room._answerTracker?.has(p.id)) {
         const draft = (room.answerDrafts || {})[p.id] || '';
         const answerData = { playerId: p.id, playerName: p.name, text: draft || '...', votes: [] };
-        room._answerTracker?.record(p.id, answerData);
         room.answers.push(answerData);
+        room._answerTracker?.record(p.id, answerData);
       }
     });
     if (room.answers.length === 0) {
@@ -458,37 +500,9 @@ const emitWstQuestion = (io, room, code) => {
       }
       return;
     }
-    const q = room.questions[room.currentQuestionIndex];
-    room.answers = shuffleAnswers(room.answers);
-    if (q?.type === 'situational') {
-      room.phase = 'sit-voting';
-      room.sit.votes = {};
-      room.sit._voteCollector = VoteCollector.create({
-        getExpectedCount: () => activePlayers(room).length,
-        allowSelfVote: false,
-        onVote: (voterId, targetId) => { room.sit.votes[voterId] = targetId; },
-        onComplete: () => closeSitVoting(io, room, code),
-      });
-      const mappedAnswers = room.answers.map(a => ({ id: a.playerId, text: a.text }));
-      io.to(code).emit('sit:voting_started', {
-        answers: mappedAnswers,
-        question: room.currentQuestion,
-        totalVoters: connectedPlayersCount,
-      });
-    } else {
-      room.phase = 'voting';
-      room.currentAnswerIndex = 0;
-      const mappedAnswers = room.answers.map(a => ({ text: a.text }));
-      const expectedVotes = connectedPlayersCount;
-      io.to(code).emit('phase_timer', { secondsLeft: 0 }); // clear answering timer
-      io.to(code).emit('voting_started', { answers: mappedAnswers, currentIndex: 0, totalPlayers: expectedVotes });
-      room.answers.forEach((answer, idx) => {
-        const authorPlayer = room.players.find(p => p.id === answer.playerId);
-        if (authorPlayer?.socketId) {
-          io.to(authorPlayer.socketId).emit('my_answer_index', { index: idx });
-        }
-      });
-    }
+    // advanceWstAnswerPhase may have already been triggered by onComplete inside
+    // the forEach above; the phase guard inside it prevents double execution.
+    advanceWstAnswerPhase(io, room, code);
   });
 };
 
@@ -688,6 +702,27 @@ function cancelAllTimers(room) {
   TimerManager.cancelAll(room);
 }
 
+// ─── Socket-identity helpers ────────────────────────────────────────────────
+// When a host player opens the TV/host-screen at /host, HostPage.jsx creates a
+// NEW socket and calls join_spectator, which overwrites hostPlayer.socketId with
+// the TV socket id.  The original phone socket id is preserved in phoneSocketId.
+//
+// findPlayer   — locate a player by EITHER the primary (TV/current) socket or
+//                the preserved phone socket.  Use for all inbound event handlers.
+//
+// getPlayerSocket — return the phone socket id when present (so the host player
+//                   receives their personal game events on their phone, not the
+//                   TV screen), falling back to the primary socketId.
+
+function findPlayer(room, socketId) {
+  return room.players.find(p => p.socketId === socketId || p.phoneSocketId === socketId);
+}
+
+function getPlayerSocket(player) {
+  return player.phoneSocketId || player.socketId;
+}
+// ────────────────────────────────────────────────────────────────────────────
+
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
@@ -802,7 +837,7 @@ io.on('connection', (socket) => {
   socket.on('add_custom_question', ({ code, text, saveToBank }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'lobby') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isConnected) return;
     
     // Add custom question natively inside array
@@ -817,7 +852,7 @@ io.on('connection', (socket) => {
     if (!room) return;
     
     // Host check
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
     if (room.players.filter(p => p.isConnected && p.isPlaying).length < 3) return;
@@ -866,7 +901,7 @@ io.on('connection', (socket) => {
   socket.on('skip_question', ({ code }) => {
     const room = getRoom(code);
     if (!room) return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
     const qType = room.questions[room.currentQuestionIndex]?.type || 'wst';
@@ -906,7 +941,7 @@ io.on('connection', (socket) => {
   socket.on('skip_mini_game', ({ code }) => {
     const room = getRoom(code);
     if (!room) return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
     // For any non-mixed game mode — reset to lobby
@@ -993,7 +1028,7 @@ io.on('connection', (socket) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'question') return;
 
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isConnected) return;
 
     if (!room.skipVotes) room.skipVotes = [];
@@ -1017,13 +1052,14 @@ io.on('connection', (socket) => {
   socket.on('kick_player', ({ code, targetPlayerId }) => {
     const room = getRoom(code);
     if (!room) return;
-    const host = room.players.find(p => p.socketId === socket.id);
+    const host = findPlayer(room, socket.id);
     if (!host || !host.isHost) return;
 
     const targetPlayerIndex = room.players.findIndex(p => p.id === targetPlayerId);
     if (targetPlayerIndex !== -1) {
       const targetPlayer = room.players[targetPlayerIndex];
       const targetSocketId = targetPlayer.socketId;
+      const targetPhoneSocketId = targetPlayer.phoneSocketId;
       
       // Remove from room
       room.players.splice(targetPlayerIndex, 1);
@@ -1031,10 +1067,14 @@ io.on('connection', (socket) => {
       // Notify remaining players
       io.to(code).emit('player_joined', { players: room.players });
       
-      // Disconnect the target player explicitly
+      // Disconnect the target player explicitly (both TV socket and phone socket if present)
       if (targetSocketId && io.sockets.sockets.get(targetSocketId)) {
         io.sockets.sockets.get(targetSocketId).emit('kicked');
         io.sockets.sockets.get(targetSocketId).disconnect(true);
+      }
+      if (targetPhoneSocketId && io.sockets.sockets.get(targetPhoneSocketId)) {
+        io.sockets.sockets.get(targetPhoneSocketId).emit('kicked');
+        io.sockets.sockets.get(targetPhoneSocketId).disconnect(true);
       }
     }
   });
@@ -1042,7 +1082,7 @@ io.on('connection', (socket) => {
   socket.on('answer_draft', ({ code, text }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'question') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isConnected || !player.isPlaying) return;
     if (!room.answerDrafts) room.answerDrafts = {};
     room.answerDrafts[player.id] = typeof text === 'string' ? text.trim().slice(0, 300) : '';
@@ -1053,7 +1093,7 @@ io.on('connection', (socket) => {
     if (!room || room.phase !== 'question') return;
     touchRoom(code);
 
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isConnected || !player.isPlaying) return;
 
     const existingAnswer = room.answers.find(a => a.playerId === player.id);
@@ -1063,8 +1103,11 @@ io.on('connection', (socket) => {
       room._answerTracker?.update(player.id, (prev) => ({ ...prev, text, votes: [] }));
     } else {
       const answerData = { playerId: player.id, playerName: player.name, text, votes: [] };
-      room._answerTracker?.record(player.id, answerData);
+      // Push to room.answers BEFORE recording in the tracker so that when
+      // onComplete fires (synchronously inside record()), advanceWstAnswerPhase
+      // sees all answers including this last one.
       room.answers.push(answerData);
+      room._answerTracker?.record(player.id, answerData);
     }
 
     const connectedPlayersCount = activePlayers(room).length;
@@ -1077,51 +1120,11 @@ io.on('connection', (socket) => {
     }
   });
 
-  function advanceWstAnswerPhase(io, room, code) {
-    if (room.phase !== 'question') return; // guard against double-fire
-    const connectedPlayersCount = activePlayers(room).length;
-    room._timers?.answer?.cancel();
-    room.answers = shuffleAnswers(room.answers);
-    const q = room.questions[room.currentQuestionIndex];
-
-    if (q?.type === 'situational') {
-      // Situational: show all answers at once, vote for best
-      room.phase = 'sit-voting';
-      room.sit.votes = {};
-      room.sit._voteCollector = VoteCollector.create({
-        getExpectedCount: () => activePlayers(room).length,
-        allowSelfVote: false,
-        onVote: (voterId, targetId) => { room.sit.votes[voterId] = targetId; },
-        onComplete: () => closeSitVoting(io, room, code),
-      });
-      const mappedAnswers = room.answers.map(a => ({ id: a.playerId, text: a.text }));
-      io.to(code).emit('sit:voting_started', {
-        answers: mappedAnswers,
-        question: room.currentQuestion,
-        totalVoters: connectedPlayersCount,
-      });
-    } else {
-      // WST: reveal one answer at a time, guess who wrote it
-      room.phase = 'voting';
-      room.currentAnswerIndex = 0;
-      const mappedAnswers = room.answers.map(a => ({ text: a.text }));
-      const expectedVotes = connectedPlayersCount;
-      io.to(code).emit('phase_timer', { secondsLeft: 0 }); // clear answering timer
-      io.to(code).emit('voting_started', { answers: mappedAnswers, currentIndex: 0, totalPlayers: expectedVotes });
-      room.answers.forEach((answer, idx) => {
-        const authorPlayer = room.players.find(p => p.id === answer.playerId);
-        if (authorPlayer?.socketId) {
-          io.to(authorPlayer.socketId).emit('my_answer_index', { index: idx });
-        }
-      });
-    }
-  }
-
   socket.on('sit:vote', ({ code, answerId }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'sit-voting') return;
 
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isConnected || !player.isPlaying) return;
     if (answerId === player.id) return;           // can't vote own answer
 
@@ -1154,7 +1157,7 @@ io.on('connection', (socket) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'sit-results') return;
 
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
     room.sit.votes = {};
@@ -1176,7 +1179,7 @@ io.on('connection', (socket) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'voting') return;
 
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isConnected || !player.isPlaying) return;
 
     const currentAnswer = room.answers[room.currentAnswerIndex];
@@ -1224,7 +1227,7 @@ io.on('connection', (socket) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'roundEnd') return;
 
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
     if (room.currentRound < room.totalRounds) {
@@ -1245,7 +1248,7 @@ io.on('connection', (socket) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'tot' || room.tot.roundState !== 'voting') return;
 
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isConnected || !player.isPlaying) return;
 
     const pid = player.id;
@@ -1275,7 +1278,7 @@ io.on('connection', (socket) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'tot') return;
 
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
     if (room.currentRound >= room.totalRounds) {
@@ -1312,7 +1315,7 @@ io.on('connection', (socket) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'tot') return;
 
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
     if (room.currentRound >= room.totalRounds) {
@@ -1346,7 +1349,7 @@ io.on('connection', (socket) => {
   socket.on('tot:change_question', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'tot') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
     room._timers?.tot?.cancel();
@@ -1377,7 +1380,7 @@ io.on('connection', (socket) => {
   socket.on('tot:pause', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'tot' || room.tot.roundState !== 'voting') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     room._timers?.tot?.pause();
     io.to(code).emit('tot:paused', { secondsLeft: room.tot.secondsLeft });
@@ -1386,7 +1389,7 @@ io.on('connection', (socket) => {
   socket.on('tot:resume', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'tot' || room.tot.roundState !== 'voting') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     room._timers?.tot?.resume();
     io.to(code).emit('tot:resumed', { secondsLeft: room.tot.secondsLeft });
@@ -1395,7 +1398,7 @@ io.on('connection', (socket) => {
   socket.on('answer:pause', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'question') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     room._timers?.answer?.pause();
   });
@@ -1403,7 +1406,7 @@ io.on('connection', (socket) => {
   socket.on('answer:resume', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'question') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     room._timers?.answer?.resume();
   });
@@ -1423,6 +1426,11 @@ io.on('connection', (socket) => {
     // events work regardless of whether the room was created from this socket.
     const hostPlayer = room.players.find(p => p.isHost);
     if (hostPlayer) {
+      // Preserve the host player's original phone socket so they can still
+      // participate in games (drawing, guessing, voting) on their phone.
+      if (hostPlayer.socketId && hostPlayer.socketId !== socket.id) {
+        hostPlayer.phoneSocketId = hostPlayer.socketId;
+      }
       hostPlayer.socketId = socket.id;
       hostPlayer.isConnected = true;
     }
@@ -1572,7 +1580,7 @@ io.on('connection', (socket) => {
     const room = getRoom(code);
     if (!room) return;
 
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
     cancelAllTimers(room);
@@ -1641,7 +1649,7 @@ io.on('connection', (socket) => {
     if (!room || room.phase !== 'mlt' || room.mlt.roundState !== 'voting') return;
     touchRoom(code);
 
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isConnected || !player.isPlaying) return;
 
     // One vote per player per round — use VoteCollector for dedup + threshold
@@ -1667,7 +1675,7 @@ io.on('connection', (socket) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'mlt') return;
 
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
     if (room.mlt.round >= room.mlt.totalRounds) {
@@ -1703,7 +1711,7 @@ io.on('connection', (socket) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'mlt' || room.mlt.roundState !== 'voting') return;
 
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isConnected || !player.isPlaying) return;
 
     const pid = player.id;
@@ -1725,7 +1733,7 @@ io.on('connection', (socket) => {
   socket.on('mlt:change_question', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'mlt') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
     room._timers?.mlt?.cancel();
@@ -1764,7 +1772,7 @@ io.on('connection', (socket) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'mlt') return;
 
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
     // Cancel timer
@@ -1805,7 +1813,7 @@ io.on('connection', (socket) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'mltEnd') return;
 
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
     // Clear any stale timer
@@ -1846,7 +1854,7 @@ io.on('connection', (socket) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'mlt' || room.mlt.roundState !== 'voting') return;
 
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
     if (room.mlt.paused) return; // already paused
@@ -1859,7 +1867,7 @@ io.on('connection', (socket) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'mlt' || room.mlt.roundState !== 'voting') return;
 
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
     if (!room.mlt.paused) return; // not paused
@@ -1873,7 +1881,7 @@ io.on('connection', (socket) => {
   socket.on('draw:start', ({ code, rounds, mode }) => {
     const room = getRoom(code);
     if (!room) return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
     cancelAllTimers(room);
@@ -1914,7 +1922,7 @@ io.on('connection', (socket) => {
       io.to(code).emit('draw:round_start', { word: null, round: 1, totalRounds: room.draw.totalRounds, timeLimit: room.draw.timeLimit, players, mode: 'secret' });
       // Send personalized word to each player
       playingPlayers.forEach(p => {
-        if (p.socketId) io.to(p.socketId).emit('draw:secret_word', { word: room.draw.playerWords[p.id] });
+        if (getPlayerSocket(p)) io.to(getPlayerSocket(p)).emit('draw:secret_word', { word: room.draw.playerWords[p.id] });
       });
     } else {
       io.to(code).emit('draw:round_start', {
@@ -1932,7 +1940,7 @@ io.on('connection', (socket) => {
   socket.on('draw:skip_word', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'drawing' || !room.draw || room.draw.phase !== 'drawing') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || (!player.isPlaying && !player.isHost)) return;
 
     // Players have a skip count limit; the host TV can always change the word
@@ -1953,7 +1961,7 @@ io.on('connection', (socket) => {
         playingPlayers.forEach((p, i) => {
           room.draw.playerWords[p.id] = shuffled[i % shuffled.length];
           delete room.draw.submissions[p.id];
-          if (p.socketId) io.to(p.socketId).emit('draw:secret_word', { word: room.draw.playerWords[p.id], skipped: true });
+          if (getPlayerSocket(p)) io.to(getPlayerSocket(p)).emit('draw:secret_word', { word: room.draw.playerWords[p.id], skipped: true });
         });
         const submittedCount = Object.keys(room.draw.submissions).length;
         io.to(code).emit('draw:submission_received', { submittedCount, totalDrawers: playingPlayers.length, submittedPlayerIds: [] });
@@ -1988,7 +1996,7 @@ io.on('connection', (socket) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'drawing' || !room.draw || room.draw.phase !== 'drawing') return;
     touchRoom(code);
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isPlaying) return;
     const isResubmit = !!room.draw.submissions[player.id];
 
@@ -2029,7 +2037,7 @@ io.on('connection', (socket) => {
   socket.on('draw:skip_to_vote', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'drawing' || !room.draw || room.draw.phase !== 'drawing') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     room._timers?.draw?.cancel();
     startDrawVoting(io, room, code);
@@ -2038,7 +2046,7 @@ io.on('connection', (socket) => {
   socket.on('draw:vote', ({ code, votedForPlayerId }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'drawing' || !room.draw || room.draw.phase !== 'voting') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isPlaying) return;
     if (votedForPlayerId === player.id) {
       socket.emit('draw:vote_rejected', { reason: 'no_self_vote' });
@@ -2069,7 +2077,7 @@ io.on('connection', (socket) => {
   socket.on('draw:show_results', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'drawing' || !room.draw || room.draw.phase !== 'voting') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     resolveDrawVoting(io, room, code);
   });
@@ -2077,7 +2085,7 @@ io.on('connection', (socket) => {
   socket.on('draw:next_round', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'drawing' || !room.draw || room.draw.phase !== 'results') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
     if (room.draw.round >= room.draw.totalRounds) {
@@ -2124,7 +2132,7 @@ io.on('connection', (socket) => {
       nextPlayingPlayers.forEach((p, i) => { room.draw.playerWords[p.id] = shuffledNext[i % shuffledNext.length]; });
       io.to(code).emit('draw:round_start', { word: null, round: room.draw.round, totalRounds: room.draw.totalRounds, timeLimit: room.draw.timeLimit, players, mode: 'secret' });
       nextPlayingPlayers.forEach(p => {
-        if (p.socketId) io.to(p.socketId).emit('draw:secret_word', { word: room.draw.playerWords[p.id] });
+        if (getPlayerSocket(p)) io.to(getPlayerSocket(p)).emit('draw:secret_word', { word: room.draw.playerWords[p.id] });
       });
     } else {
       room.draw.word = pickDrawWord();
@@ -2136,7 +2144,7 @@ io.on('connection', (socket) => {
   socket.on('draw:restart', ({ code }) => {
     const room = getRoom(code);
     if (!room) return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     room._timers?.draw?.cancel();
     room.phase = 'lobby';
@@ -2199,7 +2207,7 @@ io.on('connection', (socket) => {
   socket.on('fitb:start', ({ code, rounds }) => {
     const room = getRoom(code);
     if (!room) return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
     cancelAllTimers(room);
@@ -2246,7 +2254,7 @@ io.on('connection', (socket) => {
   socket.on('fitb:draft', ({ code, text }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'fitb' || room.fitb.phase !== 'answering') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
     room.fitb.drafts = room.fitb.drafts || {};
     room.fitb.drafts[player.id] = String(text || '').slice(0, 120);
@@ -2256,7 +2264,7 @@ io.on('connection', (socket) => {
   socket.on('fitb:answer', ({ code, text }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'fitb' || room.fitb.phase !== 'answering') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
 
     const sanitizedText = String(text || '').slice(0, 120).trim();
@@ -2268,8 +2276,9 @@ io.on('connection', (socket) => {
       room.fitb._submissionTracker?.update(player.id, (prev) => ({ ...prev, text: sanitizedText }));
     } else {
       const entry = { playerId: player.id, playerName: player.name, playerColor: player.color, text: sanitizedText, votes: 0 };
-      room.fitb._submissionTracker?.record(player.id, entry);
+      // Push BEFORE record so onComplete sees all answers (record may fire synchronously)
       room.fitb.answers.push(entry);
+      room.fitb._submissionTracker?.record(player.id, entry);
     }
 
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
@@ -2307,28 +2316,28 @@ io.on('connection', (socket) => {
     const anonAnswers = shuffled.map((a, i) => ({ id: i, text: a.text }));
     playingPlayers.forEach(p => {
       const myAnswerIndex = shuffled.findIndex(a => a.playerId === p.id);
-      io.to(p.socketId).emit('fitb:voting_started', {
+      io.to(getPlayerSocket(p)).emit('fitb:voting_started', {
         answers: anonAnswers,
         question: room.fitb.question,
         totalVoters: playingPlayers.length,
         myAnswerIndex,
       });
     });
-    // Also notify spectators/host (no myAnswerIndex)
-    room.players.filter(p => !p.isPlaying || !p.isConnected).forEach(p => {
-      io.to(p.socketId).emit('fitb:voting_started', {
-        answers: anonAnswers,
-        question: room.fitb.question,
-        totalVoters: playingPlayers.length,
-        myAnswerIndex: -1,
-      });
+    // Broadcast to everyone else in the room (host socket, spectator/browser screen, non-playing players)
+    // This ensures the host TV screen receives the event even when it has a separate socket from hostPlayer.
+    const playingSocketIds = playingPlayers.map(p => p.socketId);
+    io.to(code).except(playingSocketIds).emit('fitb:voting_started', {
+      answers: anonAnswers,
+      question: room.fitb.question,
+      totalVoters: playingPlayers.length,
+      myAnswerIndex: -1,
     });
   };
 
   socket.on('fitb:skip_to_vote', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'fitb' || room.fitb.phase !== 'answering') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     startFitbVoting(io, room, code);
   });
@@ -2336,7 +2345,7 @@ io.on('connection', (socket) => {
   socket.on('fitb:change_question', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'fitb' || room.fitb.phase !== 'answering') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     room._timers?.fitbAnswer?.cancel();
     const timeLimit = room.roomConfig?.roundDurationSecs || 30;
@@ -2359,7 +2368,7 @@ io.on('connection', (socket) => {
   socket.on('fitb:vote', ({ code, answerId }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'fitb' || room.fitb.phase !== 'voting') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
     const idx = parseInt(answerId);
     if (isNaN(idx) || idx < 0 || idx >= room.fitb.answers.length) return;
@@ -2411,7 +2420,7 @@ io.on('connection', (socket) => {
   socket.on('fitb:show_results', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'fitb' || room.fitb.phase !== 'voting') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     resolveFitbVoting(io, room, code);
   });
@@ -2419,7 +2428,7 @@ io.on('connection', (socket) => {
   socket.on('fitb:next_round', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'fitb' || room.fitb.phase !== 'results') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
     if (room.fitb.round >= room.fitb.totalRounds) {
@@ -2457,7 +2466,7 @@ io.on('connection', (socket) => {
   socket.on('fitb:restart', ({ code }) => {
     const room = getRoom(code);
     if (!room) return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     room.phase = 'lobby';
     room.fitb = { phase: 'waiting', round: 0, totalRounds: 3, question: null, answers: [], usedQuestions: [], scores: {} };
@@ -2470,7 +2479,7 @@ io.on('connection', (socket) => {
   socket.on('selfie:start', ({ code, rounds }) => {
     const room = getRoom(code);
     if (!room) return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
     cancelAllTimers(room);
@@ -2513,7 +2522,7 @@ io.on('connection', (socket) => {
     // Notify players whose photos were pre-loaded so they see "saved selfie" UI
     playingPlayers.forEach(p => {
       if (room.selfie.photos[p.id] && p.socketId) {
-        io.to(p.socketId).emit('player:photo_reused', { gameType: 'selfie' });
+        io.to(getPlayerSocket(p)).emit('player:photo_reused', { gameType: 'selfie' });
       }
     });
   });
@@ -2539,7 +2548,7 @@ io.on('connection', (socket) => {
 
     // Handle DT selfie collection phase
     if (room.phase === 'dt' && room.dt.phase === 'selfie') {
-      const player = room.players.find(p => p.socketId === socket.id);
+      const player = findPlayer(room, socket.id);
       if (!player || !player.isPlaying || !player.isConnected) return;
       if (room.dt.selfiePhotos?.[player.id]) return; // already submitted
 
@@ -2566,7 +2575,7 @@ io.on('connection', (socket) => {
     if (room.phase !== 'selfie') return;
     // Allow normal photo phase OR drawing phase (for retakes where photo was cleared)
     if (room.selfie.phase !== 'photo' && room.selfie.phase !== 'drawing') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
     if (room.selfie.photos[player.id]) return; // already submitted (or not a retake)
 
@@ -2586,7 +2595,7 @@ io.on('connection', (socket) => {
         const drawer = room.players.find(p => p.id === assignedDrawerId);
         const personalizedPrompt = (room.selfie.promptTemplate || '').replace(/\[Name\]/g, player.name || '?');
         if (drawer?.socketId) {
-          io.to(drawer.socketId).emit('selfie:draw_assigned', {
+          io.to(getPlayerSocket(drawer)).emit('selfie:draw_assigned', {
             photoData: room.selfie.photos[player.id],
             ownerName: player.name,
             ownerColor: player.color,
@@ -2601,7 +2610,7 @@ io.on('connection', (socket) => {
       const retakerOwner = room.players.find(p => p.id === retakerOwnerPlayerId);
       if (retakerOwnerPlayerId && retakerOwner) {
         const personalizedPrompt = (room.selfie.promptTemplate || '').replace(/\[Name\]/g, retakerOwner.name || '?');
-        io.to(player.socketId).emit('selfie:draw_assigned', {
+        io.to(getPlayerSocket(player)).emit('selfie:draw_assigned', {
           photoData: room.selfie.photos[retakerOwnerPlayerId],
           ownerName: retakerOwner.name,
           ownerColor: retakerOwner.color,
@@ -2663,7 +2672,7 @@ io.on('connection', (socket) => {
       const owner = room.players.find(pl => pl.id === ownerPlayerId);
       if (p.socketId && ownerPlayerId) {
         const personalizedPrompt = (room.selfie.promptTemplate || 'Draw on [Name]\'s selfie').replace(/\[Name\]/g, owner?.name || '?');
-        io.to(p.socketId).emit('selfie:draw_assigned', {
+        io.to(getPlayerSocket(p)).emit('selfie:draw_assigned', {
           photoData: room.selfie.photos[ownerPlayerId],
           ownerName: owner?.name || '?',
           ownerColor: owner?.color || '#fff',
@@ -2706,7 +2715,7 @@ io.on('connection', (socket) => {
   socket.on('selfie:skip_to_drawing', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'selfie' || room.selfie.phase !== 'photo') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     // Only assign if there's at least one photo
     if (Object.keys(room.selfie.photos).length < 1) return;
@@ -2716,7 +2725,7 @@ io.on('connection', (socket) => {
   socket.on('selfie:submit_drawing', ({ code, strokes }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'selfie' || room.selfie.phase !== 'drawing') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
     const isUpdate = !!room.selfie.strokes[player.id];
 
@@ -2794,7 +2803,7 @@ io.on('connection', (socket) => {
   socket.on('selfie:skip_to_vote', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'selfie' || room.selfie.phase !== 'drawing') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     room._timers?.selfie?.cancel();
     room._timers?.selfieGrace?.cancel();
@@ -2812,7 +2821,7 @@ io.on('connection', (socket) => {
   socket.on('selfie:pause', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'selfie' || room.selfie.phase !== 'drawing') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     room._timers?.selfie?.pause();
     io.to(code).emit('selfie:paused', { secondsLeft: room.selfie.secondsLeft });
@@ -2821,7 +2830,7 @@ io.on('connection', (socket) => {
   socket.on('selfie:resume', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'selfie' || room.selfie.phase !== 'drawing') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     room._timers?.selfie?.resume();
     io.to(code).emit('selfie:resumed', { secondsLeft: room.selfie.secondsLeft });
@@ -2830,7 +2839,7 @@ io.on('connection', (socket) => {
   socket.on('selfie:vote', ({ code, drawerId }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'selfie' || room.selfie.phase !== 'voting') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
     if (!room.selfie.strokes[drawerId]) return; // invalid target
 
@@ -2906,7 +2915,7 @@ io.on('connection', (socket) => {
   socket.on('selfie:show_results', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'selfie' || room.selfie.phase !== 'voting') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     resolveSelfieVoting(io, room, code);
   });
@@ -2914,7 +2923,7 @@ io.on('connection', (socket) => {
   socket.on('selfie:next_round', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'selfie' || room.selfie.phase !== 'results') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     if (room.selfie.round >= room.selfie.totalRounds) return;
 
@@ -2944,7 +2953,7 @@ io.on('connection', (socket) => {
   socket.on('selfie:skip_question', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'selfie') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
     if (room.selfie.phase === 'drawing') {
@@ -2966,7 +2975,7 @@ io.on('connection', (socket) => {
         const owner = room.players.find(pl => pl.id === ownerPlayerId);
         if (p.socketId) {
           const personalizedPrompt = room.selfie.promptTemplate.replace(/\[Name\]/g, owner?.name || '?');
-          io.to(p.socketId).emit('selfie:prompt_updated', {
+          io.to(getPlayerSocket(p)).emit('selfie:prompt_updated', {
             prompt: personalizedPrompt,
             promptTemplate: room.selfie.promptTemplate,
           });
@@ -3002,18 +3011,18 @@ io.on('connection', (socket) => {
   socket.on('selfie:retake_photo', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'selfie' || room.selfie.phase !== 'drawing') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
     if (room.selfie.strokes[player.id]) return; // already submitted drawing — too late
     // Clear photo so submit_photo guard will accept the new one
     delete room.selfie.photos[player.id];
-    io.to(player.socketId).emit('selfie:retake_ready', {});
+    io.to(getPlayerSocket(player)).emit('selfie:retake_ready', {});
   });
 
   socket.on('selfie:restart', ({ code }) => {
     const room = getRoom(code);
     if (!room) return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     room.phase = 'lobby';
     room.selfie = { phase: 'waiting', photos: {}, assignments: {}, strokes: {}, votes: {}, scores: {} };
@@ -3029,7 +3038,7 @@ io.on('connection', (socket) => {
   socket.on('caption:start', ({ code, rounds = 3 }) => {
     const room = getRoom(code);
     if (!room) return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
     cancelAllTimers(room);
@@ -3073,7 +3082,7 @@ io.on('connection', (socket) => {
     // Notify pre-loaded players
     captionPlayers.forEach(p => {
       if (room.caption.photos[p.id] && p.socketId) {
-        io.to(p.socketId).emit('player:photo_reused', { gameType: 'caption' });
+        io.to(getPlayerSocket(p)).emit('player:photo_reused', { gameType: 'caption' });
       }
     });
   });
@@ -3081,7 +3090,7 @@ io.on('connection', (socket) => {
   socket.on('caption:submit_photo', ({ code, photoData }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'caption' || room.caption.phase !== 'photo') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
     if (room.caption.photos[player.id]) return; // already submitted
 
@@ -3142,7 +3151,7 @@ io.on('connection', (socket) => {
   socket.on('caption:submit_caption', ({ code, text }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'caption' || (room.caption.phase !== 'writing' && room.caption.phase !== 'voting')) return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
 
     if (!text || typeof text !== 'string') return;
@@ -3193,7 +3202,7 @@ io.on('connection', (socket) => {
     playingPlayers.forEach(p => {
       const myCap = room.caption.captions[p.id];
       if (myCap && p.socketId) {
-        io.to(p.socketId).emit('caption:your_caption_id', { captionId: myCap.id });
+        io.to(getPlayerSocket(p)).emit('caption:your_caption_id', { captionId: myCap.id });
       }
     });
   }
@@ -3201,7 +3210,7 @@ io.on('connection', (socket) => {
   socket.on('caption:vote', ({ code, captionId }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'caption' || room.caption.phase !== 'voting') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
 
     // Validate captionId exists
@@ -3234,7 +3243,7 @@ io.on('connection', (socket) => {
   socket.on('caption:skip_to_voting', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'caption' || room.caption.phase !== 'writing') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     startCaptionVotingPhase(io, room, code);
   });
@@ -3242,7 +3251,7 @@ io.on('connection', (socket) => {
   socket.on('caption:change_question', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'caption' || room.caption.phase !== 'writing') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     // Reset captions and votes for current round, then start writing phase again with next prompt
     room.caption.captions = {};
@@ -3253,7 +3262,7 @@ io.on('connection', (socket) => {
   socket.on('caption:skip_to_results', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'caption') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     if (room.caption.phase === 'voting') {
       endCaptionRound(io, room, code);
@@ -3297,7 +3306,7 @@ io.on('connection', (socket) => {
   socket.on('caption:next_round', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'caption' || room.caption.phase !== 'results') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
     if (room.caption.currentRound >= room.caption.totalRounds) {
@@ -3322,7 +3331,7 @@ io.on('connection', (socket) => {
   socket.on('caption:restart', ({ code }) => {
     const room = getRoom(code);
     if (!room) return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     room.phase = 'lobby';
     room.caption = { phase: 'waiting', photos: {}, currentRound: 1, totalRounds: 3, captions: {}, votes: {}, scores: {}, usedPrompts: [], prompts: [], currentPromptIndex: 0 };
@@ -3335,10 +3344,33 @@ io.on('connection', (socket) => {
   // pmatch: everyone submits a photo; then a prompt is shown, everyone votes for who best fits it.
   // photoassoc: same mechanics but prompts are "Most likely to..." style traits.
 
+  // LobbyPage.jsx emits 'pmatch:start' when starting Selfie Challenge from the lobby;
+  // treat it as an alias for photovote:start with subType='pmatch'.
+  socket.on('pmatch:start', ({ code } = {}) => {
+    if (!code) return;
+    const room = getRoom(code);
+    if (!room) return;
+    const player = findPlayer(room, socket.id);
+    if (!player || !player.isHost) return;
+    cancelAllTimers(room);
+    const pvPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const { pmatchPrompts } = require('./questions/pmatchPrompts');
+    const prompts = [...pmatchPrompts].sort(() => Math.random() - 0.5);
+    room.phase = 'photovote';
+    room.photoVote = { subType: 'pmatch', phase: 'photo', photos: {}, currentRound: 1, totalRounds: 5, prompts, currentPromptIndex: 0, votes: {}, scores: {} };
+    const photoPhasePrompt = resolvePhotoVotePrompt(prompts[0], pvPlayers);
+    room.photoVote.pendingPrompt = photoPhasePrompt;
+    io.to(code).emit('photovote:photo_phase', {
+      subType: 'pmatch', round: 1, totalRounds: 5,
+      players: pvPlayers.map(p => ({ id: p.id, name: p.name, color: p.color })),
+      prompt: photoPhasePrompt,
+    });
+  });
+
   socket.on('photovote:start', ({ code, subType = 'pmatch', rounds = 5 }) => {
     const room = getRoom(code);
     if (!room) return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     if (!['pmatch', 'photoassoc'].includes(subType)) return;
 
@@ -3400,7 +3432,7 @@ io.on('connection', (socket) => {
     // Notify pre-loaded players
     pvPlayers.forEach(p => {
       if (room.photoVote.photos[p.id] && p.socketId) {
-        io.to(p.socketId).emit('player:photo_reused', { gameType: 'photovote' });
+        io.to(getPlayerSocket(p)).emit('player:photo_reused', { gameType: 'photovote' });
       }
     });
   });
@@ -3408,7 +3440,7 @@ io.on('connection', (socket) => {
   socket.on('photovote:submit_photo', ({ code, photoData }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'photovote' || room.photoVote.phase !== 'photo') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
     if (room.photoVote.photos[player.id]) return;
 
@@ -3488,7 +3520,7 @@ io.on('connection', (socket) => {
   socket.on('photovote:vote', ({ code, targetPlayerId }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'photovote' || room.photoVote.phase !== 'voting') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
 
     const target = room.players.find(p => p.id === targetPlayerId && p.isPlaying);
@@ -3518,7 +3550,7 @@ io.on('connection', (socket) => {
   socket.on('photovote:change_question', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'photovote' || room.photoVote.phase !== 'voting') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
     if (room.photoVote.subType === 'pmatch') {
@@ -3573,7 +3605,7 @@ io.on('connection', (socket) => {
   socket.on('photovote:skip_to_results', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'photovote') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     if (room.photoVote.phase === 'voting') {
       endPhotoVoteRound(io, room, code);
@@ -3627,7 +3659,7 @@ io.on('connection', (socket) => {
   socket.on('photovote:next_round', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'photovote' || room.photoVote.phase !== 'results') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
     if (room.photoVote.currentRound >= room.photoVote.totalRounds) {
@@ -3672,7 +3704,7 @@ io.on('connection', (socket) => {
   socket.on('photovote:restart', ({ code }) => {
     const room = getRoom(code);
     if (!room) return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     room.phase = 'lobby';
     room.photoVote = { subType: 'pmatch', phase: 'waiting', photos: {}, currentRound: 1, totalRounds: 5, prompts: [], currentPromptIndex: 0, votes: {}, scores: {} };
@@ -3780,7 +3812,7 @@ io.on('connection', (socket) => {
         const [activeDrawerId] = activeDrawerEntry;
         const drawerPlayer = room.players.find(p => p.id === activeDrawerId);
         if (drawerPlayer?.socketId) {
-          io.to(drawerPlayer.socketId).emit('dt:turn_timer', { promptId, secondsLeft: chain.secondsLeft });
+          io.to(getPlayerSocket(drawerPlayer)).emit('dt:turn_timer', { promptId, secondsLeft: chain.secondsLeft });
         }
       }
       if (chain.secondsLeft <= 0) {
@@ -3791,7 +3823,7 @@ io.on('connection', (socket) => {
         if (drawerEntryAtTimeout) {
           const drawerAtTimeout = room.players.find(p => p.id === drawerEntryAtTimeout[0]);
           if (drawerAtTimeout?.socketId) {
-            io.to(drawerAtTimeout.socketId).emit('dt:time_up', { promptId });
+            io.to(getPlayerSocket(drawerAtTimeout)).emit('dt:time_up', { promptId });
           }
         }
         // 800ms grace window for client to submit actual strokes; then fallback to empty
@@ -3854,7 +3886,7 @@ io.on('connection', (socket) => {
     const existingStrokes = buildCombinedStrokes(chain);
 
     if (drawerPlayer?.socketId) {
-      io.to(drawerPlayer.socketId).emit('dt:your_turn', {
+      io.to(getPlayerSocket(drawerPlayer)).emit('dt:your_turn', {
         promptId,
         finalText: chain.finalText,
         existingStrokes,
@@ -3888,7 +3920,7 @@ io.on('connection', (socket) => {
       const targetPlayer = room.players.find(p => p.id === chain.targetPlayerId);
       const finalStrokes = buildCombinedStrokes(chain);
       if (targetPlayer?.socketId) {
-        io.to(targetPlayer.socketId).emit('dt:your_guess', {
+        io.to(getPlayerSocket(targetPlayer)).emit('dt:your_guess', {
           promptId,
           finalStrokes,
           originalSelfieData: chain.originalSelfieData,
@@ -3968,7 +4000,7 @@ io.on('connection', (socket) => {
   socket.on('dt:start', ({ code }) => {
     const room = getRoom(code);
     if (!room) return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
@@ -4017,7 +4049,7 @@ io.on('connection', (socket) => {
       // Notify players whose photos are already saved so they see "reusing" UI
       playingPlayers.forEach(p => {
         if (allPhotos[p.id] && p.socketId) {
-          io.to(p.socketId).emit('player:photo_reused', { gameType: 'dt' });
+          io.to(getPlayerSocket(p)).emit('player:photo_reused', { gameType: 'dt' });
         }
       });
       // If all photos already saved, skip selfie phase immediately
@@ -4035,7 +4067,7 @@ io.on('connection', (socket) => {
   socket.on('dt:submit_prompt', ({ code, templateText }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'dt' || room.dt.phase !== 'prompting') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
     // One prompt per player
     if (room.dt.prompts.some(p => p.authorId === player.id)) return;
@@ -4168,7 +4200,7 @@ io.on('connection', (socket) => {
   socket.on('dt:submit_strokes', ({ code, promptId, strokes }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'dt' || room.dt.phase !== 'drawing') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
 
     // Verify this is the player's active turn for this chain
@@ -4214,7 +4246,7 @@ io.on('connection', (socket) => {
   socket.on('dt:submit_guess', ({ code, promptId, guessText }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'dt' || room.dt.phase !== 'guessing') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
     if (room.dt.guesses[promptId]) return; // already guessed
 
@@ -4260,7 +4292,7 @@ io.on('connection', (socket) => {
   socket.on('dt:reveal_next', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'dt' || room.dt.phase !== 'reveal') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
     const promptId = room.dt.revealQueue[room.dt.revealCurrentIndex];
@@ -4292,7 +4324,7 @@ io.on('connection', (socket) => {
   socket.on('dt:vote', ({ code, promptId, vote }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'dt' || room.dt.phase !== 'reveal') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
 
     if (!['correct', 'close', 'wrong'].includes(vote)) return;
@@ -4367,7 +4399,7 @@ io.on('connection', (socket) => {
   socket.on('dt:skip_to_reveal', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'dt') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     if (room.dt.phase === 'guessing') startDtRevealPhase(io, room, code);
   });
@@ -4375,7 +4407,7 @@ io.on('connection', (socket) => {
   socket.on('dt:end_game', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'dt') return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     endDtGame(io, room, code);
   });
@@ -4383,7 +4415,7 @@ io.on('connection', (socket) => {
   socket.on('dt:restart', ({ code }) => {
     const room = getRoom(code);
     if (!room) return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     cancelAllTimers(room);
     room.phase = 'lobby';
@@ -4397,7 +4429,7 @@ io.on('connection', (socket) => {
   socket.on('change_game', ({ code, newGameType }) => {
     const room = getRoom(code);
     if (!room) return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     const validGameTypes = ['who-said-that', 'most-likely-to', 'situational', 'this-or-that', 'mixed', 'drawing', 'fill-in-the-blank', 'selfie-roast', 'caption', 'pmatch', 'photoassoc', 'selfie-beforeafter', 'draw-telephone'];
     if (!validGameTypes.includes(newGameType)) return;
@@ -4440,7 +4472,7 @@ io.on('connection', (socket) => {
   socket.on('reset_global_scores', ({ code }) => {
     const room = getRoom(code);
     if (!room) return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     room.globalScores = {};
     io.to(code).emit('global_scores_updated', { globalScores: {}, leaderboard: [] });
@@ -4449,7 +4481,7 @@ io.on('connection', (socket) => {
   socket.on('remove_from_global_scores', ({ code, playerId }) => {
     const room = getRoom(code);
     if (!room) return;
-    const player = room.players.find(p => p.socketId === socket.id);
+    const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     delete room.globalScores[playerId];
     const leaderboard = room.players
