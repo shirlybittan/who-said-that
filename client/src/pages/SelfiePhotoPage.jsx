@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
@@ -59,15 +59,10 @@ export default function SelfiePhotoPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState(false);
   const [usingSaved, setUsingSaved] = useState(false);
-
-  // Pre-fill with saved selfie if available and photo not yet submitted
-  useEffect(() => {
-    if (state.savedSelfie && !selfie.hasSubmittedPhoto && !compressed) {
-      setCompressed(state.savedSelfie);
-      setPreview(state.savedSelfie);
-      setUsingSaved(true);
-    }
-  }, []);
+  // When a saved selfie exists, show an explicit choice screen first (never auto-use)
+  const [showReuseChoice, setShowReuseChoice] = useState(
+    () => !!(state.savedSelfie && !selfie?.hasSubmittedPhoto)
+  );
 
   const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
@@ -113,7 +108,19 @@ export default function SelfiePhotoPage() {
     setPreview(null);
     setCompressed(null);
     setUsingSaved(false);
+    setShowReuseChoice(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleUseSaved = () => {
+    setCompressed(state.savedSelfie);
+    setPreview(state.savedSelfie);
+    setUsingSaved(true);
+    setShowReuseChoice(false);
+  };
+
+  const handleTakeNew = () => {
+    setShowReuseChoice(false);
   };
 
   return (
@@ -128,7 +135,34 @@ export default function SelfiePhotoPage() {
 
       {!selfie.hasSubmittedPhoto ? (
         <>
-          {!preview ? (
+          {/* Explicit consent screen — shown only when a saved selfie exists */}
+          {showReuseChoice ? (
+            <div className="w-full max-w-xs flex flex-col items-center gap-4">
+              <p className="text-base font-['Fredoka_One'] text-gray-300 text-center">
+                Use your saved selfie or take a new one?
+              </p>
+              <img
+                src={state.savedSelfie}
+                alt="Saved selfie"
+                className="w-full rounded-2xl border-2 border-[#2D2D44] object-contain bg-[#111827]"
+                style={{ maxHeight: 260 }}
+              />
+              <div className="flex gap-3 w-full">
+                <button
+                  onClick={handleTakeNew}
+                  className="flex-1 bg-[#1A1A2E] border border-[#2D2D44] text-gray-300 font-['Fredoka_One'] py-3 rounded-xl hover:bg-[#2D2D44] transition"
+                >
+                  📷 New Photo
+                </button>
+                <button
+                  onClick={handleUseSaved}
+                  className="flex-1 bg-[#4ECDC4] text-[#0D0D1A] font-['Fredoka_One'] py-3 rounded-xl hover:bg-[#3dbdb5] transition"
+                >
+                  ♻️ Reuse This
+                </button>
+              </div>
+            </div>
+          ) : !preview ? (
             <div className="w-full max-w-xs">
               <label
                 htmlFor="selfie-input"
@@ -159,7 +193,7 @@ export default function SelfiePhotoPage() {
               <img
                 src={preview}
                 alt="Preview"
-                className="w-full rounded-2xl border-2 border-[#4ECDC4] object-cover"
+                className="w-full rounded-2xl border-2 border-[#4ECDC4] object-contain bg-[#111827]"
                 style={{ maxHeight: 320 }}
               />
               <div className="flex gap-3 w-full">

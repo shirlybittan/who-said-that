@@ -95,11 +95,11 @@ export default function DrawTelRevealPage() {
                 </div>
               </div>
               {reveal.originalSelfieData ? (
-                <div className="rounded-xl overflow-hidden border-2 border-[#FF6B6B]/30" style={{ aspectRatio: '4/3' }}>
+                <div className="rounded-xl overflow-hidden border-2 border-[#FF6B6B]/30 bg-[#0D0D1A]" style={{ aspectRatio: '4/3' }}>
                   <img
                     src={reveal.originalSelfieData}
                     alt={`${reveal.targetName}'s selfie`}
-                    className="w-full h-full object-cover"
+                    className="w-full h-full object-contain"
                     draggable={false}
                   />
                 </div>
@@ -142,7 +142,7 @@ export default function DrawTelRevealPage() {
                     <ReplayCanvas
                       strokes={step_.strokes || []}
                       photoData={reveal.originalSelfieData || null}
-                      cssWidth={drawingSteps.length <= 2 ? 300 : 200}
+                      cssWidth="100%"
                     />
                   </div>
                   <div className="p-1.5 flex items-center gap-1.5">
@@ -184,7 +184,7 @@ export default function DrawTelRevealPage() {
                       <img
                         src={reveal.originalSelfieData}
                         alt="Original"
-                        className="w-full h-full object-cover"
+                        className="w-full h-full object-contain bg-[#0D0D1A]"
                         draggable={false}
                       />
                     ) : (
@@ -200,7 +200,7 @@ export default function DrawTelRevealPage() {
                     <ReplayCanvas
                       strokes={drawingSteps[drawingSteps.length - 1]?.strokes || []}
                       photoData={reveal.originalSelfieData || null}
-                      cssWidth={200}
+                      cssWidth="100%"
                     />
                   </div>
                   <p className="text-xs text-center text-gray-500 font-['Nunito'] mt-1">Final drawing</p>

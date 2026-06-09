@@ -47,7 +47,7 @@ export default function ReplayCanvas({
         <img
           src={photoData}
           alt=""
-          className="absolute inset-0 w-full h-full object-cover"
+          className="absolute inset-0 w-full h-full object-contain bg-[#0D0D1A]"
           draggable={false}
         />
         <canvas

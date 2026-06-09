@@ -169,7 +169,7 @@ export default function SelfieDrawPage() {
         <img
           src={selfie.assignedPhotoData}
           alt={`${selfie.assignedOwnerName}'s selfie`}
-          className="absolute inset-0 w-full h-full object-cover"
+          className="absolute inset-0 w-full h-full object-contain bg-[#111827]"
           draggable={false}
         />
         <canvas

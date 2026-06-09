@@ -251,7 +251,7 @@ export default function DrawTelDrawPage() {
                       "{turn?.finalText}"
                     </p>
                   <div className="bg-[#000] rounded-xl overflow-hidden relative" style={{ aspectRatio: `${CANVAS_W}/${CANVAS_H}` }}>
-                    {selfieData && <img src={selfieData} alt="" className="absolute inset-0 w-full h-full object-cover" />}
+                    {selfieData && <img src={selfieData} alt="" className="absolute inset-0 w-full h-full object-contain bg-[#111827]" />}
                     <canvas
                       ref={r => {
                         if (r) {
@@ -288,7 +288,7 @@ export default function DrawTelDrawPage() {
               {selfieData && (
                 <img
                   src={selfieData}
-                  className="absolute inset-0 w-full h-full object-cover rounded-2xl pointer-events-none"
+                  className="absolute inset-0 w-full h-full object-contain rounded-2xl pointer-events-none bg-[#111827]"
                   alt="selfie background"
                 />
               )}

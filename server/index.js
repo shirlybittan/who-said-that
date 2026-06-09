@@ -397,6 +397,47 @@ const pickSituationalTarget = (room) => {
   return eligible[idx];
 };
 
+// Advance WST/Situational answer phase to voting (called when all answer or timer expires)
+const advanceWstAnswerPhase = (io, room, code) => {
+  if (room.phase !== 'question') return; // guard against double-fire
+  const connectedPlayersCount = activePlayers(room).length;
+  room._timers?.answer?.cancel();
+  room.answers = shuffleAnswers(room.answers);
+  const q = room.questions[room.currentQuestionIndex];
+
+  if (q?.type === 'situational') {
+    // Situational: show all answers at once, vote for best
+    room.phase = 'sit-voting';
+    room.sit.votes = {};
+    room.sit._voteCollector = VoteCollector.create({
+      getExpectedCount: () => activePlayers(room).length,
+      allowSelfVote: false,
+      onVote: (voterId, targetId) => { room.sit.votes[voterId] = targetId; },
+      onComplete: () => closeSitVoting(io, room, code),
+    });
+    const mappedAnswers = room.answers.map(a => ({ id: a.playerId, text: a.text }));
+    io.to(code).emit('sit:voting_started', {
+      answers: mappedAnswers,
+      question: room.currentQuestion,
+      totalVoters: connectedPlayersCount,
+    });
+  } else {
+    // WST: reveal one answer at a time, guess who wrote it
+    room.phase = 'voting';
+    room.currentAnswerIndex = 0;
+    const mappedAnswers = room.answers.map(a => ({ text: a.text }));
+    const expectedVotes = connectedPlayersCount;
+    io.to(code).emit('phase_timer', { secondsLeft: 0 }); // clear answering timer
+    io.to(code).emit('voting_started', { answers: mappedAnswers, currentIndex: 0, totalPlayers: expectedVotes });
+    room.answers.forEach((answer, idx) => {
+      const authorPlayer = room.players.find(p => p.id === answer.playerId);
+      if (authorPlayer?.socketId) {
+        io.to(authorPlayer.socketId).emit('my_answer_index', { index: idx });
+      }
+    });
+  }
+};
+
 // Emit the right 'new_question' event for a WST/Situational question
 const emitWstQuestion = (io, room, code) => {
   const q = room.questions[room.currentQuestionIndex];
@@ -434,14 +475,15 @@ const emitWstQuestion = (io, room, code) => {
   // Server-side answer timer — auto-starts voting when time expires (handles disconnected players)
   startAnswerTimer(io, room, code, roundDuration, () => {
     if (room.phase !== 'question') return;
-    const connectedPlayersCount = activePlayers(room).length;
-    // Auto-submit fallback for any player who didn't answer in time
+    // Auto-submit fallback for any player who didn't answer in time.
+    // Push to room.answers BEFORE record() so that if onComplete fires
+    // synchronously inside record(), advanceWstAnswerPhase sees all answers.
     activePlayers(room).forEach(p => {
       if (!room._answerTracker?.has(p.id)) {
         const draft = (room.answerDrafts || {})[p.id] || '';
         const answerData = { playerId: p.id, playerName: p.name, text: draft || '...', votes: [] };
-        room._answerTracker?.record(p.id, answerData);
         room.answers.push(answerData);
+        room._answerTracker?.record(p.id, answerData);
       }
     });
     if (room.answers.length === 0) {
@@ -458,37 +500,9 @@ const emitWstQuestion = (io, room, code) => {
       }
       return;
     }
-    const q = room.questions[room.currentQuestionIndex];
-    room.answers = shuffleAnswers(room.answers);
-    if (q?.type === 'situational') {
-      room.phase = 'sit-voting';
-      room.sit.votes = {};
-      room.sit._voteCollector = VoteCollector.create({
-        getExpectedCount: () => activePlayers(room).length,
-        allowSelfVote: false,
-        onVote: (voterId, targetId) => { room.sit.votes[voterId] = targetId; },
-        onComplete: () => closeSitVoting(io, room, code),
-      });
-      const mappedAnswers = room.answers.map(a => ({ id: a.playerId, text: a.text }));
-      io.to(code).emit('sit:voting_started', {
-        answers: mappedAnswers,
-        question: room.currentQuestion,
-        totalVoters: connectedPlayersCount,
-      });
-    } else {
-      room.phase = 'voting';
-      room.currentAnswerIndex = 0;
-      const mappedAnswers = room.answers.map(a => ({ text: a.text }));
-      const expectedVotes = connectedPlayersCount;
-      io.to(code).emit('phase_timer', { secondsLeft: 0 }); // clear answering timer
-      io.to(code).emit('voting_started', { answers: mappedAnswers, currentIndex: 0, totalPlayers: expectedVotes });
-      room.answers.forEach((answer, idx) => {
-        const authorPlayer = room.players.find(p => p.id === answer.playerId);
-        if (authorPlayer?.socketId) {
-          io.to(authorPlayer.socketId).emit('my_answer_index', { index: idx });
-        }
-      });
-    }
+    // advanceWstAnswerPhase may have already been triggered by onComplete inside
+    // the forEach above; the phase guard inside it prevents double execution.
+    advanceWstAnswerPhase(io, room, code);
   });
 };
 
@@ -1063,8 +1077,11 @@ io.on('connection', (socket) => {
       room._answerTracker?.update(player.id, (prev) => ({ ...prev, text, votes: [] }));
     } else {
       const answerData = { playerId: player.id, playerName: player.name, text, votes: [] };
-      room._answerTracker?.record(player.id, answerData);
+      // Push to room.answers BEFORE recording in the tracker so that when
+      // onComplete fires (synchronously inside record()), advanceWstAnswerPhase
+      // sees all answers including this last one.
       room.answers.push(answerData);
+      room._answerTracker?.record(player.id, answerData);
     }
 
     const connectedPlayersCount = activePlayers(room).length;
@@ -1076,46 +1093,6 @@ io.on('connection', (socket) => {
       advanceWstAnswerPhase(io, room, code);
     }
   });
-
-  function advanceWstAnswerPhase(io, room, code) {
-    if (room.phase !== 'question') return; // guard against double-fire
-    const connectedPlayersCount = activePlayers(room).length;
-    room._timers?.answer?.cancel();
-    room.answers = shuffleAnswers(room.answers);
-    const q = room.questions[room.currentQuestionIndex];
-
-    if (q?.type === 'situational') {
-      // Situational: show all answers at once, vote for best
-      room.phase = 'sit-voting';
-      room.sit.votes = {};
-      room.sit._voteCollector = VoteCollector.create({
-        getExpectedCount: () => activePlayers(room).length,
-        allowSelfVote: false,
-        onVote: (voterId, targetId) => { room.sit.votes[voterId] = targetId; },
-        onComplete: () => closeSitVoting(io, room, code),
-      });
-      const mappedAnswers = room.answers.map(a => ({ id: a.playerId, text: a.text }));
-      io.to(code).emit('sit:voting_started', {
-        answers: mappedAnswers,
-        question: room.currentQuestion,
-        totalVoters: connectedPlayersCount,
-      });
-    } else {
-      // WST: reveal one answer at a time, guess who wrote it
-      room.phase = 'voting';
-      room.currentAnswerIndex = 0;
-      const mappedAnswers = room.answers.map(a => ({ text: a.text }));
-      const expectedVotes = connectedPlayersCount;
-      io.to(code).emit('phase_timer', { secondsLeft: 0 }); // clear answering timer
-      io.to(code).emit('voting_started', { answers: mappedAnswers, currentIndex: 0, totalPlayers: expectedVotes });
-      room.answers.forEach((answer, idx) => {
-        const authorPlayer = room.players.find(p => p.id === answer.playerId);
-        if (authorPlayer?.socketId) {
-          io.to(authorPlayer.socketId).emit('my_answer_index', { index: idx });
-        }
-      });
-    }
-  }
 
   socket.on('sit:vote', ({ code, answerId }) => {
     const room = getRoom(code);
@@ -2268,8 +2245,9 @@ io.on('connection', (socket) => {
       room.fitb._submissionTracker?.update(player.id, (prev) => ({ ...prev, text: sanitizedText }));
     } else {
       const entry = { playerId: player.id, playerName: player.name, playerColor: player.color, text: sanitizedText, votes: 0 };
-      room.fitb._submissionTracker?.record(player.id, entry);
+      // Push BEFORE record so onComplete sees all answers (record may fire synchronously)
       room.fitb.answers.push(entry);
+      room.fitb._submissionTracker?.record(player.id, entry);
     }
 
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
@@ -2314,14 +2292,14 @@ io.on('connection', (socket) => {
         myAnswerIndex,
       });
     });
-    // Also notify spectators/host (no myAnswerIndex)
-    room.players.filter(p => !p.isPlaying || !p.isConnected).forEach(p => {
-      io.to(p.socketId).emit('fitb:voting_started', {
-        answers: anonAnswers,
-        question: room.fitb.question,
-        totalVoters: playingPlayers.length,
-        myAnswerIndex: -1,
-      });
+    // Broadcast to everyone else in the room (host socket, spectator/browser screen, non-playing players)
+    // This ensures the host TV screen receives the event even when it has a separate socket from hostPlayer.
+    const playingSocketIds = playingPlayers.map(p => p.socketId);
+    io.to(code).except(playingSocketIds).emit('fitb:voting_started', {
+      answers: anonAnswers,
+      question: room.fitb.question,
+      totalVoters: playingPlayers.length,
+      myAnswerIndex: -1,
     });
   };
 
