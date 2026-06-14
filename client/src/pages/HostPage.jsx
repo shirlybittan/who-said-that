@@ -2851,7 +2851,7 @@ export default function HostPage() {
     });
 
     sock.on('mlt:timer', ({ secondsLeft }) => setMlt(prev => ({ ...prev, secondsLeft })));
-    sock.on('mlt:question_changed', (data) => setMlt(prev => ({ ...prev, currentPrompt: data.currentPrompt })));
+    sock.on('mlt:question_changed', (data) => setMlt(prev => ({ ...prev, prompt: data.currentPrompt, currentPrompt: data.currentPrompt })));
     sock.on('mlt:paused', () => setMlt(prev => ({ ...prev, paused: true })));
     sock.on('mlt:resumed', ({ secondsLeft }) => setMlt(prev => ({ ...prev, paused: false, secondsLeft })));
     sock.on('mlt:vote_received', ({ voteCount, totalVoters, votedPlayerIds }) => { console.log(`[Host] MLT vote: ${voteCount}/${totalVoters}`); setMlt(prev => ({ ...prev, voteCount, totalVoters, votedPlayerIds: votedPlayerIds || prev.votedPlayerIds })); });

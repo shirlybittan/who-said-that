@@ -4,6 +4,7 @@ import { socket } from '../socket';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
 import { CANVAS_W, CANVAS_H, drawStroke, redrawOverlay } from '../utils/canvasUtils';
+import { useFullscreen } from '../hooks/useFullscreen';
 import TimerRing from '../components/game/TimerRing';
 
 const COLORS = [
@@ -35,28 +36,7 @@ export default function SelfieDrawPage() {
   const [color, setColor] = useState('#EF4444');
   const [width, setWidth] = useState(WIDTHS[1]);
   const [strokeCount, setStrokeCount] = useState(0);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const containerRef = useRef(null);
-
-  // Fullscreen toggle
-  const toggleFullscreen = () => {
-    const el = containerRef.current;
-    if (!el) return;
-    if (!document.fullscreenElement) {
-      el.requestFullscreen().then(() => {
-        setIsFullscreen(true);
-        if (screen.orientation?.lock) screen.orientation.lock('landscape').catch(() => {});
-      }).catch(() => {});
-    } else {
-      document.exitFullscreen().then(() => setIsFullscreen(false)).catch(() => {});
-    }
-  };
-
-  useEffect(() => {
-    const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
-    document.addEventListener('fullscreenchange', onFsChange);
-    return () => document.removeEventListener('fullscreenchange', onFsChange);
-  }, []);
+  const { isFullscreen, containerRef, toggleFullscreen } = useFullscreen();
 
   // Ensure canvas is transparent to show photo underneath
   useEffect(() => {

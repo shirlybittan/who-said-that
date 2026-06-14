@@ -36,18 +36,56 @@ const { EVENTS }     = require('../events');
 /**
  * Factory that produces a game controller object with start / startVoting / showResults methods.
  *
+ * This template standardizes the flow:
+ * 1. Initialize room state via `start(...)`.
+ * 2. Start rounds using `RoundManager` & `PhaseManager` which update `room[gameKey]`.
+ * 3. Receive votes through standard socket events, validated and counted by `VoteCollector`.
+ * 4. Advance to results automatically (upon all votes received or timer expiration).
+ * 5. Calculate scores and leaderboards via `ScoreCalculator`.
+ *
  * @param {object}   opts
  * @param {string}   opts.gameKey        - Namespace key used in room state and socket events (e.g. 'mlt')
  * @param {string[]} [opts.phases]       - Ordered phase list; defaults to ['voting', 'results']
  * @param {number}   opts.votingSeconds  - Voting countdown duration in seconds
- * @param {Function} opts.getPrompt      - (room, round) => string|object  Returns prompt for each round
+ * @param {Function} opts.getPrompt      - (room, round) => string|object Returns prompt for each round
  * @param {object}   [opts.scoreConfig]  - Passed to calculateVotingScores ({ pointsPerVote, allowSelfVote })
- * @param {Function} [opts.onRoundStart] - (io, room, code, round) => void  Custom round-start side-effects
- * @param {Function} [opts.onResults]    - (io, room, code, resultsPayload) => void  Override default results emit
- * @param {Function} [opts.onEnd]        - (io, room, code, leaderboard) => void     Override default end emit
- * @param {Function} [opts.getActivePlayers] - (room) => Player[]  Defaults to connected+playing players
+ * @param {Function} [opts.onRoundStart] - (io, room, code, round) => void Custom round-start side-effects (e.g. emitting prompts to clients)
+ * @param {Function} [opts.onResults]    - (io, room, code, resultsPayload) => void Override default results emit (e.g. customized scoring/majority mechanics)
+ * @param {Function} [opts.onEnd]        - (io, room, code, leaderboard) => void Override default end emit (e.g. custom titles like "🔮 Top Predictor")
+ * @param {Function} [opts.getActivePlayers] - (room) => Player[] Defaults to connected + playing players
  *
- * @returns {{ start, startVoting, showResults }}
+ * @returns {{ start: Function, startVoting: Function, showResults: Function, nextRound: Function, skipRound: Function }}
+ *
+ * @example
+ * // How to initialize a custom voting game:
+ * const mltGame = createVotingGame({
+ *   gameKey: 'mlt',
+ *   votingSeconds: 30,
+ *   scoreConfig: { allowSelfVote: true },
+ *   getPrompt: (room, round) => room.questions[round - 1],
+ *   onRoundStart: (io, room, code, round) => {
+ *     io.to(code).emit('mlt:new_round_prompt', { prompt: room.mlt.prompt });
+ *   },
+ *   onResults: (io, room, code, results) => {
+ *     // custom majority calculation...
+ *     io.to(code).emit('mlt:results', results);
+ *   },
+ *   onEnd: (io, room, code, leaderboard) => {
+ *     io.to(code).emit('mlt:ended', { leaderboard, titles: computeMltTitles(room) });
+ *   }
+ * });
+ *
+ * // Initial room state shape created in room[gameKey]:
+ * // {
+ * //   phase: 'waiting' | 'voting' | 'results' | 'ended',
+ * //   round: number,
+ * //   totalRounds: number,
+ * //   prompt: string | object | null,
+ * //   votes: Record<string, string>, // voterPlayerId -> votedPlayerId
+ * //   scores: Record<string, number>, // playerId -> totalScore
+ * //   secondsLeft: number,
+ * //   paused: boolean
+ * // }
  */
 function createVotingGame({
   gameKey,
