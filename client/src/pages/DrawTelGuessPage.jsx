@@ -14,7 +14,6 @@ export default function DrawTelGuessPage() {
   const guessTurn = dt.guessTurn;
   const sounds = useSounds();
   const [guessText, setGuessText] = useState('');
-  const [secondsLeft, setSecondsLeft] = useState(dt.guessSecondsLeft || 60);
 
   const canSubmit = guessText.trim().length > 0;
 
@@ -35,12 +34,15 @@ export default function DrawTelGuessPage() {
   const autoSubmitRef = useRef({ guessText, guessTurn, roomCode });
   useEffect(() => { autoSubmitRef.current = { guessText, guessTurn, roomCode }; });
 
-  // Reset text and timer when a new guess prompt arrives
+  // Reset text when a new guess prompt arrives
   useEffect(() => {
     setGuessText('');
-    setSecondsLeft(dt.guessSecondsLeft || 60);
-  }, [guessTurn?.promptId, dt.guessSecondsLeft]);
+  }, [guessTurn?.promptId]);
 
+  // Use synchronized server timer if available, otherwise fallback
+  const syncedSecondsLeft = dt.guessTurn?.secondsLeft ?? dt.guessSecondsLeft ?? 60;
+  const secondsLeft = phaseSecondsLeft !== null ? phaseSecondsLeft : syncedSecondsLeft;
+  
   // Auto-submit when timer reaches zero (uses ref to avoid stale closures)
   useEffect(() => {
     if (secondsLeft > 0 || hasConfirmed) return;
@@ -53,14 +55,7 @@ export default function DrawTelGuessPage() {
       dispatch({ type: 'DT_MARK_GUESSED' });
     }
     markConfirmed();
-  }, [secondsLeft, hasConfirmed, sounds, dispatch, markConfirmed]);
-
-  // Countdown — only runs while player hasn't confirmed and has a turn
-  useEffect(() => {
-    if (hasConfirmed || !guessTurn || secondsLeft <= 0) return;
-    const id = setInterval(() => setSecondsLeft(s => Math.max(0, s - 1)), 1000);
-    return () => clearInterval(id);
-  }, [secondsLeft, hasConfirmed, guessTurn]);
+  }, [currentSecondsLeft, hasConfirmed, sounds, dispatch, markConfirmed]);
 
   if (!guessTurn) {
     return (

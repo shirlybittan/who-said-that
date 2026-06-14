@@ -11,7 +11,6 @@ export default function DrawTelPromptPage() {
   const { dt, roomCode } = state;
   const sounds = useSounds();
   const [promptText, setPromptText] = useState('');
-  const [secondsLeft, setSecondsLeft] = useState(dt.promptSecondsLeft || 60);
 
   const hasName = promptText.toLowerCase().includes('[name]');
   const canSubmit = hasName && promptText.trim().length > 3;
@@ -33,11 +32,15 @@ export default function DrawTelPromptPage() {
   const autoSubmitRef = useRef({ promptText, hasName, roomCode });
   useEffect(() => { autoSubmitRef.current = { promptText, hasName, roomCode }; });
 
-  // Reset timer when prompt changes
+  // Reset text when new round starts (if any)
   useEffect(() => {
-    setSecondsLeft(dt.promptSecondsLeft || 60);
-  }, [dt.promptSecondsLeft, dt.totalPrompts]);
+    setPromptText('');
+  }, [dt.round]);
 
+  // Use synchronized server timer if available, otherwise fallback
+  const syncedSecondsLeft = dt.promptSecondsLeft ?? 60;
+  const secondsLeft = state.phaseSecondsLeft !== null ? state.phaseSecondsLeft : syncedSecondsLeft;
+  
   // Auto-submit when timer reaches zero (uses ref to avoid stale closures)
   useEffect(() => {
     if (secondsLeft > 0 || hasConfirmed) return;
@@ -49,13 +52,6 @@ export default function DrawTelPromptPage() {
     dispatch({ type: 'DT_MARK_PROMPT_SUBMITTED' });
     markConfirmed();
   }, [secondsLeft, hasConfirmed, sounds, dispatch, markConfirmed]);
-
-  // Countdown — only runs while player hasn't confirmed
-  useEffect(() => {
-    if (hasConfirmed || secondsLeft <= 0) return;
-    const id = setInterval(() => setSecondsLeft(s => Math.max(0, s - 1)), 1000);
-    return () => clearInterval(id);
-  }, [secondsLeft, hasConfirmed]);
 
   return (
     <motion.div
