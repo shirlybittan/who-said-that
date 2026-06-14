@@ -1544,6 +1544,14 @@ function FitbHostPanel({ fitbData, players, onSkipToVote, onShowResults, onNextR
       <div className="flex flex-col items-center gap-6 w-full max-w-3xl">
         <h1 className="text-3xl font-['Fredoka_One'] text-[#F9CA24]">✏️ Fill in the Blank — Vote!</h1>
         <h2 className="text-xl font-['Nunito'] text-[#FFE66D] text-center">{fitbData.question}</h2>
+        <div className="w-full flex flex-col gap-2">
+          {(fitbData.answers || []).map((ans, i) => (
+            <div key={ans.id ?? i} className="flex items-center gap-3 rounded-2xl px-5 py-3 bg-[#1A1A2E] border border-[#2D2D44]">
+              <span className="text-sm font-['Fredoka_One'] text-[#F9CA24] w-5">{i + 1}.</span>
+              <p className="flex-1 text-white font-['Nunito'] italic">"{ans.text}"</p>
+            </div>
+          ))}
+        </div>
         <div className="w-full max-w-md bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
           <div className="flex items-center justify-between mb-3">
             <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">Votes in</p>
@@ -1727,8 +1735,8 @@ function CaptionHostPanel({ captionData, players }) {
   const roundLabel = captionData?.totalRounds > 1 ? ` — Round ${captionData.round || 1}/${captionData.totalRounds}` : '';
 
   const photoBlock = captionData?.featuredPhotoData ? (
-    <div className="w-full rounded-2xl overflow-hidden border border-[#2D2D44]" style={{ aspectRatio: '4/3' }}>
-      <img src={captionData.featuredPhotoData} alt="featured" className="w-full h-full object-cover" />
+    <div className="w-full rounded-2xl overflow-hidden border border-[#2D2D44] bg-black" style={{ aspectRatio: '4/3' }}>
+      <img src={captionData.featuredPhotoData} alt="featured" className="w-full h-full object-contain" />
     </div>
   ) : null;
 
@@ -2084,6 +2092,7 @@ function CreateRoomForm({ onSubmit, onBack }) {
     { id: 'this-or-that',  label: '⚡ This or That',  accent: '#6C5CE7' },
     { id: 'drawing',       label: '🎨 Pictionary Battle',  accent: '#C39BD3' },
     { id: 'fill-in-the-blank', label: '✏️ Fill in the Blank', accent: '#F9CA24' },
+    { id: 'draw-telephone', label: '📞 Drawing in Chain', accent: '#FF6B6B' },
     { id: 'selfie-roast',  label: '📸 Draw on Friends', accent: '#FD79A8' },
     { id: 'caption',       label: '💬 Selfie Captions', accent: '#FD79A8' },
     { id: 'pmatch',        label: '🎭 Selfie Challenge', accent: '#FDCB6E' },
@@ -2476,9 +2485,6 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
           <button onClick={onCaptionChangeQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FD79A8] hover:text-[#FD79A8] active:scale-95 transition">
             🔄 Change Question
           </button>
-          <button onClick={onCaptionSkipToVoting} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FD79A8] hover:text-[#FD79A8] active:scale-95 transition">
-            🗳️ Start Voting
-          </button>
           <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
             🔀 Skip Mini Game
           </button>
@@ -2517,7 +2523,18 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
     }
   } else if (status === 'photovote') {
     const pvPhase = photoVoteData?.phase;
-    if (pvPhase === 'voting') {
+    if (pvPhase === 'photo') {
+      controls = (
+        <div className="flex gap-3">
+          <button onClick={onPhotoVoteChangeQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FDCB6E] hover:text-[#FDCB6E] active:scale-95 transition">
+            🔄 Change Question
+          </button>
+          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+            🔀 Skip Mini Game
+          </button>
+        </div>
+      );
+    } else if (pvPhase === 'voting') {
       controls = (
         <div className="flex gap-3">
           <button onClick={onPhotoVoteChangeQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FDCB6E] hover:text-[#FDCB6E] active:scale-95 transition">

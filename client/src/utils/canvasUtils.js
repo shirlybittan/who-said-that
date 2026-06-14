@@ -1,24 +1,5 @@
-export const CANVAS_W = 400;
-export const CANVAS_H = 300;
-
-/**
- * Returns optimal canvas pixel dimensions based on device screen width and DPR.
- * Maintains the 4:3 aspect ratio used throughout the app.
- *
- * Small phones  (<400px wide)  → 600×450
- * Default phones (400–767px)   → 800×600
- * Tablets / large (≥768px)     → 1200×900
- *
- * Note: the returned values are the canvas *pixel buffer* size — the element
- * is still sized via CSS (width: 100%). Higher resolution means more detail
- * at the cost of slightly more memory.
- */
-export function getOptimalCanvasSize() {
-  const w = window.innerWidth;
-  if (w < 400) return { width: 600,  height: 450  };
-  if (w < 768) return { width: 800,  height: 600  };
-  return              { width: 1200, height: 900  };
-}
+export const CANVAS_W = 800;
+export const CANVAS_H = 600;
 
 /**
  * Draw a single stroke onto a canvas 2D context.

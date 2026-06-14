@@ -45,7 +45,7 @@ export default function CaptionVotePage() {
         {caption.featuredPhotoData && (
           <img
             src={caption.featuredPhotoData}
-            className="w-48 h-48 object-cover rounded-2xl border-2 border-[#FD79A8] mb-4"
+            className="w-48 h-48 object-contain rounded-2xl border-2 border-[#FD79A8] mb-4 bg-black"
             alt={`${caption.featuredOwnerName}'s selfie`}
           />
         )}

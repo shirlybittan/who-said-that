@@ -3262,11 +3262,16 @@ io.on('connection', (socket) => {
 
   socket.on('photovote:change_question', ({ code }) => {
     const room = getRoom(code);
-    if (!room || room.phase !== 'photovote' || room.photoVote.phase !== 'voting') return;
+    if (!room || room.phase !== 'photovote') return;
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
+    const isPhotoPhase = room.photoVote.phase === 'photo';
+    const isVotingPhase = room.photoVote.phase === 'voting';
+    if (!isPhotoPhase && !isVotingPhase) return;
+
     if (room.photoVote.subType === 'pmatch') {
+      // For pmatch: change prompt, reset photos and go back to photo phase
       room.photoVote.phase = 'photo';
       room.photoVote.photos = {};
       room.photoVote.votes = {};
@@ -3289,15 +3294,15 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // Reset votes and pick the next prompt
+    // For photoassoc: reset votes and pick the next prompt, stay in voting (photos already in)
     room.photoVote.votes = {};
     room.photoVote._voteCollector = null;
+    room.photoVote.currentPromptIndex++;
     const playingPlayersForPrompt = room.players.filter(p => p.isConnected && p.isPlaying);
     const nextIndex = room.photoVote.currentPromptIndex % room.photoVote.prompts.length;
     const rawNextPrompt = room.photoVote.prompts[nextIndex];
     const prompt = resolvePhotoVotePrompt(rawNextPrompt, playingPlayersForPrompt);
     room.photoVote.currentPrompt = prompt;
-    room.photoVote.currentPromptIndex++;
 
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
     const photoList = playingPlayers.map(p => ({

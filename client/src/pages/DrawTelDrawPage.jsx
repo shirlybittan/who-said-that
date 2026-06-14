@@ -4,7 +4,7 @@ import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
-import { CANVAS_W, CANVAS_H, redrawCanvas, redrawOverlay, drawStroke, getOptimalCanvasSize } from '../utils/canvasUtils';
+import { CANVAS_W, CANVAS_H, redrawCanvas, redrawOverlay, drawStroke } from '../utils/canvasUtils';
 import TimerRing from '../components/game/TimerRing';
 import GamePageWrapper from '../components/GamePageWrapper.jsx';
 
@@ -46,13 +46,6 @@ export default function DrawTelDrawPage() {
   const [submitted, setSubmitted] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const containerRef = useRef(null);
-  const [canvasSize, setCanvasSize] = useState(() => getOptimalCanvasSize());
-
-  useEffect(() => {
-    const onResize = () => setCanvasSize(getOptimalCanvasSize());
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
 
   // Redraws canvas after undo/clear, respecting selfie background
   const redrawAll = useCallback((strokes) => {
@@ -329,8 +322,8 @@ export default function DrawTelDrawPage() {
               )}
               <canvas
                 ref={canvasRef}
-                width={canvasSize.width}
-                height={canvasSize.height}
+                width={CANVAS_W}
+                height={CANVAS_H}
                 className={`absolute inset-0 w-full h-full rounded-2xl ${selfieData ? 'bg-transparent' : 'bg-white'}`}
                 style={{ touchAction: 'none' }}
                 onTouchStart={onTouchStart}

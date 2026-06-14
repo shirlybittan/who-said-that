@@ -16,8 +16,8 @@ const WIDTHS = [2, 6, 14];
 const getPos = (canvas, clientX, clientY) => {
   const rect = canvas.getBoundingClientRect();
   return {
-    x: Math.round((clientX - rect.left) * (CANVAS_W / rect.width)),
-    y: Math.round((clientY - rect.top) * (CANVAS_H / rect.height)),
+    x: Math.round((clientX - rect.left) * (canvas.width  / rect.width)),
+    y: Math.round((clientY - rect.top)  * (canvas.height / rect.height)),
   };
 };
 
@@ -35,6 +35,28 @@ export default function SelfieDrawPage() {
   const [color, setColor] = useState('#EF4444');
   const [width, setWidth] = useState(WIDTHS[1]);
   const [strokeCount, setStrokeCount] = useState(0);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const containerRef = useRef(null);
+
+  // Fullscreen toggle
+  const toggleFullscreen = () => {
+    const el = containerRef.current;
+    if (!el) return;
+    if (!document.fullscreenElement) {
+      el.requestFullscreen().then(() => {
+        setIsFullscreen(true);
+        if (screen.orientation?.lock) screen.orientation.lock('landscape').catch(() => {});
+      }).catch(() => {});
+    } else {
+      document.exitFullscreen().then(() => setIsFullscreen(false)).catch(() => {});
+    }
+  };
+
+  useEffect(() => {
+    const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, []);
 
   // Ensure canvas is transparent to show photo underneath
   useEffect(() => {
@@ -142,9 +164,11 @@ export default function SelfieDrawPage() {
 
   return (
     <motion.div
-      className="flex flex-col items-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-4"
+      ref={containerRef}
+      className={`flex flex-col items-center bg-[#0D0D1A] text-[#F7F7F7] ${isFullscreen ? 'justify-center min-h-screen p-0' : 'min-h-screen p-4'}`}
       initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}
     >
+      {!isFullscreen && (
       <div className="flex items-center justify-between w-full max-w-sm mb-1">
         <h1 className="text-2xl font-['Fredoka_One'] text-[#FF6B6B] mt-4">🎨 Draw on {selfie.assignedOwnerName}'s selfie!</h1>
         {selfie.phase === 'drawing' && (
@@ -153,18 +177,21 @@ export default function SelfieDrawPage() {
           </div>
         )}
       </div>
-      {selfie.assignedPrompt ? (
-        <div className="w-full max-w-sm bg-[#FFE66D]/10 border border-[#FFE66D]/40 rounded-xl px-4 py-2 mb-3 text-center">
-          <p className="text-[#FFE66D] font-['Fredoka_One'] text-base">{selfie.assignedPrompt}</p>
-        </div>
-      ) : (
-        <p className="text-gray-400 font-['Nunito'] text-xs mb-3">Draw on their selfie</p>
+      )}
+      {!isFullscreen && (
+        selfie.assignedPrompt ? (
+          <div className="w-full max-w-sm bg-[#FFE66D]/10 border border-[#FFE66D]/40 rounded-xl px-4 py-2 mb-3 text-center">
+            <p className="text-[#FFE66D] font-['Fredoka_One'] text-base">{selfie.assignedPrompt}</p>
+          </div>
+        ) : (
+          <p className="text-gray-400 font-['Nunito'] text-xs mb-3">Draw on their selfie</p>
+        )
       )}
 
       {/* Photo + canvas overlay */}
       <div
-        className="relative rounded-2xl overflow-hidden border-2 border-[#2D2D44] mb-3"
-        style={{ width: '100%', maxWidth: CANVAS_W, aspectRatio: `${CANVAS_W}/${CANVAS_H}` }}
+        className={`relative overflow-hidden ${isFullscreen ? 'w-full h-full flex-1' : 'rounded-2xl border-2 border-[#2D2D44] mb-3'}`}
+        style={isFullscreen ? {} : { width: '100%', maxWidth: CANVAS_W, aspectRatio: `${CANVAS_W}/${CANVAS_H}` }}
       >
         <img
           src={selfie.assignedPhotoData}
@@ -186,9 +213,61 @@ export default function SelfieDrawPage() {
           onTouchMove={onPointerMove}
           onTouchEnd={onPointerUp}
         />
+        {/* Fullscreen toggle */}
+        <button
+          onClick={toggleFullscreen}
+          className="absolute top-2 left-2 z-20 w-8 h-8 rounded-lg bg-black/60 text-white flex items-center justify-center text-sm hover:bg-black/80 transition"
+          title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+        >
+          {isFullscreen ? '⤡' : '⤢'}
+        </button>
+        {/* Fullscreen toolbar overlay */}
+        {isFullscreen && (
+          <div className="absolute bottom-0 left-0 right-0 z-10 bg-black/70 backdrop-blur-sm px-4 pt-3 pb-4 flex flex-col items-center gap-2">
+            {selfie.assignedPrompt && (
+              <p className="text-[#FFE66D] font-['Fredoka_One'] text-sm text-center">{selfie.assignedPrompt}</p>
+            )}
+            <div className="flex flex-wrap justify-center gap-2">
+              {COLORS.map(c => (
+                <button
+                  key={c}
+                  onClick={() => { setColor(c); setTool('pen'); }}
+                  className={`w-7 h-7 rounded-full border-2 transition ${color === c && tool === 'pen' ? 'border-white scale-110' : 'border-transparent'}`}
+                  style={{ backgroundColor: c, boxShadow: '0 1px 4px rgba(0,0,0,0.6)' }}
+                />
+              ))}
+              <button
+                onClick={() => setTool('eraser')}
+                className={`w-7 h-7 rounded-full border-2 bg-[#1A1A2E] flex items-center justify-center text-xs transition ${tool === 'eraser' ? 'border-white scale-110' : 'border-[#2D2D44]'}`}
+              >✕</button>
+            </div>
+            <div className="flex gap-4 items-center">
+              {WIDTHS.map(w => (
+                <button
+                  key={w}
+                  onClick={() => setWidth(w)}
+                  className={`rounded-full bg-white flex-shrink-0 transition ${width === w ? 'ring-2 ring-[#4ECDC4] scale-110' : ''}`}
+                  style={{ width: w + 10, height: w + 10 }}
+                />
+              ))}
+              {strokeCount > 0 && (
+                <button onClick={handleUndo} className="bg-[#2D2D44] text-white px-3 py-1 rounded-lg font-['Nunito'] text-xs hover:bg-[#3D3D54] transition">↩</button>
+              )}
+              {strokeCount > 0 && (
+                <button onClick={handleClear} className="bg-[#2D2D44] text-white px-3 py-1 rounded-lg font-['Nunito'] text-xs hover:bg-[#3D3D54] transition">🗑</button>
+              )}
+              <button
+                onClick={handleSubmit}
+                className="bg-[#FF6B6B] text-white font-['Fredoka_One'] text-sm px-4 py-1.5 rounded-xl hover:bg-[#e05a5a] transition"
+              >
+                {selfie.hasSubmittedDrawing ? '↑ Update' : 'Submit ✓'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
-      {(
+      {!isFullscreen && (
         <>
           {/* Color palette */}
           <div className="flex flex-wrap justify-center gap-2 mb-2">
@@ -257,7 +336,7 @@ export default function SelfieDrawPage() {
       )}
 
       {/* When submitted: show status but keep toolbar visible so player can update */}
-      {selfie.hasSubmittedDrawing && (
+      {!isFullscreen && selfie.hasSubmittedDrawing && (
         <div className="w-full max-w-xs bg-[#1A1A2E] rounded-xl border border-[#4ECDC4]/40 px-4 py-2 text-center mt-2">
           <p className="text-[#4ECDC4] font-['Fredoka_One'] text-sm">
             ✓ Drawing submitted! ({selfie.drawingCount}/{selfie.totalDrawers}) — you can still update it
@@ -266,7 +345,7 @@ export default function SelfieDrawPage() {
       )}
 
       {/* Progress dots */}
-      {selfie.totalDrawers > 0 && (
+      {!isFullscreen && selfie.totalDrawers > 0 && (
         <div className="mt-4 flex gap-2">
           {Array.from({ length: selfie.totalDrawers }).map((_, i) => (
             <div

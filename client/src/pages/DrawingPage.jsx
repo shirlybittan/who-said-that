@@ -5,7 +5,7 @@ import { translations } from '../locales/translations';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
-import { redrawCanvas, getOptimalCanvasSize } from '../utils/canvasUtils';
+import { CANVAS_W, CANVAS_H, redrawCanvas } from '../utils/canvasUtils';
 import TimerRing from '../components/game/TimerRing';
 import ReplayCanvas from '../components/game/ReplayCanvas';
 import MiniGameWrapper from '../components/MiniGameWrapper.jsx';
@@ -51,7 +51,6 @@ export default function DrawingPage() {
   const [pendingVote, setPendingVote] = useState(null); // staged vote awaiting confirm
   const [isFullscreen, setIsFullscreen] = useState(false);
   const containerRef = useRef(null);
-  const [canvasSize, setCanvasSize] = useState(() => getOptimalCanvasSize());
 
   // Redirect if not in a drawing game
   useEffect(() => {
@@ -80,11 +79,7 @@ export default function DrawingPage() {
     return () => document.removeEventListener('fullscreenchange', onFsChange);
   }, []);
 
-  useEffect(() => {
-    const onResize = () => setCanvasSize(getOptimalCanvasSize());
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, []);
+
 
   // White canvas background on mount, new round, or new word (skip word)
   useEffect(() => {
@@ -295,8 +290,8 @@ export default function DrawingPage() {
           >
             <canvas
               ref={canvasRef}
-              width={canvasSize.width}
-              height={canvasSize.height}
+              width={CANVAS_W}
+              height={CANVAS_H}
               className={`bg-white touch-none ${isFullscreen
                 ? 'max-w-full max-h-full object-contain rounded-none border-0'
                 : 'w-full h-full rounded-xl border-4 border-[#C39BD3]'}`}
