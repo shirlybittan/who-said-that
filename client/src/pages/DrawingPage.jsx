@@ -11,6 +11,7 @@ import TimerRing from '../components/game/TimerRing';
 import ReplayCanvas from '../components/game/ReplayCanvas';
 import MiniGameWrapper from '../components/MiniGameWrapper.jsx';
 import { useMiniGameLifecycle } from '../hooks/useMiniGameLifecycle.js';
+import ConfirmVoteCard from '../game-core/player/ConfirmVoteCard';
 
 const COLORS = [
   '#000000', '#FFFFFF', '#EF4444', '#F97316', '#EAB308',
@@ -476,25 +477,23 @@ export default function DrawingPage() {
         </div>
 
         {/* Pending vote confirm UI */}
-        {pendingVote && !draw.hasVoted && (
-          <div className="w-full max-w-md mb-3 p-4 rounded-2xl bg-[#1A1A2E] border-2 border-[#C39BD3] text-center">
-            <p className="text-[#C39BD3] font-['Fredoka_One'] text-base mb-3">Confirm your vote?</p>
-            <div className="flex gap-3">
-              <button
-                onClick={handleCancelVote}
-                className="flex-1 py-2 rounded-xl font-['Fredoka_One'] text-gray-400 bg-[#2D2D44] hover:bg-[#3D3D54] transition"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmVote}
-                className="flex-1 py-2 rounded-xl font-['Fredoka_One'] text-black bg-[#C39BD3] hover:bg-[#b089c2] transition"
-              >
-                ✓ Confirm Vote
-              </button>
-            </div>
-          </div>
-        )}
+        {pendingVote && !draw.hasVoted && (() => {
+          const selectedSub = draw.submissions.find(s => s.playerId === pendingVote);
+          const selectedIndex = draw.submissions.findIndex(s => s.playerId === pendingVote);
+          return (
+            <ConfirmVoteCard
+              vote={{
+                label: selectedSub?.word ? `Drawing for "${selectedSub.word}"` : 'Anonymous Drawing',
+                badge: String.fromCharCode(65 + selectedIndex)
+              }}
+              onConfirm={handleConfirmVote}
+              onChange={handleCancelVote}
+              confirmLabel="✓ Confirm"
+              changeLabel="← Change"
+              titleLabel="Confirm your vote?"
+            />
+          );
+        })()}
 
         {/* Voted confirmation or waiting state */}
         {draw.hasVoted && (

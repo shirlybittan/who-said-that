@@ -6,13 +6,14 @@ import { translations } from '../../locales/translations';
 import PlayerGameLayout from '../../game-core/layouts/PlayerGameLayout';
 import { usePlayerGameFrame } from '../../game-core/hooks/usePlayerGameFrame';
 import JokerButton from '../../game-core/player/JokerButton';
+import ConfirmVoteCard from '../../game-core/player/ConfirmVoteCard';
 
 /**
  * Keeps every choice visible at all times.
  * Tapping a card highlights it; a sticky Confirm button appears at the bottom.
  * Tapping a different card swaps the highlight. Confirm fires onConfirm(selected).
  */
-function ChoiceList({ choices, selectedChoice, onSelect, onConfirm, helperText, confirmLabel }) {
+function ChoiceList({ choices, selectedChoice, onSelect, helperText }) {
   return (
     <>
       <p className="text-center text-gray-400 font-['Nunito'] text-sm mb-4">{helperText}</p>
@@ -45,15 +46,6 @@ function ChoiceList({ choices, selectedChoice, onSelect, onConfirm, helperText, 
           );
         })}
       </div>
-
-      {selectedChoice && (
-        <button
-          onClick={() => onConfirm(selectedChoice)}
-          className="w-full py-3 rounded-2xl bg-[#4ECDC4] text-[#0D0D1A] font-['Fredoka_One'] text-lg hover:bg-[#3dbdb5] active:scale-95 transition"
-        >
-          {confirmLabel}
-        </button>
-      )}
     </>
   );
 }
@@ -113,23 +105,33 @@ export default function MostLikelyToPlayerView() {
       choices={frame.choices}
       selectedChoice={pendingChoice}
       helperText={t.tapToVote}
-      confirmLabel={t.confirmVote || 'Confirm Vote'}
       onSelect={(choice) => {
         sounds.click?.();
         setPendingChoice(choice);
       }}
-      onConfirm={(choice) => {
-        actions.playChoiceClick(choice);
-        actions.submitChoice(choice);
-        setPendingChoice(null);
-      }}
     />
   );
+
+  const confirmUI = pendingChoice && !frame.hasSubmitted ? (
+    <ConfirmVoteCard
+      vote={pendingChoice}
+      onConfirm={() => {
+        actions.playChoiceClick(pendingChoice);
+        actions.submitChoice(pendingChoice);
+        setPendingChoice(null);
+      }}
+      onChange={() => setPendingChoice(null)}
+      confirmLabel="✓ Confirm"
+      changeLabel="← Change"
+      titleLabel="Confirm your vote?"
+    />
+  ) : null;
 
   return (
     <PlayerGameLayout
       frame={frame}
       selectionUI={selectionUI}
+      confirmUI={confirmUI}
       jokerUI={
         <JokerButton
           left={frame.joker.left}

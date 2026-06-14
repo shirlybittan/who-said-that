@@ -285,10 +285,23 @@ const advanceWstAnswerPhase = (io, room, code) => {
       onComplete: () => closeSitVoting(io, room, code),
     });
     const mappedAnswers = room.answers.map(a => ({ id: a.playerId, text: a.text }));
+    io.to(code).emit('phase_timer', { secondsLeft: 0 }); // clear answering timer
     io.to(code).emit('sit:voting_started', {
       answers: mappedAnswers,
       question: room.currentQuestion,
       totalVoters: connectedPlayersCount,
+    });
+
+    room._timers = room._timers || {};
+    if (room._timers.sitVoting) room._timers.sitVoting.cancel();
+    room._timers.sitVoting = TimerManager.create({
+      io,
+      code,
+      seconds: 45,
+      tickEvent: 'phase_timer',
+      extraData: { phase: 'sit-voting' },
+      isActive: () => room.phase === 'sit-voting',
+      onExpire: () => closeSitVoting(io, room, code),
     });
   } else {
     // WST: reveal one answer at a time, guess who wrote it
@@ -1188,18 +1201,24 @@ io.on('connection', (socket) => {
 
   socket.on('answer:pause', ({ code }) => {
     const room = getRoom(code);
-    if (!room || room.phase !== 'question') return;
+    if (!room) return;
+    if (room.phase !== 'question' && room.phase !== 'sit-voting') return;
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
-    room._timers?.answer?.pause();
+    
+    if (room.phase === 'question') room._timers?.answer?.pause();
+    if (room.phase === 'sit-voting') room._timers?.sitVoting?.pause();
   });
 
   socket.on('answer:resume', ({ code }) => {
     const room = getRoom(code);
-    if (!room || room.phase !== 'question') return;
+    if (!room) return;
+    if (room.phase !== 'question' && room.phase !== 'sit-voting') return;
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
-    room._timers?.answer?.resume();
+    
+    if (room.phase === 'question') room._timers?.answer?.resume();
+    if (room.phase === 'sit-voting') room._timers?.sitVoting?.resume();
   });
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -1333,15 +1352,57 @@ io.on('connection', (socket) => {
           votedPlayerIds: Object.keys(room.photoVote?.votes || {}),
         } : null,
         // DrawTel state (for reconnect recovery)
-        dt: (room.phase === 'dt' || room.phase?.startsWith('dt-')) ? {
-          phase: room.dt.phase,
-          promptsSubmittedCount: (room.dt.prompts || []).length,
-          totalPrompts: playingPlayers.length,
-          submittedPlayerIds: (room.dt.prompts || []).map(p => p.authorId).filter(Boolean),
-          guessedCount: Object.keys(room.dt.guesses || {}).length,
-          totalGuessers: playingPlayers.length,
-          guessedPlayerIds: Object.keys(room.dt.guesses || {}),
-        } : null,
+        dt: (room.phase === 'dt' || room.phase?.startsWith('dt-')) ? (() => {
+          const myGuessChain = room.dt.phase === 'guessing' ? Object.values(room.dt.chains || {}).find(c => c.targetPlayerId === playerId) : null;
+          const myDrawChain = room.dt.phase === 'drawing' ? Object.values(room.dt.chains || {}).find(c => c.participants[c.currentParticipantIndex] === playerId) : null;
+          const buildCombinedStrokesLocal = (chain) => chain.drawingSteps.flatMap(step => step.strokes || []);
+          return {
+            phase: room.dt.phase,
+            promptsSubmittedCount: (room.dt.prompts || []).length,
+            totalPrompts: playingPlayers.length,
+            submittedPlayerIds: (room.dt.prompts || []).map(p => p.authorId).filter(Boolean),
+            guessedCount: Object.keys(room.dt.guesses || {}).length,
+            totalGuessers: playingPlayers.length,
+            guessedPlayerIds: Object.keys(room.dt.guesses || {}),
+            hasGuessed: !!room.dt.guesses?.[playerId],
+            guessSecondsLeft: room._timers?.dtGuess ? room._timers.dtGuess.getRemaining() : 60,
+            guessTurn: myGuessChain ? {
+              promptId: myGuessChain.id,
+              finalStrokes: buildCombinedStrokesLocal(myGuessChain),
+              originalSelfieData: myGuessChain.originalSelfieData,
+              drawerCount: myGuessChain.drawingSteps.length,
+              secondsLeft: room._timers?.dtGuess ? room._timers.dtGuess.getRemaining() : 60,
+            } : null,
+            currentTurn: myDrawChain ? {
+              promptId: myDrawChain.id,
+              word: myDrawChain.currentParticipantIndex === 0 ? myDrawChain.templateText.replace(/\[name\]/gi, myDrawChain.targetName) : 'Draw what you see!',
+              isInitial: myDrawChain.currentParticipantIndex === 0,
+              targetName: myDrawChain.targetName,
+              originalSelfieData: myDrawChain.originalSelfieData,
+              previousStrokes: buildCombinedStrokesLocal(myDrawChain),
+              secondsLeft: room._timers?.[`dtDraw_${myDrawChain.id}`] ? room._timers[`dtDraw_${myDrawChain.id}`].getRemaining() : 60,
+            } : null,
+            reveal: room.dt.phase === 'reveal' ? (() => {
+              const chainId = room.dt.revealQueue?.[room.dt.revealCurrentIndex];
+              const c = room.dt.chains?.[chainId];
+              return c ? {
+                promptId: c.id,
+                targetPlayerId: c.targetPlayerId,
+                targetName: c.targetName,
+                authorId: c.authorId,
+                authorName: room.players.find(p=>p.id===c.authorId)?.name,
+                templateText: c.templateText,
+                finalText: c.finalText,
+                originalSelfieData: c.originalSelfieData,
+                drawingSteps: c.drawingSteps,
+                finalStrokes: buildCombinedStrokesLocal(c),
+                guesses: Object.keys(room.dt.guesses || {}).map(pid => ({ playerId: pid, playerName: room.players.find(p=>p.id===pid)?.name, guessText: room.dt.guesses[pid] })),
+                revealStep: room.dt.revealStep,
+                votes: room.dt.votes?.[c.id] || {},
+              } : null;
+            })() : null,
+          };
+        })() : null,
       },
     });
   });
@@ -1892,6 +1953,7 @@ io.on('connection', (socket) => {
     room._timers = room._timers || {};
     if (room._timers.fitbAnswer) room._timers.fitbAnswer.cancel();
     room.fitb.answerSecondsLeft = seconds;
+    room.fitb.paused = false;
     room._timers.fitbAnswer = TimerManager.create({
       io,
       code,
@@ -1899,6 +1961,8 @@ io.on('connection', (socket) => {
       tickEvent: 'fitb:answer_timer',
       isActive: () => room.fitb?.phase === 'answering',
       onTick: (s) => { room.fitb.answerSecondsLeft = s; },
+      onPause: () => { room.fitb.paused = true; },
+      onResume: () => { room.fitb.paused = false; },
       onExpire: () => {
         // Auto-submit: use player's typed draft if available, otherwise default
         const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
@@ -1946,6 +2010,7 @@ io.on('connection', (socket) => {
       targetPlayerIndex: 0,
       scores,
       answerSecondsLeft: timeLimit,
+      paused: false,
     };
     room.fitb._submissionTracker = SubmissionTracker.create({
       getExpectedCount: () => room.players.filter(p => p.isConnected && p.isPlaying).length,
@@ -2053,6 +2118,22 @@ io.on('connection', (socket) => {
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     startFitbVoting(io, room, code);
+  });
+
+  socket.on('fitb:pause', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'fitb' || room.fitb.phase !== 'answering') return;
+    const player = findPlayer(room, socket.id);
+    if (!player || !player.isHost) return;
+    room._timers?.fitbAnswer?.pause();
+  });
+
+  socket.on('fitb:resume', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'fitb' || room.fitb.phase !== 'answering') return;
+    const player = findPlayer(room, socket.id);
+    if (!player || !player.isHost) return;
+    room._timers?.fitbAnswer?.resume();
   });
 
   socket.on('fitb:change_question', ({ code }) => {

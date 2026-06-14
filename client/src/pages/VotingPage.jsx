@@ -5,6 +5,7 @@ import { translations } from '../locales/translations';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
 import VoteLocked from '../components/game/VoteLocked';
+import ConfirmVoteCard from '../game-core/player/ConfirmVoteCard';
 
 export default function VotingPage() {
   const { state, dispatch } = useGame();
@@ -54,11 +55,6 @@ export default function VotingPage() {
     socket.emit('submit_vote', { code: state.roomCode, votedPlayerId: pendingVoteId });
     dispatch({ type: 'MARK_VOTED' });
   };
-
-  const handleRevealAnswer = () => {
-    socket.emit('reveal_answer', { code: state.roomCode });
-  };
-
   const handleNextAnswer = () => {
     socket.emit('next_answer_request', { code: state.roomCode });
   };
@@ -148,12 +144,14 @@ export default function VotingPage() {
       </motion.div>
 
       {state.isPlaying && pendingVoteId && !state.hasVoted && !isRevealed && (
-        <button
-          onClick={handleConfirmVote}
-          className="mt-5 w-full max-w-md py-4 rounded-2xl bg-[#FFE66D] text-black font-['Fredoka_One'] text-2xl active:scale-95 transition-transform"
-        >
-          Confirm Vote ✓
-        </button>
+        <ConfirmVoteCard
+          vote={state.players.find(p => p.id === pendingVoteId)}
+          onConfirm={handleConfirmVote}
+          onChange={() => setPendingVoteId(null)}
+          confirmLabel="✓ Confirm"
+          changeLabel="← Change"
+          titleLabel="Confirm your vote?"
+        />
       )}
 
       {state.hasVoted && !isRevealed && !state.allVotesIn && (

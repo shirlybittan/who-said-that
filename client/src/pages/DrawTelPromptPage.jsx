@@ -98,31 +98,18 @@ export default function DrawTelPromptPage() {
         ))}
       </div>
 
-      {hasConfirmed ? (
-        <div className="w-full max-w-md bg-[#1A1A2E] rounded-2xl border border-[#2D2D44] p-6 text-center shadow-lg">
-          <p className="text-[#FF6B6B] font-['Fredoka_One'] text-2xl mb-2">Prompt in! ✓</p>
-          <p className="text-gray-400 font-['Nunito'] text-sm mb-4">
-            Waiting for others… ({dt.promptsSubmittedCount}/{dt.totalPrompts})
-          </p>
-          <div className="flex justify-center gap-2">
-            {Array.from({ length: dt.totalPrompts }).map((_, i) => (
-              <div
-                key={i}
-                className="w-3 h-3 rounded-full transition-colors duration-300"
-                style={{ backgroundColor: i < dt.promptsSubmittedCount ? '#FF6B6B' : '#2D2D44' }}
-              />
-            ))}
-          </div>
-          <button
-            onClick={editResponse}
-            className="w-full py-3 mt-6 rounded-2xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF6B6B] hover:text-[#FF6B6B] transition active:scale-95"
-          >
-            ✏️ Edit Prompt
-          </button>
-        </div>
-      ) : (
-        <div className="w-full max-w-md space-y-3">
-          <div className="relative">
+      <div className="w-full max-w-md">
+        <MiniGameWrapper
+          hasConfirmed={hasConfirmed}
+          onConfirm={confirm}
+          onEditResponse={editResponse}
+          confirmLabel={dt.hasSubmittedPrompt ? 'Update Prompt' : 'Submit Prompt'}
+          editLabel="✏️ Edit Prompt"
+          disableConfirm={!canSubmit}
+          isHost={state.isHost}
+          waitingMessage={`Waiting for others… (${dt.promptsSubmittedCount}/${dt.totalPrompts})`}
+        >
+          <div className="relative mb-3">
             <input
               type="text"
               value={promptText}
@@ -130,7 +117,8 @@ export default function DrawTelPromptPage() {
               placeholder="e.g. [name] riding a dinosaur to work"
               className="w-full bg-[#1A1A2E] border-2 border-[#2D2D44] focus:border-[#FF6B6B] outline-none rounded-xl px-4 py-3 text-white font-['Nunito'] text-base placeholder-gray-600 transition"
               maxLength={150}
-              autoFocus
+              autoFocus={!hasConfirmed}
+              disabled={hasConfirmed}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   e.preventDefault();
@@ -144,25 +132,17 @@ export default function DrawTelPromptPage() {
           </div>
 
           {promptText.length > 2 && !hasName && (
-            <p className="text-xs text-[#FFE66D] font-['Nunito'] pl-1">
+            <p className="text-xs text-[#FFE66D] font-['Nunito'] pl-1 mb-3">
               ⚠️ Include <span className="font-bold">[name]</span> somewhere in your prompt
             </p>
           )}
           {hasName && (
-            <p className="text-xs text-[#A8E6CF] font-['Nunito'] pl-1">
+            <p className="text-xs text-[#A8E6CF] font-['Nunito'] pl-1 mb-3">
               ✓ <span className="font-bold">[name]</span> will be replaced with a real player's name
             </p>
           )}
-
-          <button
-            onClick={confirm}
-            disabled={!canSubmit}
-            className="w-full bg-[#FF6B6B] disabled:opacity-30 text-white font-['Fredoka_One'] text-lg py-3 rounded-xl transition hover:bg-[#ff5252]"
-          >
-            Submit Prompt
-          </button>
-        </div>
-      )}
+        </MiniGameWrapper>
+      </div>
     </motion.div>
   );
 }

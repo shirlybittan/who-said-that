@@ -517,7 +517,7 @@ function QuestionPanel({ questionData, players, paused = false, serverSecondsLef
   );
 }
 
-function VotingPanel({ votingData, players }) {
+function VotingPanel({ votingData, players, phaseTimer }) {
   const current = votingData.answers?.[votingData.currentIndex];
   const authorId = current?.playerId;
   const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
@@ -743,7 +743,7 @@ function TotPanel({ totData, players }) {
   );
 }
 
-function SitPanel({ sitData, players }) {
+function SitPanel({ sitData, players, phaseTimer }) {
   const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
   if (sitData.hasResults) {
     return (
@@ -803,6 +803,11 @@ function SitPanel({ sitData, players }) {
           {sitData.question}
         </h1>
       </div>
+
+      {phaseTimer && phaseTimer.active && (
+        <TimerRing secondsLeft={phaseTimer.secondsLeft} total={45} paused={phaseTimer.paused} size={100} />
+      )}
+
       <div className="w-full max-w-xl bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
         <div className="flex items-center justify-between mb-3">
           <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">
@@ -1531,11 +1536,6 @@ function FitbHostPanel({ fitbData, players, onSkipToVote, onShowResults, onNextR
             </div>
           ))}
         </div>
-        {onNextRound && (
-          <button onClick={onNextRound} className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#F9CA24] text-black hover:opacity-90 active:scale-95 transition">
-            Next Round →
-          </button>
-        )}
       </div>
     );
   }
@@ -1575,7 +1575,7 @@ function FitbHostPanel({ fitbData, players, onSkipToVote, onShowResults, onNextR
         <p className="text-sm font-['Nunito'] text-gray-400 mt-1">Round {fitbData.round} of {fitbData.totalRounds}</p>
       </div>
       {fitbData.answerTimeLeft > 0 && (
-        <TimerRing secondsLeft={fitbData.answerTimeLeft} total={fitbData.answerTimeTotal || 30} paused={false} size={100} />
+        <TimerRing secondsLeft={fitbData.answerTimeLeft} total={fitbData.answerTimeTotal || 30} paused={!!fitbData.paused} size={100} />
       )}
       <div className="w-full bg-[#1A1A2E] border-2 border-[#F9CA24]/50 rounded-3xl p-8 text-center">
         <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-3">Complete the sentence</p>
@@ -2279,7 +2279,7 @@ function CreateRoomForm({ onSubmit, onBack }) {
 // ─── Host control bar (creator only) ─────────────────────────────────────────
 // QUEUE_GAME_LABELS imported from '../config/hostControls'
 
-function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbData, photoVoteData, captionData, isMixedMode, onStart, onMltPauseResume, onMltChangeQuestion, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, onNewGame, onPlayAgain, onNewPartyPack, gameQueue, queueIndex, onSelfieNextRound, onSelfieSkipQuestion, onShowSelfieResults, onFitbChangeQuestion, onFitbSkipToVote, onFitbShowResults, onFitbNextRound, onPhotoVoteChangeQuestion, onPhotoVoteSkipToResults, onPhotoVoteNextRound, onCaptionChangeQuestion, onCaptionSkipToVoting, onCaptionSkipToResults, onCaptionNextRound, onAnswerPauseResume, answerPaused }) {
+function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbData, photoVoteData, captionData, isMixedMode, onStart, onMltPauseResume, onMltChangeQuestion, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, onNewGame, onPlayAgain, onNewPartyPack, gameQueue, queueIndex, onSelfieNextRound, onSelfieSkipQuestion, onShowSelfieResults, onFitbChangeQuestion, onFitbSkipToVote, onFitbShowResults, onFitbNextRound, onPhotoVoteChangeQuestion, onPhotoVoteSkipToResults, onPhotoVoteNextRound, onCaptionChangeQuestion, onCaptionSkipToVoting, onCaptionSkipToResults, onCaptionNextRound, onAnswerPauseResume, answerPaused, onFitbPauseResume }) {
   if (!isRoomCreator) return null;
 
   const playingCount = players.filter(p => p.isPlaying && p.isConnected).length;
@@ -2443,11 +2443,11 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
     if (fitbPhase === 'answering') {
       controls = (
         <div className="flex gap-3">
+          <button onClick={onFitbPauseResume} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FFE66D] text-[#FFE66D] bg-[#FFE66D]/10 hover:bg-[#FFE66D]/20 active:scale-95 transition">
+            {fitbData?.paused ? '▶ Resume' : '⏸ Pause'}
+          </button>
           <button onClick={onFitbChangeQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#F9CA24] hover:text-[#F9CA24] active:scale-95 transition">
             🔄 Change Question
-          </button>
-          <button onClick={onFitbSkipToVote} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FFE66D] hover:text-[#FFE66D] active:scale-95 transition">
-            ⏭ Skip to Vote
           </button>
           <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
             🔀 Skip Mini Game
@@ -3040,9 +3040,9 @@ export default function HostPage() {
       }));
       setStatus('fitb');
     });
-    sock.on('fitb:answer_timer', ({ secondsLeft }) => {
+    sock.on('fitb:answer_timer', ({ secondsLeft, paused }) => {
       if (!isActiveSock()) return;
-      setFitbData(prev => ({ ...prev, answerTimeLeft: secondsLeft }));
+      setFitbData(prev => ({ ...prev, answerTimeLeft: secondsLeft, paused: !!paused }));
     });
     sock.on('fitb:answer_received', ({ answeredCount, totalAnswerers, answeredPlayerIds }) => {
       setFitbData(prev => ({ ...prev, answeredCount, totalAnswerers, answeredPlayerIds: answeredPlayerIds || prev.answeredPlayerIds }));
@@ -3352,6 +3352,8 @@ export default function HostPage() {
             answeredCount: room.fitb.answeredCount || 0,
             totalAnswerers: room.fitb.totalAnswerers || 0,
             answeredPlayerIds: room.fitb.answeredPlayerIds || [],
+            paused: room.fitb.paused || false,
+            answerTimeLeft: room.fitb.answerSecondsLeft || 30,
           }));
           console.log(`[Host] FITB answering restored: ${room.fitb.answeredCount}/${room.fitb.totalAnswerers}`);
         } else if (room.fitb.phase === 'voting') {
@@ -3558,6 +3560,13 @@ export default function HostPage() {
     else sock.emit('answer:pause', { code: gameInfo.code });
   };
 
+  const handleFitbPauseResume = () => {
+    const sock = socketRef.current;
+    if (!sock) return;
+    if (fitbData.paused) sock.emit('fitb:resume', { code: gameInfo.code });
+    else sock.emit('fitb:pause', { code: gameInfo.code });
+  };
+
   // "Change Question" in MLT replaces the current round's prompt without advancing the round counter
   const handleMltChangeQuestion = () => socketRef.current?.emit('mlt:change_question', { code: gameInfo.code });
   const handleMltSkip = () => socketRef.current?.emit('mlt:skip', { code: gameInfo.code });
@@ -3735,7 +3744,7 @@ export default function HostPage() {
         return <TotEndPanel totData={totData} />;
       case 'sit-voting':
       case 'sit-results':
-        return <SitPanel sitData={sitData} players={players} />;
+        return <SitPanel sitData={sitData} players={players} phaseTimer={phaseTimer} />;
       case 'drawing':
       case 'draw-voting':
       case 'draw-results':
@@ -4026,6 +4035,7 @@ export default function HostPage() {
         onFitbSkipToVote={() => socketRef.current?.emit('fitb:skip_to_vote', { code: gameInfo.code })}
         onFitbShowResults={() => socketRef.current?.emit('fitb:show_results', { code: gameInfo.code })}
         onFitbNextRound={() => socketRef.current?.emit('fitb:next_round', { code: gameInfo.code })}
+        onFitbPauseResume={handleFitbPauseResume}
         photoVoteData={photoVoteData}
         onPhotoVoteChangeQuestion={() => socketRef.current?.emit('photovote:change_question', { code: gameInfo.code })}
         onPhotoVoteSkipToResults={() => socketRef.current?.emit('photovote:skip_to_results', { code: gameInfo.code })}

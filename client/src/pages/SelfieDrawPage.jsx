@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { motion } from 'framer-motion';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
-import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
 import { CANVAS_W, CANVAS_H, drawStroke, redrawOverlay } from '../utils/canvasUtils';
 import { useFullscreen } from '../hooks/useFullscreen';
@@ -123,11 +123,6 @@ export default function SelfieDrawPage() {
     socket.on('selfie:drawing_ending', onDrawingEnding);
     return () => socket.off('selfie:drawing_ending', onDrawingEnding);
   }, [selfie.hasSubmittedDrawing, state.roomCode, dispatch]);
-
-  const handleSkip = () => {
-    sounds.click?.();
-    socket.emit('selfie:skip_to_vote', { code: state.roomCode });
-  };
 
   const handleRetake = () => {
     sounds.click?.();
