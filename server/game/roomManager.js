@@ -95,7 +95,8 @@ const createRoom = (socketId, playerName = 'Host', gameType = 'most-likely-to', 
     },
     mlt: {
       roundState: 'waiting',
-      currentPrompt: null,
+      phase: 'waiting',
+      prompt: null,         // was currentPrompt — updated to match VotingGameTemplate field name
       prompts: [],
       votes: {},
       scores: {},
@@ -108,7 +109,6 @@ const createRoom = (socketId, playerName = 'Host', gameType = 'most-likely-to', 
       allowSelfVote: false,
       paused: false,
       secondsLeft: 30,
-      timerRef: null
     },
     draw: {
       phase: 'waiting',

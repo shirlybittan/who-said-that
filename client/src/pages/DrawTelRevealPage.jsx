@@ -15,22 +15,15 @@ const DT_VOTE_SECS = 30;
 
 export default function DrawTelRevealPage() {
   const { state, dispatch } = useGame();
-  const { dt, roomCode, isHost, playerId } = state;
+  const { dt, roomCode, isHost, playerId, phaseSecondsLeft } = state;
   const reveal = dt.reveal;
   const sounds = useSounds();
 
   const step = reveal.step ?? 0;
   const isVoteStep = step === 2;
 
-  // Local vote countdown — starts when entering the vote step
-  const [voteSecondsLeft, setVoteSecondsLeft] = useState(reveal.voteSecondsLeft ?? DT_VOTE_SECS);
-  useEffect(() => {
-    if (!isVoteStep) return;
-    setVoteSecondsLeft(reveal.voteSecondsLeft ?? DT_VOTE_SECS);
-    const id = setInterval(() => setVoteSecondsLeft(s => Math.max(0, s - 1)), 1000);
-    return () => clearInterval(id);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isVoteStep]);
+  // Use synced phaseSecondsLeft for voting countdown
+  const voteSecondsLeft = phaseSecondsLeft !== null ? phaseSecondsLeft : (reveal.voteSecondsLeft ?? DT_VOTE_SECS);
 
   const handleNext = () => {
     sounds.click?.();

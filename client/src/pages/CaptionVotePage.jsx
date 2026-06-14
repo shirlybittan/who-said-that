@@ -4,6 +4,7 @@ import { socket } from '../socket';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
 import GamePageWrapper from '../components/GamePageWrapper.jsx';
+import ConfirmVoteCard from '../game-core/player/ConfirmVoteCard';
 
 export default function CaptionVotePage() {
   const { state, dispatch } = useGame();
@@ -45,7 +46,7 @@ export default function CaptionVotePage() {
         {caption.featuredPhotoData && (
           <img
             src={caption.featuredPhotoData}
-            className="w-48 h-48 object-cover rounded-2xl border-2 border-[#FD79A8] mb-4"
+            className="w-48 h-48 object-contain rounded-2xl border-2 border-[#FD79A8] mb-4 bg-black"
             alt={`${caption.featuredOwnerName}'s selfie`}
           />
         )}
@@ -78,14 +79,23 @@ export default function CaptionVotePage() {
               );
             })}
           </div>
-          {selected && (
-            <button
-              onClick={handleConfirm}
-              className="mt-4 w-full max-w-sm py-4 rounded-2xl bg-[#FD79A8] text-white font-['Fredoka_One'] text-xl active:scale-95 transition-transform"
-            >
-              Confirm Vote ✓
-            </button>
-          )}
+          {selected && (() => {
+            const selectedCaption = caption.captions.find(c => c.id === selected);
+            const selectedIndex = caption.captions.findIndex(c => c.id === selected);
+            return (
+              <ConfirmVoteCard
+                vote={{
+                  label: selectedCaption?.text || '',
+                  badge: String.fromCharCode(65 + selectedIndex)
+                }}
+                onConfirm={handleConfirm}
+                onChange={() => setSelected(null)}
+                confirmLabel="✓ Confirm"
+                changeLabel="← Change"
+                titleLabel="Confirm your vote?"
+              />
+            );
+          })()}
           </>
         ) : (
           <div className="w-full max-w-sm flex flex-col gap-3">

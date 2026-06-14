@@ -1,5 +1,5 @@
-export const CANVAS_W = 400;
-export const CANVAS_H = 300;
+export const CANVAS_W = 800;
+export const CANVAS_H = 600;
 
 /**
  * Draw a single stroke onto a canvas 2D context.
@@ -40,7 +40,7 @@ export function drawStroke(ctx, stroke) {
 export function redrawCanvas(canvas, strokes, { bgColor = '#FFFFFF' } = {}) {
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = bgColor;
-  ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
   strokes.forEach(s => drawStroke(ctx, s));
 }
 
@@ -50,6 +50,6 @@ export function redrawCanvas(canvas, strokes, { bgColor = '#FFFFFF' } = {}) {
  */
 export function redrawOverlay(canvas, strokes) {
   const ctx = canvas.getContext('2d');
-  ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
   strokes.forEach(s => drawStroke(ctx, s));
 }

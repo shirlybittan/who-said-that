@@ -3,14 +3,13 @@ import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
+import ConfirmVoteCard from '../game-core/player/ConfirmVoteCard';
 
 export default function PhotoVotePage() {
   const { state, dispatch } = useGame();
   const pv = state.photoVote;
   const sounds = useSounds();
   const [selected, setSelected] = useState(null);
-
-  const modeColor = pv.subType === 'photoassoc' ? '#A29BFE' : '#FDCB6E';
 
   const handleSelect = (targetPlayerId) => {
     if (pv.hasVoted || targetPlayerId === state.playerId) return;
@@ -75,15 +74,22 @@ export default function PhotoVotePage() {
         })}
       </div>
 
-      {selected && !pv.hasVoted && (
-        <button
-          onClick={handleConfirm}
-          style={{ backgroundColor: modeColor }}
-          className="mt-5 w-full max-w-sm py-3 rounded-2xl text-white font-['Fredoka_One'] text-xl active:scale-95 transition-transform"
-        >
-          Confirm Vote ✓
-        </button>
-      )}
+      {selected && !pv.hasVoted && (() => {
+        const targetPlayer = state.players.find(p => p.id === selected);
+        return (
+          <ConfirmVoteCard
+            vote={{
+              name: targetPlayer ? targetPlayer.name : 'Unknown Player',
+              color: targetPlayer?.color || '#FDCB6E'
+            }}
+            onConfirm={handleConfirm}
+            onChange={() => setSelected(null)}
+            confirmLabel="✓ Confirm"
+            changeLabel="← Change"
+            titleLabel="Confirm your vote?"
+          />
+        );
+      })()}
 
       {pv.hasVoted && (
         <p className="text-gray-500 font-['Nunito'] text-sm mt-5">

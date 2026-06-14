@@ -215,7 +215,7 @@ const buildClassicRestore = (room, playerId) => {
     const actions = [{
       type: 'MLT_SET_PROMPT',
       payload: {
-        prompt: room.mlt?.currentPrompt || '',
+        prompt: room.mlt?.prompt || room.mlt?.currentPrompt || '',
         round: room.mlt?.round || 1,
         totalRounds: room.mlt?.totalRounds || 5,
         players: activePlayers.map((player) => ({ id: player.id, name: player.name, color: player.color })),
@@ -717,7 +717,7 @@ export const buildJoinRestorePlan = ({ room, playerId, isRejoin, miniGameState }
 
   // For mlt phase, pass room.mlt as snapshot so getRouteForPhase can check roundState
   const snapshot = room.phase === 'mlt' ? room.mlt : miniGameState;
-  const route = getRouteForPhase(room.phase, snapshot);
+  const route = roomPayload.joinedMidRound ? '/lobby' : getRouteForPhase(room.phase, snapshot);
   const actions = miniGameState
     ? buildMiniGameRestore(room, miniGameState)
     : buildClassicRestore(room, playerId);

@@ -17,6 +17,8 @@ const { buildMiniGameSnapshot } = require('./game/miniGameSnapshot');
 const TimerManager = require('./game/TimerManager');
 const SubmissionTracker = require('./game/SubmissionTracker');
 const VoteCollector = require('./game/VoteCollector');
+const { createMltGame } = require('./game/mltGame');
+const { createTotGame } = require('./game/totGame');
 const mltPromptBank = require('./questions/mostLikelyTo');
 const { words: drawWordBank, prompts: drawPrompts } = require('./questions/drawing');
 const { selfiePrompts } = require('./questions/selfie');
@@ -132,6 +134,14 @@ const mergeToGlobalScores = (io, room, scores) => {
 
 const sanitizeRoomForClient = (room) => TimerManager.sanitizeForClient(room);
 
+// ─── MLT game controller ──────────────────────────────────────────────────────
+// mltGame is a reusable controller created once at startup.  Socket handlers
+// below call mltGame.start / startVoting / showResults / nextRound / skipRound.
+let mltGame; // declared before definition so onRoundStart callback can reference it
+
+// ─── ToT game controller ──────────────────────────────────────────────────────
+// totGame holds startTimer / closeRound / sendEnd extracted from index.js helpers.
+let totGame;
 // ─── Answer-phase timer (WST / Situational answering) ─────────────────────────
 
 const startAnswerTimer = (io, room, code, seconds, onExpire) => {
@@ -233,158 +243,17 @@ const resolveDrawVoting = (io, room, code) => {
 
 // ─── ToT timer ───────────────────────────────────────────────────────────────
 
-const startTotTimer = (io, room, code, seconds) => {
-  room._timers = room._timers || {};
-  if (room._timers.tot) room._timers.tot.cancel();
-  room.tot.secondsLeft = seconds;
-  room.tot.paused = false;
-  room._timers.tot = TimerManager.create({
-    io,
-    code,
-    seconds,
-    tickEvent: 'tot:timer',
-    isActive: () => room.phase === 'tot' && room.tot.roundState === 'voting',
-    onTick: (s) => { room.tot.secondsLeft = s; },
-    onPause: () => { room.tot.paused = true; },
-    onResume: () => { room.tot.paused = false; },
-    onExpire: () => closeTotRound(io, room, code),
-  });
-};
+// ─── ToT timer / round helpers ────────────────────────────────────────────────
+// startTotTimer, closeTotRound, assignTotTitles have been moved to
+// server/game/totGame.js (totGame controller).
+// Call totGame.startTimer / totGame.closeRound / totGame.sendEnd below.
+// ─────────────────────────────────────────────────────────────────────────────
 
 // ─── MLT helpers ─────────────────────────────────────────────────────────────
-
-const closeMltVoting = (io, room, code) => {
-  if (room._timers?.mlt) { room._timers.mlt.cancel(); room._timers.mlt = null; }
-  if (room.mlt.roundState !== 'voting') return;
-  room.mlt.roundState = 'results';
-  room.mlt.paused = false;
-
-  // Only non-host players can be voted for
-  const votablePlayers = room.players.filter(p => p.isConnected && p.isPlaying);
-
-  // Tally votes on votable players only
-  const voteCounts = {};
-  votablePlayers.forEach(p => { voteCounts[p.id] = 0; });
-  Object.entries(room.mlt.votes).forEach(([, targetId]) => {
-    if (voteCounts[targetId] !== undefined) {
-      voteCounts[targetId]++;
-      room.mlt.totalVotes[targetId] = (room.mlt.totalVotes[targetId] || 0) + 1;
-    }
-  });
-
-  const totalVotesCount = Object.keys(room.mlt.votes).length;
-
-  const results = votablePlayers.map(p => ({
-    playerId: p.id,
-    name: p.name,
-    color: p.color,
-    count: voteCounts[p.id] || 0,
-    pct: totalVotesCount > 0 ? Math.round((voteCounts[p.id] || 0) / totalVotesCount * 100) : 0,
-  })).sort((a, b) => b.count - a.count);
-
-  // Option A: all tied top players count as majority
-  const maxVotes = results[0]?.count || 0;
-  const majorityPlayerIds = maxVotes > 0
-    ? results.filter(r => r.count === maxVotes).map(r => r.playerId)
-    : [];
-
-  // Award wins & accumulate total-votes to majority players (already done above)
-  majorityPlayerIds.forEach(id => {
-    room.mlt.wins[id] = (room.mlt.wins[id] || 0) + 1;
-  });
-
-  // Score every playing player
-  room.players.filter(p => p.isConnected && p.isPlaying).forEach(voter => {
-    const votedFor = room.mlt.votes[voter.id];
-    let points = 0;
-
-    // +1 if voted for any majority player
-    if (majorityPlayerIds.includes(votedFor)) {
-      points += 1;
-    }
-    // Joker doubles total points (0 stays 0)
-    if (points > 0 && room.mlt.jokersThisRound[voter.id]) {
-      points *= 2;
-    }
-    if (points > 0) {
-      room.mlt.scores[voter.id] = (room.mlt.scores[voter.id] || 0) + points;
-    }
-  });
-
-  // Spend jokers that were active this round
-  Object.keys(room.mlt.jokersThisRound).forEach(pid => {
-    room.mlt.jokers[pid] = Math.max(0, (room.mlt.jokers[pid] ?? 2) - 1);
-  });
-
-  io.to(code).emit('mlt:results', {
-    results,
-    majorityPlayerIds,
-    jokersUsed: Object.keys(room.mlt.jokersThisRound),
-    scores: { ...room.mlt.scores },
-    players: room.players.filter(p => p.isConnected && p.isPlaying).map(p => ({ id: p.id, name: p.name, color: p.color })),
-  });
-};
-
-const startMltTimer = (io, room, code, seconds) => {
-  room._timers = room._timers || {};
-  if (room._timers.mlt) room._timers.mlt.cancel();
-  room.mlt.secondsLeft = seconds;
-  room.mlt.paused = false;
-  room._timers.mlt = TimerManager.create({
-    io,
-    code,
-    seconds,
-    tickEvent: 'mlt:timer',
-    isActive: () => room.phase === 'mlt' && room.mlt.roundState === 'voting',
-    onTick: (s) => { room.mlt.secondsLeft = s; },
-    onPause: () => { room.mlt.paused = true; },
-    onResume: () => { room.mlt.paused = false; },
-    onExpire: () => closeMltVoting(io, room, code),
-  });
-};
-
-const assignMltTitles = (leaderboard) => {
-  const titled = new Set();
-
-  const tryAssign = (sorted, key, minVal, title) => {
-    for (const entry of sorted) {
-      if (!titled.has(entry.playerId) && entry[key] >= minVal) {
-        entry.title = title;
-        titled.add(entry.playerId);
-        break;
-      }
-    }
-  };
-
-  tryAssign([...leaderboard].sort((a, b) => b.score - a.score), 'score', 1, '🔮 Top Predictor');         // highest score
-  tryAssign([...leaderboard].sort((a, b) => a.score - b.score), 'score', 0, '😬 Worst Predictor');        // lowest score
-  tryAssign([...leaderboard].sort((a, b) => b.wins - a.wins), 'wins', 1, '👑 Fan Favorite');              // most majority picks
-  tryAssign([...leaderboard].sort((a, b) => b.totalVotes - a.totalVotes), 'totalVotes', 1, '🎯 Hot Topic'); // most votes received
-  tryAssign([...leaderboard].sort((a, b) => a.totalVotes - b.totalVotes), 'totalVotes', 0, '🕵️ Under the Radar'); // fewest votes received
-
-  leaderboard.forEach(p => { if (!p.title) p.title = '⚡ Dark Horse'; });
-  return leaderboard;
-};
-
-const sendMltEnd = (io, room, code) => {
-  room.mlt.roundState = 'end';
-  room.phase = 'mltEnd';
-
-  const connectedPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
-  let leaderboard = connectedPlayers.map(p => ({
-    playerId: p.id,
-    name: p.name,
-    color: p.color,
-    score: room.mlt.scores[p.id] || 0,
-    totalVotes: room.mlt.totalVotes[p.id] || 0,
-    wins: room.mlt.wins[p.id] || 0,
-    title: null,
-  })).sort((a, b) => b.score - a.score);
-
-  leaderboard = assignMltTitles(leaderboard);
-  io.to(code).emit('mlt:end', { leaderboard });
-  mergeToGlobalScores(io, room, room.mlt.scores);
-};
+// closeMltVoting, startMltTimer, assignMltTitles, sendMltEnd have been moved to
+// server/game/mltGame.js and are now encapsulated inside the mltGame controller.
+// Socket handlers below call mltGame.start / showResults / nextRound / skipRound.
+// ─────────────────────────────────────────────────────────────────────────────
 
 // ─── Situational helpers ──────────────────────────────────────────────────────
 
@@ -416,10 +285,23 @@ const advanceWstAnswerPhase = (io, room, code) => {
       onComplete: () => closeSitVoting(io, room, code),
     });
     const mappedAnswers = room.answers.map(a => ({ id: a.playerId, text: a.text }));
+    io.to(code).emit('phase_timer', { secondsLeft: 0 }); // clear answering timer
     io.to(code).emit('sit:voting_started', {
       answers: mappedAnswers,
       question: room.currentQuestion,
       totalVoters: connectedPlayersCount,
+    });
+
+    room._timers = room._timers || {};
+    if (room._timers.sitVoting) room._timers.sitVoting.cancel();
+    room._timers.sitVoting = TimerManager.create({
+      io,
+      code,
+      seconds: 45,
+      tickEvent: 'phase_timer',
+      extraData: { phase: 'sit-voting' },
+      isActive: () => room.phase === 'sit-voting',
+      onExpire: () => closeSitVoting(io, room, code),
     });
   } else {
     // WST: reveal one answer at a time, guess who wrote it
@@ -506,7 +388,7 @@ const emitWstQuestion = (io, room, code) => {
   });
 };
 
-// Emit a This-or-That round prompt
+// Emit a This-or-That round prompt and start the countdown timer
 const emitTotQuestion = (io, room, code) => {
   const q = room.questions[room.currentQuestionIndex];
   if (!q) return;
@@ -533,7 +415,7 @@ const emitTotQuestion = (io, room, code) => {
     secondsLeft: timeLimit,
   });
 
-  startTotTimer(io, room, code, timeLimit);
+  totGame.startTimer(io, room, code, timeLimit);
 };
 
 // Emit the next question for ANY game type (used after round-end in WST/Sit/Mixed)
@@ -579,69 +461,13 @@ const emitNextQuestion = (io, room, code) => {
   }
 };
 
-// Close a ToT voting round and broadcast results
-const closeTotRound = (io, room, code) => {
-  if (room._timers?.tot) { room._timers.tot.cancel(); room._timers.tot = null; }
-  room.tot.roundState = 'results';
+// Close a ToT voting round and broadcast results — delegated to totGame
+const closeTotRound = (io, room, code) => totGame.closeRound(io, room, code);
 
-  const connectedPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
-  const countA = Object.keys(room.tot.votesA).length;
-  const countB = Object.keys(room.tot.votesB).length;
-  const total = countA + countB;
-
-  const pctA = total === 0 ? 0 : Math.round((countA / total) * 100);
-  const pctB = total === 0 ? 0 : 100 - pctA;
-
-  // Scoring: majority side gets +1
-  const tieRound = countA === countB;
-  const majorityChoice = tieRound ? null : (countA > countB ? 'a' : 'b');
-
-  if (!tieRound) {
-    const winners = majorityChoice === 'a' ? room.tot.votesA : room.tot.votesB;
-    Object.keys(winners).forEach(pid => {
-      room.tot.scores[pid] = (room.tot.scores[pid] || 0) + 1;
-    });
-  }
-
-  // Build vote details list
-  const voteDetails = connectedPlayers.map(p => ({
-    playerId: p.id,
-    name: p.name,
-    color: p.color,
-    choice: room.tot.votesA[p.id] ? 'a' : room.tot.votesB[p.id] ? 'b' : null,
-  }));
-
-  io.to(code).emit('tot:results', {
-    a: room.tot.a,
-    b: room.tot.b,
-    countA,
-    countB,
-    pctA,
-    pctB,
-    majorityChoice: tieRound ? null : majorityChoice,
-    voteDetails,
-    scores: { ...room.tot.scores },
-    players: connectedPlayers.map(p => ({ id: p.id, name: p.name, color: p.color })),
-    round: room.currentRound,
-    totalRounds: room.totalRounds,
-  });
-};
-
+// Assign ToT personality titles — delegated to totGame module
 const assignTotTitles = (leaderboard) => {
-  const titled = new Set();
-  const tryAssign = (sorted, key, minVal, title) => {
-    for (const entry of sorted) {
-      if (!titled.has(entry.playerId) && entry[key] >= minVal) {
-        entry.title = title;
-        titled.add(entry.playerId);
-        break;
-      }
-    }
-  };
-  tryAssign([...leaderboard].sort((a, b) => b.score - a.score), 'score', 1, '🎯 Crowd Reader');
-  tryAssign([...leaderboard].sort((a, b) => a.score - b.score), 'score', 0, '🤔 Lone Wolf');
-  leaderboard.forEach(p => { if (!p.title) p.title = '⚡ Wildcard'; });
-  return leaderboard;
+  const { assignTotTitles: fn } = require('./game/totGame');
+  return fn(leaderboard);
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -696,6 +522,11 @@ const closeSitVoting = (io, room, code) => {
 
 // Players who count toward round thresholds (connected, playing, not waiting for next round)
 const activePlayers = (room) => room.players.filter(p => p.isConnected && p.isPlaying && !p.joinedMidRound);
+
+// Instantiate after activePlayers is defined (mltGame.js defines its own copy but we need
+// mergeToGlobalScores which was defined earlier).
+mltGame = createMltGame({ mergeToGlobalScores });
+totGame = createTotGame({ mergeToGlobalScores });
 
 // Cancel all active game timers for a room (called before starting a new game)
 function cancelAllTimers(room) {
@@ -1252,8 +1083,7 @@ io.on('connection', (socket) => {
     if (!player || !player.isConnected || !player.isPlaying) return;
 
     const pid = player.id;
-    // One vote per player
-    if (room.tot.votesA[pid] || room.tot.votesB[pid]) return;
+    if (room.tot.votesA[pid] || room.tot.votesB[pid]) return; // already voted
 
     if (choice === 'a') {
       room.tot.votesA[pid] = true;
@@ -1265,39 +1095,28 @@ io.on('connection', (socket) => {
 
     const connectedPlayers = activePlayers(room);
     const voteCount = Object.keys(room.tot.votesA).length + Object.keys(room.tot.votesB).length;
-    io.to(code).emit('tot:vote_received', { voteCount, totalVoters: connectedPlayers.length, votedPlayerIds: [...Object.keys(room.tot.votesA), ...Object.keys(room.tot.votesB)] });
+    io.to(code).emit('tot:vote_received', {
+      voteCount,
+      totalVoters:    connectedPlayers.length,
+      votedPlayerIds: [...Object.keys(room.tot.votesA), ...Object.keys(room.tot.votesB)],
+    });
 
-    // Close when all active players have voted (covers activePlayers count drift).
     const allVoted = connectedPlayers.every(p => room.tot.votesA[p.id] || room.tot.votesB[p.id]);
     if (voteCount >= connectedPlayers.length || allVoted) {
-      closeTotRound(io, room, code);
+      totGame.closeRound(io, room, code);
     }
   });
 
   socket.on('tot:next_round', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'tot') return;
-
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
     if (room.currentRound >= room.totalRounds) {
-      // Game over
       if (room.gameType === 'this-or-that') {
-        // Standalone ToT end
-        const connectedPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
-        let leaderboard = connectedPlayers.map(p => ({
-          playerId: p.id,
-          name: p.name,
-          color: p.color,
-          score: room.tot.scores[p.id] || 0,
-        })).sort((a, b) => b.score - a.score);
-        leaderboard = assignTotTitles(leaderboard);
-        room.phase = 'totEnd';
-        io.to(code).emit('tot:end', { leaderboard });
-        mergeToGlobalScores(io, room, room.tot.scores);
+        totGame.sendEnd(io, room, code);
       } else {
-        // Mixed game end
         room.phase = 'gameEnd';
         const finalStats = require('./game/gameLogic').computeStats(room.players, [], room.tot.scores);
         io.to(code).emit('game_ended', { finalScores: room.tot.scores, players: room.players, stats: finalStats });
@@ -1314,23 +1133,12 @@ io.on('connection', (socket) => {
   socket.on('tot:skip', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'tot') return;
-
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
     if (room.currentRound >= room.totalRounds) {
       if (room.gameType === 'this-or-that') {
-        const connectedPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
-        let leaderboard = connectedPlayers.map(p => ({
-          playerId: p.id,
-          name: p.name,
-          color: p.color,
-          score: room.tot.scores[p.id] || 0,
-        })).sort((a, b) => b.score - a.score);
-        leaderboard = assignTotTitles(leaderboard);
-        room.phase = 'totEnd';
-        io.to(code).emit('tot:end', { leaderboard });
-        mergeToGlobalScores(io, room, room.tot.scores);
+        totGame.sendEnd(io, room, code);
       } else {
         room.phase = 'gameEnd';
         io.to(code).emit('game_ended', { finalScores: room.tot.scores, players: room.players, stats: {} });
@@ -1353,11 +1161,8 @@ io.on('connection', (socket) => {
     if (!player || !player.isHost) return;
 
     room._timers?.tot?.cancel();
-    // Swap in a replacement question from the pool without incrementing round
-    const usedIndexes = new Set();
-    for (let i = 0; i <= room.currentQuestionIndex; i++) usedIndexes.add(i);
 
-    // Find next unused question of type 'this-or-that' in the list
+    // Find the next unused ToT question in the pool and swap it in
     let nextIdx = -1;
     for (let i = room.currentQuestionIndex + 1; i < room.questions.length; i++) {
       if (room.questions[i].type === 'this-or-that' || room.questions[i].a) {
@@ -1366,11 +1171,10 @@ io.on('connection', (socket) => {
       }
     }
     if (nextIdx === -1) {
-      // No replacement available; just re-emit same question
+      // No replacement available — re-emit same question with fresh timer
       emitTotQuestion(io, room, code);
       return;
     }
-    // Swap the question at currentQuestionIndex with the new one
     const replacement = room.questions[nextIdx];
     room.questions[nextIdx] = room.questions[room.currentQuestionIndex];
     room.questions[room.currentQuestionIndex] = replacement;
@@ -1397,18 +1201,24 @@ io.on('connection', (socket) => {
 
   socket.on('answer:pause', ({ code }) => {
     const room = getRoom(code);
-    if (!room || room.phase !== 'question') return;
+    if (!room) return;
+    if (room.phase !== 'question' && room.phase !== 'sit-voting') return;
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
-    room._timers?.answer?.pause();
+    
+    if (room.phase === 'question') room._timers?.answer?.pause();
+    if (room.phase === 'sit-voting') room._timers?.sitVoting?.pause();
   });
 
   socket.on('answer:resume', ({ code }) => {
     const room = getRoom(code);
-    if (!room || room.phase !== 'question') return;
+    if (!room) return;
+    if (room.phase !== 'question' && room.phase !== 'sit-voting') return;
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
-    room._timers?.answer?.resume();
+    
+    if (room.phase === 'question') room._timers?.answer?.resume();
+    if (room.phase === 'sit-voting') room._timers?.sitVoting?.resume();
   });
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -1450,8 +1260,8 @@ io.on('connection', (socket) => {
         currentQuestion: room.currentQuestion,
         answersCount: room.answers?.length || 0,
         mlt: {
-          prompt: room.mlt.currentPrompt,
-          round: room.mlt.round,
+          prompt:      room.mlt.prompt,   // was currentPrompt before mltGame migration
+          round:       room.mlt.round,
           totalRounds: room.mlt.totalRounds,
           roundState: room.mlt.roundState,
           voteCount: Object.keys(room.mlt.votes || {}).length,
@@ -1542,15 +1352,57 @@ io.on('connection', (socket) => {
           votedPlayerIds: Object.keys(room.photoVote?.votes || {}),
         } : null,
         // DrawTel state (for reconnect recovery)
-        dt: (room.phase === 'dt' || room.phase?.startsWith('dt-')) ? {
-          phase: room.dt.phase,
-          promptsSubmittedCount: (room.dt.prompts || []).length,
-          totalPrompts: playingPlayers.length,
-          submittedPlayerIds: (room.dt.prompts || []).map(p => p.authorId).filter(Boolean),
-          guessedCount: Object.keys(room.dt.guesses || {}).length,
-          totalGuessers: playingPlayers.length,
-          guessedPlayerIds: Object.keys(room.dt.guesses || {}),
-        } : null,
+        dt: (room.phase === 'dt' || room.phase?.startsWith('dt-')) ? (() => {
+          const myGuessChain = room.dt.phase === 'guessing' ? Object.values(room.dt.chains || {}).find(c => c.targetPlayerId === playerId) : null;
+          const myDrawChain = room.dt.phase === 'drawing' ? Object.values(room.dt.chains || {}).find(c => c.participants[c.currentParticipantIndex] === playerId) : null;
+          const buildCombinedStrokesLocal = (chain) => chain.drawingSteps.flatMap(step => step.strokes || []);
+          return {
+            phase: room.dt.phase,
+            promptsSubmittedCount: (room.dt.prompts || []).length,
+            totalPrompts: playingPlayers.length,
+            submittedPlayerIds: (room.dt.prompts || []).map(p => p.authorId).filter(Boolean),
+            guessedCount: Object.keys(room.dt.guesses || {}).length,
+            totalGuessers: playingPlayers.length,
+            guessedPlayerIds: Object.keys(room.dt.guesses || {}),
+            hasGuessed: !!room.dt.guesses?.[playerId],
+            guessSecondsLeft: room._timers?.dtGuess ? room._timers.dtGuess.getRemaining() : 60,
+            guessTurn: myGuessChain ? {
+              promptId: myGuessChain.id,
+              finalStrokes: buildCombinedStrokesLocal(myGuessChain),
+              originalSelfieData: myGuessChain.originalSelfieData,
+              drawerCount: myGuessChain.drawingSteps.length,
+              secondsLeft: room._timers?.dtGuess ? room._timers.dtGuess.getRemaining() : 60,
+            } : null,
+            currentTurn: myDrawChain ? {
+              promptId: myDrawChain.id,
+              word: myDrawChain.currentParticipantIndex === 0 ? myDrawChain.templateText.replace(/\[name\]/gi, myDrawChain.targetName) : 'Draw what you see!',
+              isInitial: myDrawChain.currentParticipantIndex === 0,
+              targetName: myDrawChain.targetName,
+              originalSelfieData: myDrawChain.originalSelfieData,
+              previousStrokes: buildCombinedStrokesLocal(myDrawChain),
+              secondsLeft: room._timers?.[`dtDraw_${myDrawChain.id}`] ? room._timers[`dtDraw_${myDrawChain.id}`].getRemaining() : 60,
+            } : null,
+            reveal: room.dt.phase === 'reveal' ? (() => {
+              const chainId = room.dt.revealQueue?.[room.dt.revealCurrentIndex];
+              const c = room.dt.chains?.[chainId];
+              return c ? {
+                promptId: c.id,
+                targetPlayerId: c.targetPlayerId,
+                targetName: c.targetName,
+                authorId: c.authorId,
+                authorName: room.players.find(p=>p.id===c.authorId)?.name,
+                templateText: c.templateText,
+                finalText: c.finalText,
+                originalSelfieData: c.originalSelfieData,
+                drawingSteps: c.drawingSteps,
+                finalStrokes: buildCombinedStrokesLocal(c),
+                guesses: Object.keys(room.dt.guesses || {}).map(pid => ({ playerId: pid, playerName: room.players.find(p=>p.id===pid)?.name, guessText: room.dt.guesses[pid] })),
+                revealStep: room.dt.revealStep,
+                votes: room.dt.votes?.[c.id] || {},
+              } : null;
+            })() : null,
+          };
+        })() : null,
       },
     });
   });
@@ -1575,22 +1427,21 @@ io.on('connection', (socket) => {
   });
 
   // ─── Most Likely To events ─────────────────────────────────────────────────
+  // Game logic is in server/game/mltGame.js (built on VotingGameTemplate).
+  // These handlers validate auth/state then delegate to mltGame.* methods.
 
-  socket.on('mlt:start', ({ code, rounds, allowSelfVote }) => {
+  socket.on('mlt:start', ({ code, rounds }) => {
     const room = getRoom(code);
     if (!room) return;
-
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
     cancelAllTimers(room);
-    // Let mid-round joiners participate from here on
-    room.players.forEach(p => { p.joinedMidRound = false; });
 
     const connectedPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
-    const nonHostPlayers = connectedPlayers; // since p.isPlaying excludes non-playing hosts
-    if (nonHostPlayers.length < 2) return; // need at least 2 votable players
+    if (connectedPlayers.length < 2) return; // need at least 2 votable players
 
+    // Build prompt pool (custom questions take priority, padded with bank)
     const customMltPrompts = (room.customQuestions || []).map(q => q.text).filter(Boolean);
     const promptPool = customMltPrompts.length > 0
       ? [...customMltPrompts, ...mltPromptBank]
@@ -1598,6 +1449,7 @@ io.on('connection', (socket) => {
 
     const totalRounds = Math.min(Math.max(parseInt(rounds) || 5, 1), promptPool.length);
 
+    // Shuffle prompts
     const shuffled = [...promptPool];
     for (let i = shuffled.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -1609,39 +1461,20 @@ io.on('connection', (socket) => {
     connectedPlayers.forEach(p => { jokers[p.id] = 2; });
 
     room.phase = 'mlt';
-    room.mlt = {
-      roundState: 'voting',
-      prompts: shuffled.slice(0, totalRounds),
-      currentPrompt: shuffled[0],
-      votes: {},
-      scores: {},
-      totalVotes: {},
-      wins: {},
-      jokers,
-      jokersThisRound: {},
-      round: 1,
-      totalRounds,
-      allowSelfVote: true,
-      paused: false,
-      secondsLeft: 30,
-    };
-    room.mlt._voteCollector = VoteCollector.create({
-      getExpectedCount: () => activePlayers(room).length,
-      allowSelfVote: true,
-      onVote: (voterId, targetId) => { room.mlt.votes[voterId] = targetId; },
-      onComplete: () => closeMltVoting(io, room, code),
-    });
 
-    io.to(code).emit('mlt:prompt', {
-      prompt: room.mlt.currentPrompt,
-      round: room.mlt.round,
-      totalRounds: room.mlt.totalRounds,
-      players: nonHostPlayers.map(p => ({ id: p.id, name: p.name, color: p.color })),
-      gameName: room.gameName,
-      jokersLeft: 2,
+    // mltGame.start() initialises room.mlt and triggers round 1 via onRoundStart
+    mltGame.start(io, room, code, {
+      rounds: totalRounds,
+      _initialState: {
+        prompts:        shuffled.slice(0, totalRounds),
+        totalVotes:     {},
+        wins:           {},
+        jokers,
+        jokersThisRound: {},
+        roundState:     'voting',
+        allowSelfVote:  true,
+      },
     });
-
-    startMltTimer(io, room, code, 30);
   });
 
   socket.on('mlt:vote', ({ code, targetPlayerId }) => {
@@ -1652,59 +1485,27 @@ io.on('connection', (socket) => {
     const player = findPlayer(room, socket.id);
     if (!player || !player.isConnected || !player.isPlaying) return;
 
-    // One vote per player per round — use VoteCollector for dedup + threshold
-    const accepted = room.mlt._voteCollector
-      ? room.mlt._voteCollector.castVote(player.id, targetPlayerId)
-      : room.mlt.votes[player.id] === undefined;
+    const accepted = room.mlt._voteCollector?.castVote(player.id, targetPlayerId);
     if (!accepted) return;
+    // room.mlt.votes[player.id] is kept in sync by VoteCollector's onVote callback
 
-    room.mlt.votes[player.id] = targetPlayerId; // keep legacy map in sync
-
-    const nonHostPlayers = activePlayers(room);
-    const voteCount = room.mlt._voteCollector?.count() ?? Object.keys(room.mlt.votes).length;
-    const totalVoters = nonHostPlayers.length;
-
-    io.to(code).emit('mlt:vote_received', { voteCount, totalVoters, votedPlayerIds: room.mlt._voteCollector?.getVoterIds() ?? Object.keys(room.mlt.votes) });
-
-    if (!room.mlt._voteCollector && voteCount >= totalVoters) {
-      closeMltVoting(io, room, code);
-    }
+    const voteCount  = room.mlt._voteCollector.count();
+    const totalVoters = activePlayers(room).length;
+    io.to(code).emit('mlt:vote_received', {
+      voteCount,
+      totalVoters,
+      votedPlayerIds: room.mlt._voteCollector.getVoterIds(),
+    });
   });
 
   socket.on('mlt:next_round', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'mlt') return;
-
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
-    if (room.mlt.round >= room.mlt.totalRounds) {
-      sendMltEnd(io, room, code);
-      return;
-    }
-
-    room.mlt.round++;
-    room.mlt.currentPrompt = room.mlt.prompts[room.mlt.round - 1];
-    room.mlt.votes = {};
-    room.mlt._voteCollector?.reset();
-    room.mlt.jokersThisRound = {};
-    room.mlt.roundState = 'voting';
-    room.mlt.paused = false;
-
-    // Let mid-round joiners participate from here on
-    room.players.forEach(p => { p.joinedMidRound = false; });
-
-    const nonHostPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
-
-    io.to(code).emit('mlt:prompt', {
-      prompt: room.mlt.currentPrompt,
-      round: room.mlt.round,
-      totalRounds: room.mlt.totalRounds,
-      players: nonHostPlayers.map(p => ({ id: p.id, name: p.name, color: p.color })),
-      gameName: room.gameName,
-    });
-
-    startMltTimer(io, room, code, 30);
+    // nextRound() fires onRoundStart for the next round, or onEnd if game is over
+    mltGame.nextRound(io, room, code);
   });
 
   socket.on('mlt:toggle_joker', ({ code }) => {
@@ -1718,11 +1519,10 @@ io.on('connection', (socket) => {
     const remaining = room.mlt.jokers[pid] ?? 2;
 
     if (room.mlt.jokersThisRound[pid]) {
-      // Toggle OFF — refund display (joker not yet spent until round closes)
+      // Toggle OFF — joker refunded (not spent until round closes)
       delete room.mlt.jokersThisRound[pid];
       socket.emit('mlt:joker_state', { jokerActive: false, jokersLeft: remaining });
     } else {
-      // Toggle ON — must have jokers left
       if (remaining <= 0) return;
       room.mlt.jokersThisRound[pid] = true;
       socket.emit('mlt:joker_state', { jokerActive: true, jokersLeft: remaining - 1 });
@@ -1736,116 +1536,94 @@ io.on('connection', (socket) => {
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
-    room._timers?.mlt?.cancel();
+    // Cancel any running timer first
+    if (room._timers?.mlt) { room._timers.mlt.cancel(); room._timers.mlt = null; }
 
-    // Pick a new prompt not already used — draw from full bank to avoid same question
+    // Pick a new prompt not already used in this game
     const usedPrompts = new Set(room.mlt.prompts.slice(0, room.mlt.round - 1));
-    const currentPrompt = room.mlt.currentPrompt;
+    const currentPrompt = room.mlt.prompt;
     const customMltPrompts = (room.customQuestions || []).map(q => q.text).filter(Boolean);
     const fullBank = customMltPrompts.length > 0 ? [...customMltPrompts, ...mltPromptBank] : [...mltPromptBank];
     const freshPool = fullBank.filter(p => p !== currentPrompt && !usedPrompts.has(p));
     const pool = freshPool.length > 0 ? freshPool : fullBank.filter(p => p !== currentPrompt);
-    // fallback: any prompt from full bank
-    const candidate = (pool.length > 0 ? pool : fullBank)[Math.floor(Math.random() * (pool.length > 0 ? pool : fullBank).length)];
+    const candidate = (pool.length > 0 ? pool : fullBank)[Math.floor(Math.random() * Math.max(pool.length || fullBank.length, 1))];
 
-    room.mlt.currentPrompt = candidate;
+    // Update state
+    room.mlt.prompt = candidate;
     room.mlt.prompts[room.mlt.round - 1] = candidate;
     room.mlt.votes = {};
-    room.mlt._voteCollector?.reset();
     room.mlt.jokersThisRound = {};
     room.mlt.roundState = 'voting';
+    room.mlt.phase = 'voting';
     room.mlt.paused = false;
-
     room.players.forEach(p => { p.joinedMidRound = false; });
-    const nonHostPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
-    io.to(code).emit('mlt:prompt', {
-      prompt: room.mlt.currentPrompt,
-      round: room.mlt.round,
-      totalRounds: room.mlt.totalRounds,
-      players: nonHostPlayers.map(p => ({ id: p.id, name: p.name, color: p.color })),
-      gameName: room.gameName,
+
+    // Re-create VoteCollector for the fresh question
+    room.mlt._voteCollector = VoteCollector.create({
+      getExpectedCount: () => activePlayers(room).length,
+      allowSelfVote:    true,
+      onVote:           (voterId, targetId) => { room.mlt.votes[voterId] = targetId; },
+      onComplete:       () => mltGame.showResults(io, room, code),
     });
-    startMltTimer(io, room, code, 30);
+
+    const players = room.players.filter(p => p.isConnected && p.isPlaying);
+    io.to(code).emit('mlt:prompt', {
+      prompt:      room.mlt.prompt,
+      round:       room.mlt.round,
+      totalRounds: room.mlt.totalRounds,
+      players:     players.map(p => ({ id: p.id, name: p.name, color: p.color })),
+      gameName:    room.gameName,
+    });
+    io.to(code).emit('mlt:question_changed', { currentPrompt: candidate });
+
+    // Restart voting timer via template (also emits mlt:voting_started, harmless for clients)
+    mltGame.startVoting(io, room, code);
   });
 
   socket.on('mlt:skip', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'mlt') return;
-
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
-    // Cancel timer
-    room._timers?.mlt?.cancel();
-
-    // If this was the last round, go to end
-    if (room.mlt.round >= room.mlt.totalRounds) {
-      sendMltEnd(io, room, code);
-      return;
-    }
-
-    // Move to next round without scoring
-    room.mlt.round++;
-    room.mlt.currentPrompt = room.mlt.prompts[room.mlt.round - 1];
-    room.mlt.votes = {};
-    room.mlt._voteCollector?.reset();
-    room.mlt.jokersThisRound = {};
-    room.mlt.roundState = 'voting';
-    room.mlt.paused = false;
-
-    // Let mid-round joiners participate from here on
-    room.players.forEach(p => { p.joinedMidRound = false; });
-
-    const nonHostPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
-
-    io.to(code).emit('mlt:prompt', {
-      prompt: room.mlt.currentPrompt,
-      round: room.mlt.round,
-      totalRounds: room.mlt.totalRounds,
-      players: nonHostPlayers.map(p => ({ id: p.id, name: p.name, color: p.color })),
-      gameName: room.gameName,
-    });
-
-    startMltTimer(io, room, code, 30);
+    // skipRound() advances without scoring; fires onEnd on last round
+    mltGame.skipRound(io, room, code);
   });
 
   socket.on('mlt:restart', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'mltEnd') return;
-
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
-    // Clear any stale timer
-    room._timers?.mlt?.cancel();
+    if (room._timers?.mlt) { room._timers.mlt.cancel(); room._timers.mlt = null; }
 
-    // Keep config from previous game
     const prevTotalRounds = room.mlt.totalRounds;
-    // Reset room to lobby state
     room.phase = 'lobby';
     room.mlt = {
-      roundState: 'waiting',
-      currentPrompt: null,
-      prompts: [],
-      votes: {},
-      scores: {},
-      totalVotes: {},
-      wins: {},
-      jokers: {},
+      roundState:     'waiting',
+      phase:          'waiting',
+      prompt:         null,
+      prompts:        [],
+      votes:          {},
+      scores:         {},
+      totalVotes:     {},
+      wins:           {},
+      jokers:         {},
       jokersThisRound: {},
-      round: 0,
-      totalRounds: prevTotalRounds,
-      allowSelfVote: true,
-      paused: false,
-      secondsLeft: 30,
+      round:          0,
+      totalRounds:    prevTotalRounds,
+      allowSelfVote:  true,
+      paused:         false,
+      secondsLeft:    30,
     };
 
     room.players.forEach(p => { p.isReady = false; });
 
     io.to(code).emit('mlt:restarted', {
-      code: room.code,
+      code:     room.code,
       gameName: room.gameName,
-      players: room.players,
+      players:  room.players,
       gameType: room.gameType,
     });
   });
@@ -1853,11 +1631,9 @@ io.on('connection', (socket) => {
   socket.on('mlt:pause', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'mlt' || room.mlt.roundState !== 'voting') return;
-
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
-
-    if (room.mlt.paused) return; // already paused
+    if (room.mlt.paused) return;
 
     room._timers?.mlt?.pause();
     io.to(code).emit('mlt:paused', { secondsLeft: room.mlt.secondsLeft });
@@ -1866,11 +1642,9 @@ io.on('connection', (socket) => {
   socket.on('mlt:resume', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'mlt' || room.mlt.roundState !== 'voting') return;
-
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
-
-    if (!room.mlt.paused) return; // not paused
+    if (!room.mlt.paused) return;
 
     room._timers?.mlt?.resume();
     io.to(code).emit('mlt:resumed', { secondsLeft: room.mlt.secondsLeft });
@@ -2179,6 +1953,7 @@ io.on('connection', (socket) => {
     room._timers = room._timers || {};
     if (room._timers.fitbAnswer) room._timers.fitbAnswer.cancel();
     room.fitb.answerSecondsLeft = seconds;
+    room.fitb.paused = false;
     room._timers.fitbAnswer = TimerManager.create({
       io,
       code,
@@ -2186,6 +1961,8 @@ io.on('connection', (socket) => {
       tickEvent: 'fitb:answer_timer',
       isActive: () => room.fitb?.phase === 'answering',
       onTick: (s) => { room.fitb.answerSecondsLeft = s; },
+      onPause: () => { room.fitb.paused = true; },
+      onResume: () => { room.fitb.paused = false; },
       onExpire: () => {
         // Auto-submit: use player's typed draft if available, otherwise default
         const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
@@ -2233,6 +2010,7 @@ io.on('connection', (socket) => {
       targetPlayerIndex: 0,
       scores,
       answerSecondsLeft: timeLimit,
+      paused: false,
     };
     room.fitb._submissionTracker = SubmissionTracker.create({
       getExpectedCount: () => room.players.filter(p => p.isConnected && p.isPlaying).length,
@@ -2340,6 +2118,22 @@ io.on('connection', (socket) => {
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     startFitbVoting(io, room, code);
+  });
+
+  socket.on('fitb:pause', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'fitb' || room.fitb.phase !== 'answering') return;
+    const player = findPlayer(room, socket.id);
+    if (!player || !player.isHost) return;
+    room._timers?.fitbAnswer?.pause();
+  });
+
+  socket.on('fitb:resume', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'fitb' || room.fitb.phase !== 'answering') return;
+    const player = findPlayer(room, socket.id);
+    if (!player || !player.isHost) return;
+    room._timers?.fitbAnswer?.resume();
   });
 
   socket.on('fitb:change_question', ({ code }) => {
@@ -3549,11 +3343,16 @@ io.on('connection', (socket) => {
 
   socket.on('photovote:change_question', ({ code }) => {
     const room = getRoom(code);
-    if (!room || room.phase !== 'photovote' || room.photoVote.phase !== 'voting') return;
+    if (!room || room.phase !== 'photovote') return;
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
+    const isPhotoPhase = room.photoVote.phase === 'photo';
+    const isVotingPhase = room.photoVote.phase === 'voting';
+    if (!isPhotoPhase && !isVotingPhase) return;
+
     if (room.photoVote.subType === 'pmatch') {
+      // For pmatch: change prompt, reset photos and go back to photo phase
       room.photoVote.phase = 'photo';
       room.photoVote.photos = {};
       room.photoVote.votes = {};
@@ -3576,15 +3375,15 @@ io.on('connection', (socket) => {
       return;
     }
 
-    // Reset votes and pick the next prompt
+    // For photoassoc: reset votes and pick the next prompt, stay in voting (photos already in)
     room.photoVote.votes = {};
     room.photoVote._voteCollector = null;
+    room.photoVote.currentPromptIndex++;
     const playingPlayersForPrompt = room.players.filter(p => p.isConnected && p.isPlaying);
     const nextIndex = room.photoVote.currentPromptIndex % room.photoVote.prompts.length;
     const rawNextPrompt = room.photoVote.prompts[nextIndex];
     const prompt = resolvePhotoVotePrompt(rawNextPrompt, playingPlayersForPrompt);
     room.photoVote.currentPrompt = prompt;
-    room.photoVote.currentPromptIndex++;
 
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
     const photoList = playingPlayers.map(p => ({
@@ -3743,46 +3542,60 @@ io.on('connection', (socket) => {
 
   // Helper: start the prompt-phase countdown; auto-generates prompts for idle players on expiry
   const startDtPromptTimer = (io, room, code) => {
-    if (room.dt.promptTimerRef) { clearTimeout(room.dt.promptTimerRef); room.dt.promptTimerRef = null; }
-    room.dt.promptStartedAt = Date.now();
-    room.dt.promptTimerRef = setTimeout(() => {
-      if (room.dt.phase !== 'prompting') return;
-      const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
-      const autoTemplates = [
-        '[name] fighting a robot',
-        '[name] making a surprise discovery',
-        '[name] at the wrong party',
-        '[name] trying to fly',
-        '[name] meeting their hero',
-      ];
-      playingPlayers.forEach(p => {
-        if (!room.dt.prompts.some(pr => pr.authorId === p.id)) {
-          const text = autoTemplates[Math.floor(Math.random() * autoTemplates.length)];
-          room.dt.prompts.push({ id: `dt_${p.id}_auto`, authorId: p.id, templateText: text, autoGenerated: true });
-        }
-      });
-      if (room.dt.prompts.length > 0) {
-        io.to(code).emit('dt:prompt_received', {
-          submittedCount: room.dt.prompts.length,
-          totalPrompts: playingPlayers.length,
-          submittedPlayerIds: room.dt.prompts.map(p => p.authorId),
+    room._timers = room._timers || {};
+    if (room._timers.dtPrompt) room._timers.dtPrompt.cancel();
+    room._timers.dtPrompt = TimerManager.create({
+      io,
+      code,
+      seconds: DT_PROMPT_SECS,
+      tickEvent: 'phase_timer',
+      extraData: { phase: 'dt-prompting' },
+      isActive: () => room.phase === 'dt' && room.dt.phase === 'prompting',
+      onExpire: () => {
+        const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+        const autoTemplates = [
+          '[name] fighting a robot',
+          '[name] making a surprise discovery',
+          '[name] at the wrong party',
+          '[name] trying to fly',
+          '[name] meeting their hero',
+        ];
+        playingPlayers.forEach(p => {
+          if (!room.dt.prompts.some(pr => pr.authorId === p.id)) {
+            const text = autoTemplates[Math.floor(Math.random() * autoTemplates.length)];
+            room.dt.prompts.push({ id: `dt_${p.id}_auto`, authorId: p.id, templateText: text, autoGenerated: true });
+          }
         });
-        startDtDrawingPhase(io, room, code, playingPlayers);
+        if (room.dt.prompts.length > 0) {
+          io.to(code).emit('dt:prompt_received', {
+            submittedCount: room.dt.prompts.length,
+            totalPrompts: playingPlayers.length,
+            submittedPlayerIds: room.dt.prompts.map(p => p.authorId),
+          });
+          startDtDrawingPhase(io, room, code, playingPlayers);
+        }
       }
-    }, DT_PROMPT_SECS * 1000);
+    });
   };
 
   // Helper: start the guess-phase countdown; auto-submits empty guess on expiry
   const startDtGuessTimer = (io, room, code) => {
-    if (room.dt.guessTimerRef) { clearTimeout(room.dt.guessTimerRef); room.dt.guessTimerRef = null; }
-    room.dt.guessStartedAt = Date.now();
-    room.dt.guessTimerRef = setTimeout(() => {
-      if (room.dt.phase !== 'guessing') return;
-      for (const promptId of Object.keys(room.dt.chains)) {
-        if (!room.dt.guesses[promptId]) room.dt.guesses[promptId] = '';
+    room._timers = room._timers || {};
+    if (room._timers.dtGuess) room._timers.dtGuess.cancel();
+    room._timers.dtGuess = TimerManager.create({
+      io,
+      code,
+      seconds: DT_GUESS_SECS,
+      tickEvent: 'phase_timer',
+      extraData: { phase: 'dt-guessing' },
+      isActive: () => room.phase === 'dt' && room.dt.phase === 'guessing',
+      onExpire: () => {
+        for (const promptId of Object.keys(room.dt.chains)) {
+          if (!room.dt.guesses[promptId]) room.dt.guesses[promptId] = '';
+        }
+        startDtRevealPhase(io, room, code);
       }
-      startDtRevealPhase(io, room, code);
-    }, DT_GUESS_SECS * 1000);
+    });
   };
 
   // Helper: advance to next chain reveal (or end game when all done)
@@ -4312,9 +4125,17 @@ io.on('connection', (socket) => {
 
     // On entering the last step (guess+vote), start the auto-advance vote timer
     if (room.dt.revealStep === maxStep) {
-      if (room.dt.voteTimerRef) clearTimeout(room.dt.voteTimerRef);
-      room.dt.voteTimerRef = setTimeout(() => advanceDtReveal(io, room, code), DT_VOTE_SECS * 1000);
-      room.dt.voteStartedAt = Date.now();
+      room._timers = room._timers || {};
+      if (room._timers.dtVote) room._timers.dtVote.cancel();
+      room._timers.dtVote = TimerManager.create({
+        io,
+        code,
+        seconds: DT_VOTE_SECS,
+        tickEvent: 'phase_timer',
+        extraData: { phase: 'dt-vote' },
+        isActive: () => room.phase === 'dt' && room.dt.phase === 'reveal' && room.dt.revealStep === maxStep,
+        onExpire: () => advanceDtReveal(io, room, code)
+      });
     }
 
     const payload = buildDtRevealPayload(room);
@@ -4350,8 +4171,17 @@ io.on('connection', (socket) => {
 
     // Auto-advance 2s after all votes are in (gives everyone a moment to see results)
     if (voteCount >= eligibleVoters.length && eligibleVoters.length > 0) {
-      if (room.dt.voteTimerRef) clearTimeout(room.dt.voteTimerRef);
-      room.dt.voteTimerRef = setTimeout(() => advanceDtReveal(io, room, code), 2000);
+      room._timers = room._timers || {};
+      if (room._timers.dtVote) room._timers.dtVote.cancel();
+      room._timers.dtVote = TimerManager.create({
+        io,
+        code,
+        seconds: 2,
+        tickEvent: 'phase_timer',
+        extraData: { phase: 'dt-vote' },
+        isActive: () => room.phase === 'dt' && room.dt.phase === 'reveal',
+        onExpire: () => advanceDtReveal(io, room, code)
+      });
     }
   });
 
