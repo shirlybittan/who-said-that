@@ -4,7 +4,7 @@ import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
-import { CANVAS_W, CANVAS_H, redrawCanvas, redrawOverlay, drawStroke } from '../utils/canvasUtils';
+import { CANVAS_W, CANVAS_H, redrawCanvas, redrawOverlay, drawStroke, getOptimalCanvasSize } from '../utils/canvasUtils';
 import TimerRing from '../components/game/TimerRing';
 import GamePageWrapper from '../components/GamePageWrapper.jsx';
 
@@ -17,8 +17,8 @@ const WIDTHS = [2, 6, 14];
 const getPos = (canvas, clientX, clientY) => {
   const rect = canvas.getBoundingClientRect();
   return {
-    x: Math.round((clientX - rect.left) * (CANVAS_W / rect.width)),
-    y: Math.round((clientY - rect.top) * (CANVAS_H / rect.height)),
+    x: Math.round((clientX - rect.left) * (canvas.width  / rect.width)),
+    y: Math.round((clientY - rect.top)  * (canvas.height / rect.height)),
   };
 };
 
@@ -44,6 +44,15 @@ export default function DrawTelDrawPage() {
   const [width, setWidth] = useState(WIDTHS[1]);
   const [strokeCount, setStrokeCount] = useState(0);
   const [submitted, setSubmitted] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const containerRef = useRef(null);
+  const [canvasSize, setCanvasSize] = useState(() => getOptimalCanvasSize());
+
+  useEffect(() => {
+    const onResize = () => setCanvasSize(getOptimalCanvasSize());
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   // Redraws canvas after undo/clear, respecting selfie background
   const redrawAll = useCallback((strokes) => {
@@ -51,11 +60,11 @@ export default function DrawTelDrawPage() {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (selfieData) {
-      ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
       strokes.forEach(s => drawStroke(ctx, s));
     } else {
       ctx.fillStyle = '#FFFFFF';
-      ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
       strokes.forEach(s => drawStroke(ctx, s));
     }
   }, [selfieData]);
@@ -72,7 +81,7 @@ export default function DrawTelDrawPage() {
     } else {
       const ctx = canvas.getContext('2d');
       ctx.fillStyle = '#FFFFFF';
-      ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
       if (turn?.existingStrokes?.length) {
         redrawCanvas(canvas, turn.existingStrokes);
       }
@@ -194,6 +203,26 @@ export default function DrawTelDrawPage() {
   // Note: dt:your_turn is handled globally in useSocket.js (dispatches DT_YOUR_TURN + navigates here).
   // Canvas reset happens in the turn?.promptId effect above when the new turn arrives.
 
+  // ── Fullscreen ───────────────────────────────────────────────────────────
+  const toggleFullscreen = () => {
+    const el = containerRef.current;
+    if (!el) return;
+    if (!document.fullscreenElement) {
+      el.requestFullscreen().then(() => {
+        setIsFullscreen(true);
+        if (screen.orientation?.lock) screen.orientation.lock('landscape').catch(() => {});
+      }).catch(() => {});
+    } else {
+      document.exitFullscreen().then(() => setIsFullscreen(false)).catch(() => {});
+    }
+  };
+
+  useEffect(() => {
+    const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, []);
+
   // Touch handlers
   const onTouchStart = (e) => {
     e.preventDefault();
@@ -255,8 +284,6 @@ export default function DrawTelDrawPage() {
                     <canvas
                       ref={r => {
                         if (r) {
-                          const ctx = r.getContext('2d');
-                          ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
                           if (selfieData) redrawOverlay(r, turn.existingStrokes || []);
                           else redrawCanvas(r, turn.existingStrokes || []);
                         }
@@ -283,7 +310,15 @@ export default function DrawTelDrawPage() {
 
           {/* Right: Canvas + Controls */}
           <div className="lg:w-[420px] flex flex-col gap-3">
-            <div className="relative w-full" style={{ aspectRatio: `${CANVAS_W}/${CANVAS_H}` }}>
+            <div
+              ref={containerRef}
+              className={isFullscreen
+                ? 'fixed inset-0 z-50 bg-[#0D0D1A] flex flex-col items-center justify-center'
+                : 'relative flex flex-col gap-3'}
+            >
+            <div className={`relative w-full ${isFullscreen ? 'flex-1 flex items-center justify-center' : ''}`}
+              style={isFullscreen ? {} : { aspectRatio: `${CANVAS_W}/${CANVAS_H}` }}
+            >
               {/* Selfie photo behind the canvas */}
               {selfieData && (
                 <img
@@ -294,8 +329,8 @@ export default function DrawTelDrawPage() {
               )}
               <canvas
                 ref={canvasRef}
-                width={CANVAS_W}
-                height={CANVAS_H}
+                width={canvasSize.width}
+                height={canvasSize.height}
                 className={`absolute inset-0 w-full h-full rounded-2xl ${selfieData ? 'bg-transparent' : 'bg-white'}`}
                 style={{ touchAction: 'none' }}
                 onTouchStart={onTouchStart}
@@ -313,10 +348,18 @@ export default function DrawTelDrawPage() {
                   <p className="text-gray-400 font-['Nunito'] text-sm">Waiting for others...</p>
                 </div>
               )}
+              {/* Fullscreen toggle */}
+              <button
+                onClick={toggleFullscreen}
+                className="absolute top-2 left-2 z-10 bg-black/60 hover:bg-black/80 text-white rounded-lg px-2 py-1 text-base leading-none transition"
+                title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+              >
+                {isFullscreen ? '⤡' : '⤢'}
+              </button>
             </div>
 
             {/* Toolbar */}
-            <div className="bg-[#1A1A2E] rounded-2xl p-3 border border-[#2D2D44] flex flex-col gap-2">
+            <div className={`bg-[#1A1A2E] rounded-2xl p-3 border border-[#2D2D44] flex flex-col gap-2 ${isFullscreen ? 'absolute bottom-0 left-0 right-0 rounded-none rounded-t-2xl bg-[#1A1A2E]/95 backdrop-blur-sm' : ''}`}>
               {/* Colors */}
               <div className="flex justify-between">
                 {COLORS.map(c => (
@@ -379,10 +422,11 @@ export default function DrawTelDrawPage() {
             <button
               onClick={handleSubmit}
               disabled={submitted || strokeCount === 0}
-              className="w-full py-3 rounded-2xl bg-[#FF6B6B] text-white font-['Fredoka_One'] text-xl disabled:bg-gray-600"
+              className={`w-full py-3 rounded-2xl bg-[#FF6B6B] text-white font-['Fredoka_One'] text-xl disabled:bg-gray-600 ${isFullscreen ? 'hidden' : ''}`}
             >
               {submitted ? 'Submitted!' : 'Submit Drawing'}
             </button>
+            </div>{/* end fullscreen container */}
           </div>
         </div>
       </motion.div>

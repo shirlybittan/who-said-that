@@ -215,11 +215,9 @@ function createVotingGame({
           config: scoreConfig,
         });
 
-      mergeRoundScores(gameState.scores, roundScores);
-
       const resultsPayload = {
         roundScores,
-        totalScores: { ...gameState.scores },
+        totalScores: null, // populated below after conditional merge
         voteCounts,
         winners,
         maxVotes,
@@ -229,8 +227,12 @@ function createVotingGame({
       };
 
       if (onResults) {
+        // Caller owns scoring — skip the default merge so it doesn't corrupt
+        // games that use voter-side scoring (e.g. MLT majority scoring).
         onResults(io, room, code, resultsPayload);
       } else {
+        mergeRoundScores(gameState.scores, roundScores);
+        resultsPayload.totalScores = { ...gameState.scores };
         io.to(code).emit(EVENTS.RESULTS(gameKey), resultsPayload);
       }
     },
