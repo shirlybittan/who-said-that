@@ -163,6 +163,30 @@ const startAnswerTimer = (io, room, code, seconds, onExpire) => {
   });
 };
 
+const startWstVotingTimer = (io, room, code) => {
+  room._timers = room._timers || {};
+  if (room._timers.wstVoting) room._timers.wstVoting.cancel();
+  
+  const seconds = 30;
+  room.wstVotingSecondsLeft = seconds;
+  room.wstVotingPaused = false;
+  
+  room._timers.wstVoting = TimerManager.create({
+    io,
+    code,
+    seconds,
+    tickEvent: 'phase_timer',
+    extraData: { phase: 'wst-voting' },
+    isActive: () => room.phase === 'voting',
+    onTick: (s) => { room.wstVotingSecondsLeft = s; },
+    onPause: () => { room.wstVotingPaused = true; },
+    onResume: () => { room.wstVotingPaused = false; },
+    onExpire: () => {
+      io.to(code).emit('all_votes_in', { currentIndex: room.currentAnswerIndex });
+    }
+  });
+};
+
 // ─── Draw helpers ─────────────────────────────────────────────────────────────
 
 const pickDrawWord = () => {
@@ -311,6 +335,7 @@ const advanceWstAnswerPhase = (io, room, code) => {
     const expectedVotes = connectedPlayersCount;
     io.to(code).emit('phase_timer', { secondsLeft: 0 }); // clear answering timer
     io.to(code).emit('voting_started', { answers: mappedAnswers, currentIndex: 0, totalPlayers: expectedVotes });
+    startWstVotingTimer(io, room, code);
     room.answers.forEach((answer, idx) => {
       const authorPlayer = room.players.find(p => p.id === answer.playerId);
       if (authorPlayer?.socketId) {
@@ -984,6 +1009,16 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('sit:force_results', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'sit-voting') return;
+    const player = findPlayer(room, socket.id);
+    if (!player || !player.isHost) return;
+
+    if (room._timers?.sitVoting) room._timers.sitVoting.cancel();
+    closeSitVoting(io, room, code);
+  });
+
   socket.on('sit:next', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'sit-results') return;
@@ -1030,6 +1065,7 @@ io.on('connection', (socket) => {
     console.log(`[Server] WST vote: ${currentAnswer.votes.length}/${expectedVotes} room=${code}`);
 
     if (currentAnswer.votes.length >= expectedVotes) {
+      if (room._timers?.wstVoting) room._timers.wstVoting.cancel();
       io.to(code).emit('all_votes_in', { currentIndex: room.currentAnswerIndex });
     }
   });
@@ -1040,8 +1076,11 @@ io.on('connection', (socket) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'voting') return;
 
+    if (room._timers?.wstVoting) room._timers.wstVoting.cancel();
+
     room.currentAnswerIndex++;
     if (room.currentAnswerIndex < room.answers.length) {
+      startWstVotingTimer(io, room, code);
       io.to(code).emit('next_answer', { currentIndex: room.currentAnswerIndex });
     } else {
       room.phase = 'roundEnd';
@@ -1202,23 +1241,25 @@ io.on('connection', (socket) => {
   socket.on('answer:pause', ({ code }) => {
     const room = getRoom(code);
     if (!room) return;
-    if (room.phase !== 'question' && room.phase !== 'sit-voting') return;
+    if (room.phase !== 'question' && room.phase !== 'sit-voting' && room.phase !== 'voting') return;
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     
     if (room.phase === 'question') room._timers?.answer?.pause();
     if (room.phase === 'sit-voting') room._timers?.sitVoting?.pause();
+    if (room.phase === 'voting') room._timers?.wstVoting?.pause();
   });
 
   socket.on('answer:resume', ({ code }) => {
     const room = getRoom(code);
     if (!room) return;
-    if (room.phase !== 'question' && room.phase !== 'sit-voting') return;
+    if (room.phase !== 'question' && room.phase !== 'sit-voting' && room.phase !== 'voting') return;
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     
     if (room.phase === 'question') room._timers?.answer?.resume();
     if (room.phase === 'sit-voting') room._timers?.sitVoting?.resume();
+    if (room.phase === 'voting') room._timers?.wstVoting?.resume();
   });
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -4016,10 +4057,36 @@ io.on('connection', (socket) => {
     const player = findPlayer(room, socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
 
-    // Verify this is the player's active turn for this chain
-    if (room.dt.activeTurns[player.id] !== promptId) return;
     const chain = room.dt.chains[promptId];
     if (!chain || chain.phase !== 'drawing') return;
+
+    // Check if this is an update of an already submitted step
+    const existingStepIndex = chain.drawingSteps.findIndex(s => s.playerId === player.id);
+    if (existingStepIndex !== -1) {
+      const sanitized = sanitizeDtStrokes(strokes);
+      chain.drawingSteps[existingStepIndex].strokes = sanitized;
+      
+      // Notify the current drawer of this chain so they get the updated background
+      const currentDrawerId = chain.participants[chain.currentParticipantIndex];
+      if (currentDrawerId) {
+        const currentDrawer = room.players.find(p => p.id === currentDrawerId);
+        if (currentDrawer?.socketId) {
+          // Re-calculate the background strokes (all steps up to currentParticipantIndex)
+          const existingStrokes = chain.drawingSteps
+            .slice(0, chain.currentParticipantIndex)
+            .flatMap(step => step.strokes || []);
+          
+          io.to(getPlayerSocket(currentDrawer)).emit('dt:background_strokes_updated', {
+            promptId,
+            existingStrokes,
+          });
+        }
+      }
+      return;
+    }
+
+    // Verify this is the player's active turn for this chain
+    if (room.dt.activeTurns[player.id] !== promptId) return;
     if (chain.participants[chain.currentParticipantIndex] !== player.id) return;
 
     // Cancel the timer for this chain

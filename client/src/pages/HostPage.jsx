@@ -529,7 +529,7 @@ function VotingPanel({ votingData, players, phaseTimer }) {
         </p>
       </div>
 
-      <div className="text-center mb-2">
+      <div className="text-center mb-2 w-full max-w-2xl">
         <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest mb-2">🤔 Who wrote this?</p>
         <div className="w-full bg-[#1A1A2E] border-2 border-[#6C5CE7]/60 rounded-3xl p-8 relative"
           style={{ boxShadow: '0 0 40px #6C5CE720' }}>
@@ -541,18 +541,33 @@ function VotingPanel({ votingData, players, phaseTimer }) {
         </div>
       </div>
 
-      <div className="w-full max-w-xl bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">Votes in</p>
-          <p className="text-2xl font-['Fredoka_One'] text-white">
-            {votingData.voteCount}<span className="text-gray-500">/{votingData.totalPlayers}</span>
-          </p>
-        </div>
-        <ProgressBar value={votingData.voteCount} total={votingData.totalPlayers} color="#6C5CE7" />
-        <div className="flex flex-wrap gap-3 justify-center mt-4">
-          {activePlayers.map(p => (
-            <PlayerAvatar key={p.id} player={p} size="sm" status={votingData.votedPlayerIds?.includes(p.id) ? 'voted' : 'waiting'} />
-          ))}
+      <div className="flex flex-col md:flex-row gap-6 w-full max-w-4xl justify-center items-stretch">
+        {/* Left: Timer */}
+        {phaseTimer && phaseTimer.active && (
+          <div className="flex flex-col items-center justify-center bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5 flex-shrink-0 w-44">
+            <TimerRing secondsLeft={phaseTimer.secondsLeft} paused={phaseTimer.paused} size={90} />
+            {phaseTimer.paused && (
+              <p className="text-[#FFE66D] font-['Fredoka_One'] text-sm mt-2">⏸ Paused</p>
+            )}
+          </div>
+        )}
+
+        {/* Right: Votes in & Player Avatars */}
+        <div className="flex-1 bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">Votes in</p>
+              <p className="text-2xl font-['Fredoka_One'] text-white">
+                {votingData.voteCount}<span className="text-gray-500">/{votingData.totalPlayers}</span>
+              </p>
+            </div>
+            <ProgressBar value={votingData.voteCount} total={votingData.totalPlayers} color="#6C5CE7" />
+          </div>
+          <div className="flex flex-wrap gap-2 justify-center mt-4">
+            {activePlayers.map(p => (
+              <PlayerAvatar key={p.id} player={p} size="sm" status={votingData.votedPlayerIds?.includes(p.id) ? 'voted' : 'waiting'} />
+            ))}
+          </div>
         </div>
       </div>
     </div>
@@ -2345,11 +2360,12 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
         <button onClick={onAnswerPauseResume} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FFE66D] text-[#FFE66D] bg-[#FFE66D]/10 hover:bg-[#FFE66D]/20 active:scale-95 transition">
           {answerPaused ? '▶ Resume' : '⏸ Pause'}
         </button>
-        <button onClick={onSkipQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FFE66D] hover:text-[#FFE66D] active:scale-95 transition">
-          ⏭ Skip Question
-        </button>
-        <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-          🔀 Skip Mini Game
+        <button
+          onClick={() => socketRef.current?.emit('sit:force_results', { code: gameInfo.code })}
+          className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#FFE66D] text-black hover:bg-[#ffdd33] active:scale-95 transition"
+          style={{ boxShadow: '0 0 20px #FFE66D60' }}
+        >
+          Show Results →
         </button>
       </div>
     );
@@ -2389,19 +2405,15 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
   } else if (status === 'voting') {
     controls = (
       <div className="flex gap-3">
-        <button onClick={onSkipQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FFE66D] hover:text-[#FFE66D] active:scale-95 transition">
-          ⏭ Skip Question
+        <button onClick={onAnswerPauseResume} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FFE66D] text-[#FFE66D] bg-[#FFE66D]/10 hover:bg-[#FFE66D]/20 active:scale-95 transition">
+          {answerPaused ? '▶ Resume' : '⏸ Pause'}
         </button>
         <button
           onClick={onNextAnswer}
-          disabled={!votingData?.allVotesIn}
-          className={`px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl transition ${votingData?.allVotesIn ? 'bg-[#6C5CE7] text-white hover:bg-[#7d6fd4] active:scale-95' : 'bg-[#2D2D44] text-gray-500 cursor-not-allowed'}`}
-          style={votingData?.allVotesIn ? { boxShadow: '0 0 20px #6C5CE760' } : {}}
+          className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#6C5CE7] text-white hover:bg-[#7d6fd4] active:scale-95 transition"
+          style={{ boxShadow: '0 0 20px #6C5CE760' }}
         >
-          {votingData?.allVotesIn ? 'Next Answer →' : '⏳ Waiting for votes...'}
-        </button>
-        <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-          🔀 Skip Mini Game
+          Next Answer →
         </button>
       </div>
     );
@@ -3733,7 +3745,7 @@ export default function HostPage() {
       case 'question':
         return <QuestionPanel questionData={questionData} players={players} paused={!!phaseTimer?.paused} serverSecondsLeft={phaseTimer?.secondsLeft} />;
       case 'voting':
-        return <VotingPanel votingData={votingData} players={players} />;
+        return <VotingPanel votingData={votingData} players={players} phaseTimer={phaseTimer} />;
       case 'round-end':
         return <RoundEndPanel roundEndData={roundEndData} players={players} />;
       case 'game-end':

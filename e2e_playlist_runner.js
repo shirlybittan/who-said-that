@@ -24,18 +24,18 @@ async function runTest() {
     await createBtn.click();
     
     console.log("Waiting for room code...");
-    await hostPage.waitForTimeout(3000);
-    const html = await hostPage.content();
-    // Assuming 4 uppercase letters/numbers for code
-    const match = html.match(/[A-Z0-9]{4}/);
-    if (!match) throw new Error("Could not find 4-letter room code on host page");
-    const roomCode = match[0];
+    const codeLocator = hostPage.locator('p.text-5xl');
+    await codeLocator.waitFor({ state: 'visible', timeout: 10000 });
+    const roomCode = (await codeLocator.innerText()).replace(/\s+/g, '');
+    if (!roomCode || roomCode.length !== 4) {
+      throw new Error(`Could not find a valid 4-letter room code on host page (found: "${roomCode}")`);
+    }
     console.log("Room created with code:", roomCode);
 
     const players = [];
     for (let i = 1; i <= 3; i++) {
       const page = await context.newPage();
-      await page.goto(`http://localhost:5173/?code=${roomCode}`);
+      await page.goto(`http://localhost:5173/?join=${roomCode}`);
       // Try to fill name
       const nameInput = page.locator('input[placeholder*="Name"], input[type="text"]').first();
       await nameInput.waitFor({ state: 'visible', timeout: 5000 });
@@ -46,12 +46,9 @@ async function runTest() {
     }
 
     console.log("3 Players joined. Waiting for host to start.");
-    await hostPage.waitForTimeout(2000);
-
     const startBtn = hostPage.locator('button:has-text("Start Game")');
-    if (await startBtn.isVisible()) {
-      await startBtn.click();
-    }
+    await startBtn.waitFor({ state: 'visible', timeout: 15000 });
+    await startBtn.click();
 
     console.log("Game started. Entering interaction loop.");
     let loops = 0;

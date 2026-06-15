@@ -8,6 +8,8 @@ import { useFullscreen } from '../hooks/useFullscreen';
 import TimerRing from '../components/game/TimerRing';
 import GamePageWrapper from '../components/GamePageWrapper.jsx';
 import { motion } from 'framer-motion';
+import MiniGameWrapper from '../components/MiniGameWrapper.jsx';
+import { useMiniGameLifecycle } from '../hooks/useMiniGameLifecycle.js';
 
 const COLORS = [
   '#000000', '#FFFFFF', '#EF4444', '#F97316', '#EAB308',
@@ -47,42 +49,69 @@ export default function DrawTelDrawPage() {
   const [submitted, setSubmitted] = useState(false);
   const { isFullscreen, containerRef, toggleFullscreen } = useFullscreen();
 
+  const existingStrokesRef = useRef([]);
+
   // Redraws canvas after undo/clear, respecting selfie background
-  const redrawAll = useCallback((strokes) => {
+  const redrawAll = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
+    const allStrokes = [...existingStrokesRef.current, ...strokesRef.current];
     if (selfieData) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      strokes.forEach(s => drawStroke(ctx, s));
+      allStrokes.forEach(s => drawStroke(ctx, s));
     } else {
       ctx.fillStyle = '#FFFFFF';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      strokes.forEach(s => drawStroke(ctx, s));
+      allStrokes.forEach(s => drawStroke(ctx, s));
     }
   }, [selfieData]);
 
   // Load existing strokes when turn changes
   useEffect(() => {
     strokesRef.current = [];
+    existingStrokesRef.current = turn?.existingStrokes || [];
     setStrokeCount(0);
     setSubmitted(false);
     const canvas = canvasRef.current;
     if (!canvas) return;
     if (selfieData) {
-      redrawOverlay(canvas, turn?.existingStrokes || []);
+      redrawOverlay(canvas, existingStrokesRef.current);
     } else {
       const ctx = canvas.getContext('2d');
       ctx.fillStyle = '#FFFFFF';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      if (turn?.existingStrokes?.length) {
-        redrawCanvas(canvas, turn.existingStrokes);
+      if (existingStrokesRef.current.length) {
+        redrawCanvas(canvas, existingStrokesRef.current);
       }
     }
-  }, [turn?.promptId]);
+  }, [turn?.promptId, selfieData]);
+
+  const handleSubmit = useCallback(() => {
+    if (strokesRef.current.length === 0) return;
+    sounds.answer?.();
+    socket.emit('dt:submit_strokes', {
+      code: roomCode,
+      promptId: turn.promptId,
+      strokes: strokesRef.current,
+    });
+    dispatch({ type: 'DT_MARK_TURN_SUBMITTED' });
+    setSubmitted(true);
+  }, [roomCode, turn?.promptId, sounds, dispatch]);
+
+  const { hasConfirmed, confirm, editResponse, markConfirmed } = useMiniGameLifecycle({
+    onSubmit: handleSubmit,
+    resetKey: turn?.promptId,
+    initialConfirmed: submitted,
+  });
+
+  const handleEditResponse = () => {
+    editResponse();
+    setSubmitted(false);
+  };
 
   const startDraw = useCallback((x, y) => {
-    if (submitted) return;
+    if (hasConfirmed) return;
     sounds.draw?.();
     isDrawing.current = true;
     curStroke.current = { color, width, type: tool, points: [{ x, y }] };
@@ -101,7 +130,7 @@ export default function DrawTelDrawPage() {
       ctx.fill();
       ctx.restore();
     }
-  }, [color, width, tool, submitted, sounds]);
+  }, [color, width, tool, hasConfirmed, sounds]);
 
   const moveDraw = useCallback((x, y) => {
     if (!isDrawing.current || !curStroke.current) return;
@@ -126,7 +155,7 @@ export default function DrawTelDrawPage() {
       ctx.stroke();
       ctx.restore();
     }
-  }, [color, width, tool]);
+  }, []);
 
   const endDraw = useCallback(() => {
     if (!isDrawing.current) return;
@@ -134,64 +163,72 @@ export default function DrawTelDrawPage() {
     if (curStroke.current && curStroke.current.points.length > 1) {
       strokesRef.current.push(curStroke.current);
       setStrokeCount(strokesRef.current.length);
+      if (submitted) {
+        socket.emit('dt:submit_strokes', {
+          code: roomCode,
+          promptId: turn.promptId,
+          strokes: strokesRef.current,
+        });
+      }
     }
     curStroke.current = null;
-  }, []);
+  }, [submitted, roomCode, turn?.promptId]);
 
   const handleUndo = useCallback(() => {
     if (strokesRef.current.length > 0) {
       sounds.undo?.();
       strokesRef.current.pop();
       setStrokeCount(strokesRef.current.length);
-      const existing = turn?.existingStrokes || [];
-      redrawAll([...existing, ...strokesRef.current]);
+      redrawAll();
+      if (submitted) {
+        socket.emit('dt:submit_strokes', { code: roomCode, promptId: turn.promptId, strokes: strokesRef.current });
+      }
     }
-  }, [redrawAll, sounds, turn?.existingStrokes]);
+  }, [redrawAll, sounds, submitted, roomCode, turn?.promptId]);
 
   const handleClear = useCallback(() => {
     if (strokesRef.current.length > 0) {
       sounds.clear?.();
       strokesRef.current = [];
       setStrokeCount(0);
-      const existing = turn?.existingStrokes || [];
-      redrawAll([...existing]);
+      redrawAll();
+      if (submitted) {
+        socket.emit('dt:submit_strokes', { code: roomCode, promptId: turn.promptId, strokes: [] });
+      }
     }
-  }, [redrawAll, sounds, turn?.existingStrokes]);
-
-  const handleSubmit = useCallback(() => {
-    if (submitted || strokesRef.current.length === 0) return;
-    sounds.answer?.();
-    socket.emit('dt:submit_strokes', {
-      code: roomCode,
-      promptId: turn.promptId,
-      strokes: strokesRef.current,
-    });
-    dispatch({ type: 'DT_MARK_TURN_SUBMITTED' });
-    setSubmitted(true);
-    // Stay on this page — show submitted overlay; next dt:your_turn will reset
-  }, [submitted, roomCode, turn?.promptId, sounds, dispatch]);
+  }, [redrawAll, sounds, submitted, roomCode, turn?.promptId]);
 
   // Auto-submit at ≤1 second (belt-and-suspenders alongside dt:time_up)
   useEffect(() => {
     if (!submitted && turn && dt.currentTurn?.secondsLeft <= 1) {
-      socket.emit('dt:submit_strokes', { code: roomCode, promptId: turn.promptId, strokes: strokesRef.current });
-      dispatch({ type: 'DT_MARK_TURN_SUBMITTED' });
-      setSubmitted(true);
+      handleSubmit();
+      markConfirmed();
     }
-  }, [dt.currentTurn?.secondsLeft, submitted, turn, roomCode, dispatch]);
+  }, [dt.currentTurn?.secondsLeft, submitted, turn, handleSubmit, markConfirmed]);
 
   // Force-submit when server says time is up
   useEffect(() => {
     const onTimeUp = ({ promptId }) => {
       if (!submitted && turn?.promptId === promptId) {
-        socket.emit('dt:submit_strokes', { code: roomCode, promptId, strokes: strokesRef.current });
-        dispatch({ type: 'DT_MARK_TURN_SUBMITTED' });
-        setSubmitted(true);
+        handleSubmit();
+        markConfirmed();
       }
     };
     socket.on('dt:time_up', onTimeUp);
     return () => socket.off('dt:time_up', onTimeUp);
-  }, [submitted, turn, roomCode, dispatch]);
+  }, [submitted, turn, handleSubmit, markConfirmed]);
+
+  // Listen for live background drawing updates from the previous drawer
+  useEffect(() => {
+    const onBackgroundUpdated = ({ promptId: pid, existingStrokes }) => {
+      if (turn && turn.promptId === pid) {
+        existingStrokesRef.current = existingStrokes;
+        redrawAll();
+      }
+    };
+    socket.on('dt:background_strokes_updated', onBackgroundUpdated);
+    return () => socket.off('dt:background_strokes_updated', onBackgroundUpdated);
+  }, [turn, redrawAll]);
 
   // Note: dt:your_turn is handled globally in useSocket.js (dispatches DT_YOUR_TURN + navigates here).
   // Canvas reset happens in the turn?.promptId effect above when the new turn arrives.
@@ -316,13 +353,6 @@ export default function DrawTelDrawPage() {
                 onMouseUp={endDraw}
                 onMouseLeave={endDraw}
               />
-              {submitted && (
-                <div className="absolute inset-0 bg-black/70 rounded-2xl flex flex-col items-center justify-center gap-2">
-                  <p className="text-3xl">✅</p>
-                  <p className="text-white font-['Fredoka_One'] text-xl">Drawing Submitted!</p>
-                  <p className="text-gray-400 font-['Nunito'] text-sm">Waiting for others...</p>
-                </div>
-              )}
               {/* Fullscreen toggle */}
               <button
                 onClick={toggleFullscreen}
@@ -341,9 +371,11 @@ export default function DrawTelDrawPage() {
                   <button
                     key={c}
                     onClick={() => {
+                      if (hasConfirmed) return;
                       setTool('pen');
                       setColor(c);
                     }}
+                    disabled={hasConfirmed}
                     className={`w-7 h-7 rounded-full border-2 transition ${
                       tool === 'pen' && color === c ? 'border-white scale-110' : 'border-transparent'
                     }`}
@@ -351,7 +383,11 @@ export default function DrawTelDrawPage() {
                   />
                 ))}
                 <button
-                  onClick={() => setTool('eraser')}
+                  onClick={() => {
+                    if (hasConfirmed) return;
+                    setTool('eraser');
+                  }}
+                  disabled={hasConfirmed}
                   className={`w-7 h-7 rounded-full border-2 transition flex items-center justify-center ${
                     tool === 'eraser' ? 'border-white scale-110 bg-gray-400' : 'border-transparent bg-gray-600'
                   }`}
@@ -366,7 +402,11 @@ export default function DrawTelDrawPage() {
                 {WIDTHS.map(w => (
                   <button
                     key={w}
-                    onClick={() => setWidth(w)}
+                    onClick={() => {
+                      if (hasConfirmed) return;
+                      setWidth(w);
+                    }}
+                    disabled={hasConfirmed}
                     className={`flex-1 h-8 rounded-md flex items-center justify-center transition ${
                       width === w ? 'bg-[#FF6B6B]' : 'bg-[#2D2D44] hover:bg-gray-600'
                     }`}
@@ -379,14 +419,14 @@ export default function DrawTelDrawPage() {
               <div className="flex gap-2">
                 <button
                   onClick={handleUndo}
-                  disabled={strokeCount === 0 || submitted}
+                  disabled={strokeCount === 0 || hasConfirmed}
                   className="flex-1 py-2 rounded-lg bg-[#2D2D44] text-white font-['Nunito'] disabled:opacity-50"
                 >
                   Undo
                 </button>
                 <button
                   onClick={handleClear}
-                  disabled={strokeCount === 0 || submitted}
+                  disabled={strokeCount === 0 || hasConfirmed}
                   className="flex-1 py-2 rounded-lg bg-[#2D2D44] text-white font-['Nunito'] disabled:opacity-50"
                 >
                   Clear
@@ -394,13 +434,15 @@ export default function DrawTelDrawPage() {
               </div>
             </div>
 
-            <button
-              onClick={handleSubmit}
-              disabled={submitted || strokeCount === 0}
-              className={`w-full py-3 rounded-2xl bg-[#FF6B6B] text-white font-['Fredoka_One'] text-xl disabled:bg-gray-600 ${isFullscreen ? 'hidden' : ''}`}
-            >
-              {submitted ? 'Submitted!' : 'Submit Drawing'}
-            </button>
+            <div className={`w-full ${isFullscreen ? 'hidden' : ''}`}>
+              <MiniGameWrapper
+                hasConfirmed={hasConfirmed}
+                onConfirm={confirm}
+                onEditResponse={handleEditResponse}
+                confirmLabel={submitted ? "Update Drawing" : "Submit Drawing"}
+                disableConfirm={strokeCount === 0}
+              />
+            </div>
             </div>{/* end fullscreen container */}
           </div>
         </div>

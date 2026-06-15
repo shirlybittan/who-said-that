@@ -10,7 +10,7 @@ import GamePageWrapper from '../components/GamePageWrapper.jsx';
 
 export default function DrawTelGuessPage() {
   const { state, dispatch } = useGame();
-  const { dt, roomCode } = state;
+  const { dt, roomCode, phaseSecondsLeft } = state;
   const guessTurn = dt.guessTurn;
   const sounds = useSounds();
   const [guessText, setGuessText] = useState('');
@@ -55,7 +55,7 @@ export default function DrawTelGuessPage() {
       dispatch({ type: 'DT_MARK_GUESSED' });
     }
     markConfirmed();
-  }, [currentSecondsLeft, hasConfirmed, sounds, dispatch, markConfirmed]);
+  }, [secondsLeft, hasConfirmed, sounds, dispatch, markConfirmed]);
 
   if (!guessTurn) {
     return (
