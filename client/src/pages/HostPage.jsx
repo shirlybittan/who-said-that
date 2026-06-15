@@ -1314,12 +1314,12 @@ function DtHostPanel({ dtData, players, status, onRevealNext }) {
           {step === 0 && (
             <motion.div
               key="ctx"
-              className="w-full grid grid-cols-2 gap-4"
+              className="w-full flex justify-center animate-fade-in"
               initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
             >
-              {/* Left: target chip + selfie */}
-              <div className="bg-[#1A1A2E] rounded-2xl border-2 border-[#FF6B6B]/40 p-5 flex flex-col items-center gap-3">
-                <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest">Someone wrote a prompt about…</p>
+              {/* Center: target chip + selfie */}
+              <div className="bg-[#1A1A2E] rounded-2xl border-2 border-[#FF6B6B]/40 p-5 flex flex-col items-center gap-3 w-full max-w-md">
+                <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest text-center">Someone wrote a prompt about…</p>
                 <div
                   className="inline-block px-5 py-2 rounded-2xl text-2xl font-['Fredoka_One']"
                   style={{ backgroundColor: targetColor || '#FF6B6B', color: '#fff' }}
@@ -1335,19 +1335,6 @@ function DtHostPanel({ dtData, players, status, onRevealNext }) {
                     <span className="text-gray-600 font-['Nunito']">No selfie</span>
                   </div>
                 )}
-              </div>
-              {/* Right: full prompt + author */}
-              <div className="bg-[#1A1A2E] rounded-2xl border-2 border-[#FFE66D]/40 p-5 flex flex-col justify-center items-center gap-4 text-center">
-                <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest">The prompt</p>
-                <p className="text-3xl font-['Fredoka_One'] text-[#FFE66D] leading-snug">
-                  "{finalText || ''}"
-                </p>
-                <div className="border-t border-[#2D2D44] pt-3 w-full">
-                  <p className="text-sm text-gray-400 font-['Nunito']">
-                    Written by <span className="text-white font-semibold">{authorName}</span>
-                    {' '}about <span style={{ color: targetColor || '#FF6B6B' }} className="font-semibold">{targetName}</span>
-                  </p>
-                </div>
               </div>
             </motion.div>
           )}
@@ -2294,7 +2281,7 @@ function CreateRoomForm({ onSubmit, onBack }) {
 // ─── Host control bar (creator only) ─────────────────────────────────────────
 // QUEUE_GAME_LABELS imported from '../config/hostControls'
 
-function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbData, photoVoteData, captionData, isMixedMode, onStart, onMltPauseResume, onMltChangeQuestion, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, onNewGame, onPlayAgain, onNewPartyPack, gameQueue, queueIndex, onSelfieNextRound, onSelfieSkipQuestion, onShowSelfieResults, onFitbChangeQuestion, onFitbSkipToVote, onFitbShowResults, onFitbNextRound, onPhotoVoteChangeQuestion, onPhotoVoteSkipToResults, onPhotoVoteNextRound, onCaptionChangeQuestion, onCaptionSkipToVoting, onCaptionSkipToResults, onCaptionNextRound, onAnswerPauseResume, answerPaused, onFitbPauseResume }) {
+function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbData, photoVoteData, captionData, isMixedMode, onStart, onMltPauseResume, onMltChangeQuestion, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, onNewGame, onPlayAgain, onNewPartyPack, gameQueue, queueIndex, onSelfieNextRound, onSelfieSkipQuestion, onShowSelfieResults, onFitbChangeQuestion, onFitbSkipToVote, onFitbShowResults, onFitbNextRound, onPhotoVoteChangeQuestion, onPhotoVoteSkipToResults, onPhotoVoteNextRound, onCaptionChangeQuestion, onCaptionSkipToVoting, onCaptionSkipToResults, onCaptionNextRound, onAnswerPauseResume, answerPaused, onFitbPauseResume, dtData, onDtPauseResume }) {
   if (!isRoomCreator) return null;
 
   const playingCount = players.filter(p => p.isPlaying && p.isConnected).length;
@@ -2621,6 +2608,26 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
         </button>
       </div>
     );
+  } else if (status === 'dt-selfie') {
+    controls = (
+      <div className="flex gap-3">
+        <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+          🔀 Skip Mini Game
+        </button>
+      </div>
+    );
+  } else if (['dt-prompting', 'dt-drawing', 'dt-guessing', 'dt-reveal'].includes(status)) {
+    const isPaused = !!dtData?.paused;
+    controls = (
+      <div className="flex gap-3">
+        <button onClick={onDtPauseResume} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FFE66D] text-[#FFE66D] bg-[#FFE66D]/10 hover:bg-[#FFE66D]/20 active:scale-95 transition">
+          {isPaused ? '▶ Resume' : '⏸ Pause'}
+        </button>
+        <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+          🔀 Skip Mini Game
+        </button>
+      </div>
+    );
   } else if (status === 'game-end' || status === 'mlt-end' || status === 'tot-end' || status === 'draw-end' || status === 'fitb-end' || status === 'selfie-results' || status === 'dt-end') {
     const hasNextInQueue = gameQueue && gameQueue.length > 1 && queueIndex < gameQueue.length - 1;
     const nextGame = hasNextInQueue ? gameQueue[queueIndex + 1] : null;
@@ -2755,6 +2762,7 @@ export default function HostPage() {
 
   const DT_INITIAL = {
     phase: 'waiting',
+    paused: false,
     promptsSubmittedCount: 0, totalPrompts: 0, submittedPlayerIds: [],
     totalChains: 0, chainsCompletedCount: 0, chainProgress: {},
     guessedCount: 0, totalGuessers: 0, guessedPlayerIds: [],
@@ -3278,6 +3286,14 @@ export default function HostPage() {
       setErrorMsg(message);
       setStatus('error');
     });
+    sock.on('dt:paused', () => {
+      if (!isActiveSock()) return;
+      setDtData(prev => ({ ...prev, paused: true }));
+    });
+    sock.on('dt:resumed', () => {
+      if (!isActiveSock()) return;
+      setDtData(prev => ({ ...prev, paused: false }));
+    });
 
     sock.on('game_changed', ({ gameType, players: p, gameName }) => {
       if (!isActiveSock()) return;
@@ -3577,6 +3593,13 @@ export default function HostPage() {
     if (!sock) return;
     if (fitbData.paused) sock.emit('fitb:resume', { code: gameInfo.code });
     else sock.emit('fitb:pause', { code: gameInfo.code });
+  };
+
+  const handleDtPauseResume = () => {
+    const sock = socketRef.current;
+    if (!sock) return;
+    if (dtData.paused) sock.emit('dt:resume', { code: gameInfo.code });
+    else sock.emit('dt:pause', { code: gameInfo.code });
   };
 
   // "Change Question" in MLT replaces the current round's prompt without advancing the round counter
@@ -4059,6 +4082,8 @@ export default function HostPage() {
         onCaptionNextRound={() => socketRef.current?.emit('caption:next_round', { code: gameInfo.code })}
         onAnswerPauseResume={handleAnswerPauseResume}
         answerPaused={!!phaseTimer?.paused}
+        dtData={dtData}
+        onDtPauseResume={handleDtPauseResume}
       />}
     </div>
   );

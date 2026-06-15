@@ -269,6 +269,7 @@ const initialState = {
   },
   dt: {
     phase: 'waiting',            // 'waiting'|'prompting'|'drawing'|'guessing'|'reveal'|'end'
+    paused: false,
     hasSubmittedPrompt: false,
     promptsSubmittedCount: 0,
     totalPrompts: 0,
@@ -1209,6 +1210,11 @@ export const gameReducer = (state, action) => {
       return {
         ...state,
         phase: 'dt',
+        phaseTimer: {
+          secondsLeft: action.payload.secondsLeft || 60,
+          active: true,
+          paused: false,
+        },
         dt: {
           ...initialState.dt,
           phase: 'prompting',
@@ -1235,6 +1241,22 @@ export const gameReducer = (state, action) => {
           hasSubmittedPrompt: true,
         },
       };
+    case 'DT_SET_PAUSED':
+      return {
+        ...state,
+        dt: {
+          ...state.dt,
+          paused: true,
+        },
+      };
+    case 'DT_SET_RESUMED':
+      return {
+        ...state,
+        dt: {
+          ...state.dt,
+          paused: false,
+        },
+      };
     case 'DT_PROMPT_REJECTED':
       // Server rejected the prompt (e.g. missing [name]) — reopen input so player can fix it
       return {
@@ -1247,6 +1269,7 @@ export const gameReducer = (state, action) => {
     case 'DT_DRAWING_PHASE':
       return {
         ...state,
+        phaseTimer: { secondsLeft: 0, active: false, paused: false },
         dt: {
           ...state.dt,
           phase: 'drawing',
@@ -1318,6 +1341,11 @@ export const gameReducer = (state, action) => {
     case 'DT_GUESSING_PHASE':
       return {
         ...state,
+        phaseTimer: {
+          secondsLeft: action.payload.secondsLeft || 60,
+          active: true,
+          paused: false,
+        },
         dt: {
           ...state.dt,
           phase: 'guessing',
@@ -1331,6 +1359,11 @@ export const gameReducer = (state, action) => {
     case 'DT_YOUR_GUESS':
       return {
         ...state,
+        phaseTimer: {
+          secondsLeft: action.payload.secondsLeft || 60,
+          active: true,
+          paused: false,
+        },
         dt: {
           ...state.dt,
           phase: 'guessing',
@@ -1361,6 +1394,7 @@ export const gameReducer = (state, action) => {
     case 'DT_REVEAL_PHASE':
       return {
         ...state,
+        phaseTimer: { secondsLeft: 0, active: false, paused: false },
         dt: {
           ...state.dt,
           phase: 'reveal',
@@ -1373,6 +1407,9 @@ export const gameReducer = (state, action) => {
     case 'DT_REVEAL_UPDATE':
       return {
         ...state,
+        phaseTimer: action.payload.step === 2
+          ? state.phaseTimer
+          : { secondsLeft: 0, active: false, paused: false },
         dt: {
           ...state.dt,
           phase: 'reveal',

@@ -41,7 +41,7 @@ export default function DrawTelGuessPage() {
 
   // Use synchronized server timer if available, otherwise fallback
   const syncedSecondsLeft = dt.guessTurn?.secondsLeft ?? dt.guessSecondsLeft ?? 60;
-  const secondsLeft = phaseSecondsLeft !== null ? phaseSecondsLeft : syncedSecondsLeft;
+  const secondsLeft = state.phaseTimer?.secondsLeft ?? syncedSecondsLeft;
   
   // Auto-submit when timer reaches zero (uses ref to avoid stale closures)
   useEffect(() => {

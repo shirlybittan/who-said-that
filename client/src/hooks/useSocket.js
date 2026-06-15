@@ -618,6 +618,12 @@ export const useSocket = () => {
       dispatch({ type: 'DT_RESTARTED', payload: data });
       navigate('/lobby');
     };
+    const onDtPaused = () => {
+      dispatch({ type: 'DT_SET_PAUSED' });
+    };
+    const onDtResumed = () => {
+      dispatch({ type: 'DT_SET_RESUMED' });
+    };
 
     socket.on('dt:selfie_phase', onDtSelfiePhase);
     socket.on('dt:photo_received', onDtPhotoReceived);
@@ -637,6 +643,8 @@ export const useSocket = () => {
     socket.on('dt:vote_received', onDtVoteReceived);
     socket.on('dt:end', onDtEnd);
     socket.on('dt:restarted', onDtRestarted);
+    socket.on('dt:paused', onDtPaused);
+    socket.on('dt:resumed', onDtResumed);
 
     const onPhotoReused = ({ gameType }) => {
       if (gameType === 'selfie') dispatch({ type: 'SELFIE_MARK_PHOTO_SUBMITTED' });
@@ -767,6 +775,8 @@ export const useSocket = () => {
       socket.off('dt:vote_received', onDtVoteReceived);
       socket.off('dt:end', onDtEnd);
       socket.off('dt:restarted', onDtRestarted);
+      socket.off('dt:paused', onDtPaused);
+      socket.off('dt:resumed', onDtResumed);
       socket.off('player:photo_reused', onPhotoReused);
       socket.off('global_scores_updated', onGlobalScoresUpdated);
       socket.off('phase_timer', onPhaseTimer);

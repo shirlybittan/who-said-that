@@ -39,7 +39,7 @@ export default function DrawTelPromptPage() {
 
   // Use synchronized server timer if available, otherwise fallback
   const syncedSecondsLeft = dt.promptSecondsLeft ?? 60;
-  const secondsLeft = state.phaseSecondsLeft !== null ? state.phaseSecondsLeft : syncedSecondsLeft;
+  const secondsLeft = state.phaseTimer?.secondsLeft ?? syncedSecondsLeft;
   
   // Auto-submit when timer reaches zero (uses ref to avoid stale closures)
   useEffect(() => {

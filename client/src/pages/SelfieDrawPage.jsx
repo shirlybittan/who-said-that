@@ -6,6 +6,8 @@ import { useSounds } from '../hooks/useSounds';
 import { CANVAS_W, CANVAS_H, drawStroke, redrawOverlay } from '../utils/canvasUtils';
 import { useFullscreen } from '../hooks/useFullscreen';
 import TimerRing from '../components/game/TimerRing';
+import MiniGameWrapper from '../components/MiniGameWrapper.jsx';
+import { useMiniGameLifecycle } from '../hooks/useMiniGameLifecycle.js';
 
 const COLORS = [
   '#000000', '#FFFFFF', '#EF4444', '#F97316', '#EAB308',
@@ -83,6 +85,20 @@ export default function SelfieDrawPage() {
     drawStroke(ctx, curStroke.current);
   }, [getEventPos]);
 
+  const handleSubmit = () => {
+    sounds.answer?.();
+    socket.emit('selfie:submit_drawing', { code: state.roomCode, strokes: strokesRef.current });
+    if (!selfie.hasSubmittedDrawing) {
+      dispatch({ type: 'SELFIE_MARK_DRAWING_SUBMITTED' });
+    }
+  };
+
+  const { hasConfirmed, confirm, editResponse, markConfirmed } = useMiniGameLifecycle({
+    onSubmit: handleSubmit,
+    resetKey: selfie.assignedPrompt,
+    initialConfirmed: selfie.hasSubmittedDrawing,
+  });
+
   const onPointerUp = useCallback((e) => {
     e.preventDefault();
     if (!isDrawing.current || !curStroke.current) return;
@@ -90,39 +106,43 @@ export default function SelfieDrawPage() {
     if (curStroke.current.points.length > 0) {
       strokesRef.current.push({ ...curStroke.current, points: [...curStroke.current.points] });
       setStrokeCount(strokesRef.current.length);
+      if (hasConfirmed) {
+        socket.emit('selfie:submit_drawing', { code: state.roomCode, strokes: strokesRef.current });
+      }
     }
     curStroke.current = null;
-  }, []);
+  }, [hasConfirmed, state.roomCode]);
 
   const handleUndo = () => {
     strokesRef.current.pop();
     setStrokeCount(strokesRef.current.length);
     redrawOverlay(canvasRef.current, strokesRef.current);
+    if (hasConfirmed) {
+      socket.emit('selfie:submit_drawing', { code: state.roomCode, strokes: strokesRef.current });
+    }
   };
 
   const handleClear = () => {
     strokesRef.current = [];
     setStrokeCount(0);
     redrawOverlay(canvasRef.current, strokesRef.current);
-  };
-
-  const handleSubmit = () => {
-    sounds.answer?.();
-    socket.emit('selfie:submit_drawing', { code: state.roomCode, strokes: strokesRef.current });
-    dispatch({ type: 'SELFIE_MARK_DRAWING_SUBMITTED' });
+    if (hasConfirmed) {
+      socket.emit('selfie:submit_drawing', { code: state.roomCode, strokes: [] });
+    }
   };
 
   // Auto-submit when host signals the drawing phase is ending (skip to vote)
   useEffect(() => {
     const onDrawingEnding = () => {
-      if (!selfie.hasSubmittedDrawing) {
+      if (!hasConfirmed) {
         socket.emit('selfie:submit_drawing', { code: state.roomCode, strokes: strokesRef.current });
         dispatch({ type: 'SELFIE_MARK_DRAWING_SUBMITTED' });
+        markConfirmed();
       }
     };
     socket.on('selfie:drawing_ending', onDrawingEnding);
     return () => socket.off('selfie:drawing_ending', onDrawingEnding);
-  }, [selfie.hasSubmittedDrawing, state.roomCode, dispatch]);
+  }, [hasConfirmed, state.roomCode, dispatch, markConfirmed]);
 
   const handleRetake = () => {
     sounds.click?.();
@@ -196,6 +216,11 @@ export default function SelfieDrawPage() {
         >
           {isFullscreen ? '⤡' : '⤢'}
         </button>
+        {hasConfirmed && (
+          <div className="absolute top-2 right-2 bg-black/70 text-white text-xs font-['Nunito'] px-2 py-1 rounded-lg">
+            ✓ Submitted — keep drawing to update
+          </div>
+        )}
         {/* Fullscreen toolbar overlay */}
         {isFullscreen && (
           <div className="absolute bottom-0 left-0 right-0 z-10 bg-black/70 backdrop-blur-sm px-4 pt-3 pb-4 flex flex-col items-center gap-2">
@@ -232,10 +257,10 @@ export default function SelfieDrawPage() {
                 <button onClick={handleClear} className="bg-[#2D2D44] text-white px-3 py-1 rounded-lg font-['Nunito'] text-xs hover:bg-[#3D3D54] transition">🗑</button>
               )}
               <button
-                onClick={handleSubmit}
+                onClick={confirm}
                 className="bg-[#FF6B6B] text-white font-['Fredoka_One'] text-sm px-4 py-1.5 rounded-xl hover:bg-[#e05a5a] transition"
               >
-                {selfie.hasSubmittedDrawing ? '↑ Update' : 'Submit ✓'}
+                {hasConfirmed ? '↑ Update' : 'Submit ✓'}
               </button>
             </div>
           </div>
@@ -244,62 +269,68 @@ export default function SelfieDrawPage() {
 
       {!isFullscreen && (
         <>
-          {/* Color palette */}
-          <div className="flex flex-wrap justify-center gap-2 mb-2">
-            {COLORS.map(c => (
-              <button
-                key={c}
-                onClick={() => { setColor(c); setTool('pen'); }}
-                className={`w-8 h-8 rounded-full border-2 transition ${color === c && tool === 'pen' ? 'border-white scale-110' : 'border-transparent'}`}
-                style={{ backgroundColor: c, boxShadow: '0 1px 4px rgba(0,0,0,0.6)' }}
-              />
-            ))}
-            {/* Eraser */}
-            <button
-              onClick={() => setTool('eraser')}
-              className={`w-8 h-8 rounded-full border-2 bg-[#1A1A2E] flex items-center justify-center text-sm transition ${tool === 'eraser' ? 'border-white scale-110' : 'border-[#2D2D44]'}`}
+          <div className="w-full max-w-sm mt-3">
+            <MiniGameWrapper
+              hasConfirmed={hasConfirmed}
+              onConfirm={confirm}
+              onEditResponse={editResponse}
+              confirmLabel={selfie.hasSubmittedDrawing ? 'Update Drawing' : 'Submit Drawing'}
+              editLabel="✏️ Edit Drawing"
+              disableConfirm={strokeCount === 0}
+              isHost={state.isHost}
+              waitingMessage={`Waiting for others… (${selfie.drawingCount}/${selfie.totalDrawers})`}
             >
-              ✕
-            </button>
-          </div>
+              {/* Color palette */}
+              <div className="flex flex-wrap justify-center gap-2 mb-2">
+                {COLORS.map(c => (
+                  <button
+                    key={c}
+                    onClick={() => { setColor(c); setTool('pen'); }}
+                    className={`w-8 h-8 rounded-full border-2 transition ${color === c && tool === 'pen' ? 'border-white scale-110' : 'border-transparent'}`}
+                    style={{ backgroundColor: c, boxShadow: '0 1px 4px rgba(0,0,0,0.6)' }}
+                  />
+                ))}
+                {/* Eraser */}
+                <button
+                  onClick={() => setTool('eraser')}
+                  className={`w-8 h-8 rounded-full border-2 bg-[#1A1A2E] flex items-center justify-center text-sm transition ${tool === 'eraser' ? 'border-white scale-110' : 'border-[#2D2D44]'}`}
+                >
+                  ✕
+                </button>
+              </div>
 
-          {/* Width selector */}
-          <div className="flex gap-3 mb-3 items-center">
-            {WIDTHS.map(w => (
-              <button
-                key={w}
-                onClick={() => setWidth(w)}
-                className={`rounded-full bg-white flex-shrink-0 transition ${width === w ? 'ring-2 ring-[#4ECDC4] scale-110' : ''}`}
-                style={{ width: w + 10, height: w + 10 }}
-              />
-            ))}
-          </div>
+              {/* Width selector */}
+              <div className="flex gap-3 mb-3 items-center justify-center">
+                {WIDTHS.map(w => (
+                  <button
+                    key={w}
+                    onClick={() => setWidth(w)}
+                    className={`rounded-full bg-white flex-shrink-0 transition ${width === w ? 'ring-2 ring-[#4ECDC4] scale-110' : ''}`}
+                    style={{ width: w + 10, height: w + 10 }}
+                  />
+                ))}
+              </div>
 
-          <div className="flex gap-3 mb-3">
-            {strokeCount > 0 && (
-              <button
-                onClick={handleUndo}
-                className="bg-[#2D2D44] text-white px-4 py-2 rounded-xl font-['Nunito'] text-sm hover:bg-[#3D3D54] transition"
-              >
-                ↩ Undo
-              </button>
-            )}
-            {strokeCount > 0 && (
-              <button
-                onClick={handleClear}
-                className="bg-[#2D2D44] text-white px-4 py-2 rounded-xl font-['Nunito'] text-sm hover:bg-[#3D3D54] transition"
-              >
-                🗑 Clear
-              </button>
-            )}
+              <div className="flex gap-3 mb-3 justify-center">
+                {strokeCount > 0 && (
+                  <button
+                    onClick={handleUndo}
+                    className="bg-[#2D2D44] text-white px-4 py-2 rounded-xl font-['Nunito'] text-sm hover:bg-[#3D3D54] transition"
+                  >
+                    ↩ Undo
+                  </button>
+                )}
+                {strokeCount > 0 && (
+                  <button
+                    onClick={handleClear}
+                    className="bg-[#2D2D44] text-white px-4 py-2 rounded-xl font-['Nunito'] text-sm hover:bg-[#3D3D54] transition"
+                  >
+                    🗑 Clear
+                  </button>
+                )}
+              </div>
+            </MiniGameWrapper>
           </div>
-
-          <button
-            onClick={handleSubmit}
-            className="w-full max-w-xs bg-[#FF6B6B] text-white font-['Fredoka_One'] text-lg py-3 rounded-xl hover:bg-[#e05a5a] transition"
-          >
-            {selfie.hasSubmittedDrawing ? '↑ Update Drawing' : 'Submit Drawing ✓'}
-          </button>
 
           <button
             onClick={handleRetake}
@@ -308,15 +339,6 @@ export default function SelfieDrawPage() {
             📷 Retake Photo
           </button>
         </>
-      )}
-
-      {/* When submitted: show status but keep toolbar visible so player can update */}
-      {!isFullscreen && selfie.hasSubmittedDrawing && (
-        <div className="w-full max-w-xs bg-[#1A1A2E] rounded-xl border border-[#4ECDC4]/40 px-4 py-2 text-center mt-2">
-          <p className="text-[#4ECDC4] font-['Fredoka_One'] text-sm">
-            ✓ Drawing submitted! ({selfie.drawingCount}/{selfie.totalDrawers}) — you can still update it
-          </p>
-        </div>
       )}
 
       {/* Progress dots */}

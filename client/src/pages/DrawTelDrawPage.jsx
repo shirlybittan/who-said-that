@@ -111,7 +111,6 @@ export default function DrawTelDrawPage() {
   };
 
   const startDraw = useCallback((x, y) => {
-    if (hasConfirmed) return;
     sounds.draw?.();
     isDrawing.current = true;
     curStroke.current = { color, width, type: tool, points: [{ x, y }] };
@@ -130,7 +129,7 @@ export default function DrawTelDrawPage() {
       ctx.fill();
       ctx.restore();
     }
-  }, [color, width, tool, hasConfirmed, sounds]);
+  }, [color, width, tool, sounds]);
 
   const moveDraw = useCallback((x, y) => {
     if (!isDrawing.current || !curStroke.current) return;
@@ -163,7 +162,7 @@ export default function DrawTelDrawPage() {
     if (curStroke.current && curStroke.current.points.length > 1) {
       strokesRef.current.push(curStroke.current);
       setStrokeCount(strokesRef.current.length);
-      if (submitted) {
+      if (hasConfirmed) {
         socket.emit('dt:submit_strokes', {
           code: roomCode,
           promptId: turn.promptId,
@@ -172,7 +171,7 @@ export default function DrawTelDrawPage() {
       }
     }
     curStroke.current = null;
-  }, [submitted, roomCode, turn?.promptId]);
+  }, [hasConfirmed, roomCode, turn?.promptId]);
 
   const handleUndo = useCallback(() => {
     if (strokesRef.current.length > 0) {
@@ -180,11 +179,11 @@ export default function DrawTelDrawPage() {
       strokesRef.current.pop();
       setStrokeCount(strokesRef.current.length);
       redrawAll();
-      if (submitted) {
+      if (hasConfirmed) {
         socket.emit('dt:submit_strokes', { code: roomCode, promptId: turn.promptId, strokes: strokesRef.current });
       }
     }
-  }, [redrawAll, sounds, submitted, roomCode, turn?.promptId]);
+  }, [redrawAll, sounds, hasConfirmed, roomCode, turn?.promptId]);
 
   const handleClear = useCallback(() => {
     if (strokesRef.current.length > 0) {
@@ -192,11 +191,11 @@ export default function DrawTelDrawPage() {
       strokesRef.current = [];
       setStrokeCount(0);
       redrawAll();
-      if (submitted) {
+      if (hasConfirmed) {
         socket.emit('dt:submit_strokes', { code: roomCode, promptId: turn.promptId, strokes: [] });
       }
     }
-  }, [redrawAll, sounds, submitted, roomCode, turn?.promptId]);
+  }, [redrawAll, sounds, hasConfirmed, roomCode, turn?.promptId]);
 
   // Auto-submit at ≤1 second (belt-and-suspenders alongside dt:time_up)
   useEffect(() => {
@@ -361,6 +360,11 @@ export default function DrawTelDrawPage() {
               >
                 {isFullscreen ? '⤡' : '⤢'}
               </button>
+              {hasConfirmed && (
+                <div className="absolute top-2 right-2 bg-black/70 text-white text-xs font-['Nunito'] px-2 py-1 rounded-lg">
+                  ✓ Submitted — keep drawing to update
+                </div>
+              )}
             </div>
 
             {/* Toolbar */}
@@ -371,11 +375,9 @@ export default function DrawTelDrawPage() {
                   <button
                     key={c}
                     onClick={() => {
-                      if (hasConfirmed) return;
                       setTool('pen');
                       setColor(c);
                     }}
-                    disabled={hasConfirmed}
                     className={`w-7 h-7 rounded-full border-2 transition ${
                       tool === 'pen' && color === c ? 'border-white scale-110' : 'border-transparent'
                     }`}
@@ -384,10 +386,8 @@ export default function DrawTelDrawPage() {
                 ))}
                 <button
                   onClick={() => {
-                    if (hasConfirmed) return;
                     setTool('eraser');
                   }}
-                  disabled={hasConfirmed}
                   className={`w-7 h-7 rounded-full border-2 transition flex items-center justify-center ${
                     tool === 'eraser' ? 'border-white scale-110 bg-gray-400' : 'border-transparent bg-gray-600'
                   }`}
@@ -403,10 +403,8 @@ export default function DrawTelDrawPage() {
                   <button
                     key={w}
                     onClick={() => {
-                      if (hasConfirmed) return;
                       setWidth(w);
                     }}
-                    disabled={hasConfirmed}
                     className={`flex-1 h-8 rounded-md flex items-center justify-center transition ${
                       width === w ? 'bg-[#FF6B6B]' : 'bg-[#2D2D44] hover:bg-gray-600'
                     }`}
@@ -419,14 +417,14 @@ export default function DrawTelDrawPage() {
               <div className="flex gap-2">
                 <button
                   onClick={handleUndo}
-                  disabled={strokeCount === 0 || hasConfirmed}
+                  disabled={strokeCount === 0}
                   className="flex-1 py-2 rounded-lg bg-[#2D2D44] text-white font-['Nunito'] disabled:opacity-50"
                 >
                   Undo
                 </button>
                 <button
                   onClick={handleClear}
-                  disabled={strokeCount === 0 || hasConfirmed}
+                  disabled={strokeCount === 0}
                   className="flex-1 py-2 rounded-lg bg-[#2D2D44] text-white font-['Nunito'] disabled:opacity-50"
                 >
                   Clear
