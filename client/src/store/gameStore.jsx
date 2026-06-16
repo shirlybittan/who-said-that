@@ -1,4 +1,59 @@
 import React, { createContext, useReducer, useContext } from 'react';
+import { createGameSlice } from './createGameSlice';
+
+// ─── Game slices (standard action handlers generated from factory) ────────────
+const mltSlice = createGameSlice('mlt', {
+  totalRounds: 5,
+  allowSelfVote: true,
+  prompt: null,
+  roundState: 'waiting',
+  players: [],
+  results: [],
+  majorityPlayerIds: [],
+  leaderboard: [],
+  votedPlayerId: null,
+  votedPlayerIds: [],
+  jokersLeft: 2,
+  jokerActive: false,
+  jokersUsed: [],
+  gameName: '',
+  scores: {},
+  prevScores: {},
+  scorePlayers: [],
+});
+
+const totSlice = createGameSlice('tot', {
+  question: null,
+  a: '',
+  b: '',
+  myChoice: null,
+  countA: 0,
+  countB: 0,
+  pctA: 0,
+  pctB: 0,
+  resultsVisible: false,
+  majorityChoice: null,
+  voteDetails: [],
+  leaderboard: [],
+  scores: {},
+  prevScores: {},
+  scorePlayers: [],
+  timeLimit: 30,
+});
+
+// Handlers wired before the main switch — only the safe subset where the
+// slice behaviour is correct or is a superset of the existing case.
+// MARK_VOTED and game-specific actions remain as explicit switch cases.
+const sliceHandlers = {
+  // MLT: VOTE_RECEIVED (adds votedPlayerIds tracking), RESET, SET_PHASE
+  [mltSlice.types.VOTE_RECEIVED]: mltSlice.handlers[mltSlice.types.VOTE_RECEIVED],
+  [mltSlice.types.RESET]:         mltSlice.handlers[mltSlice.types.RESET],
+  [mltSlice.types.SET_PHASE]:     mltSlice.handlers[mltSlice.types.SET_PHASE],
+  // ToT: VOTE_RECEIVED (equivalent), RESET, SET_PHASE
+  [totSlice.types.VOTE_RECEIVED]: totSlice.handlers[totSlice.types.VOTE_RECEIVED],
+  [totSlice.types.RESET]:         totSlice.handlers[totSlice.types.RESET],
+  [totSlice.types.SET_PHASE]:     totSlice.handlers[totSlice.types.SET_PHASE],
+};
 
 const initialState = {
   playerId: sessionStorage.getItem('wst_playerId') || null,
@@ -214,6 +269,7 @@ const initialState = {
   },
   dt: {
     phase: 'waiting',            // 'waiting'|'prompting'|'drawing'|'guessing'|'reveal'|'end'
+    paused: false,
     hasSubmittedPrompt: false,
     promptsSubmittedCount: 0,
     totalPrompts: 0,
@@ -226,6 +282,7 @@ const initialState = {
     chainsCompletedCount: 0,
     totalChains: 0,
     chainProgress: {},           // { promptId: { stepsDone, totalSteps, drawerName } }
+    activeDrawerIds: [],         // player IDs currently drawing (updated by server)
     // Guessing phase
     guessTurn: null,             // { promptId, finalStrokes, drawerCount }
     hasGuessed: false,
@@ -262,6 +319,13 @@ const initialState = {
 };
 
 export const gameReducer = (state, action) => {
+  // ── Slice handler dispatch ─────────────────────────────────────────────────
+  // Check slice-owned action types before the main switch.  Only a subset of
+  // the slice types is wired here (see sliceHandlers above); game-specific
+  // actions fall through to the explicit cases below.
+  const sliceHandler = sliceHandlers[action.type];
+  if (sliceHandler) return sliceHandler(state, action);
+
   switch (action.type) {
     case 'SET_LANG':
       localStorage.setItem('wst_lang', action.payload);
@@ -458,16 +522,6 @@ export const gameReducer = (state, action) => {
           paused: false,
         },
       };
-    case 'TOT_VOTE_RECEIVED':
-      return {
-        ...state,
-        tot: {
-          ...state.tot,
-          voteCount: action.payload.voteCount,
-          totalVoters: action.payload.totalVoters,
-          votedPlayerIds: action.payload.votedPlayerIds || state.tot.votedPlayerIds,
-        },
-      };
     case 'TOT_MARK_VOTED':
       return {
         ...state,
@@ -538,8 +592,6 @@ export const gameReducer = (state, action) => {
       };
     case 'MLT_SET_TIMER':
       return { ...state, mlt: { ...state.mlt, secondsLeft: action.payload.secondsLeft } };
-    case 'MLT_VOTE_RECEIVED':
-      return { ...state, mlt: { ...state.mlt, voteCount: action.payload.voteCount, totalVoters: action.payload.totalVoters } };
     case 'MLT_MARK_VOTED':
       return { ...state, mlt: { ...state.mlt, hasVoted: true, votedPlayerId: action.payload.votedPlayerId } };
     case 'MLT_SET_RESULTS':
@@ -1159,6 +1211,11 @@ export const gameReducer = (state, action) => {
       return {
         ...state,
         phase: 'dt',
+        phaseTimer: {
+          secondsLeft: action.payload.secondsLeft || 60,
+          active: true,
+          paused: false,
+        },
         dt: {
           ...initialState.dt,
           phase: 'prompting',
@@ -1185,6 +1242,22 @@ export const gameReducer = (state, action) => {
           hasSubmittedPrompt: true,
         },
       };
+    case 'DT_SET_PAUSED':
+      return {
+        ...state,
+        dt: {
+          ...state.dt,
+          paused: true,
+        },
+      };
+    case 'DT_SET_RESUMED':
+      return {
+        ...state,
+        dt: {
+          ...state.dt,
+          paused: false,
+        },
+      };
     case 'DT_PROMPT_REJECTED':
       // Server rejected the prompt (e.g. missing [name]) — reopen input so player can fix it
       return {
@@ -1197,6 +1270,7 @@ export const gameReducer = (state, action) => {
     case 'DT_DRAWING_PHASE':
       return {
         ...state,
+        phaseTimer: { secondsLeft: 0, active: false, paused: false },
         dt: {
           ...state.dt,
           phase: 'drawing',
@@ -1248,6 +1322,7 @@ export const gameReducer = (state, action) => {
           ...state.dt,
           chainsCompletedCount: action.payload.chainsCompleted,
           totalChains: action.payload.totalChains,
+          activeDrawerIds: action.payload.activeDrawerIds || [],
         },
       };
     case 'DT_DRAWING_PROGRESS':
@@ -1255,6 +1330,7 @@ export const gameReducer = (state, action) => {
         ...state,
         dt: {
           ...state.dt,
+          activeDrawerIds: action.payload.activeDrawerIds || [],
           chainProgress: {
             ...state.dt.chainProgress,
             [action.payload.promptId]: {
@@ -1265,22 +1341,45 @@ export const gameReducer = (state, action) => {
           },
         },
       };
-    case 'DT_GUESSING_PHASE':
+    case 'DT_GUESSING_PHASE': {
+      // The server embeds guessPayloads (targetPlayerId → payload) in the broadcast.
+      // Resolve this player's guess turn directly in the reducer — state.playerId is
+      // always correct here, unlike staleRef in socket handlers.
+      const myGuessPayload = action.payload.guessPayloads?.[state.playerId] || null;
+      const guessTurn = myGuessPayload
+        ? {
+            promptId: myGuessPayload.promptId,
+            finalStrokes: myGuessPayload.finalStrokes || [],
+            originalSelfieData: myGuessPayload.originalSelfieData || null,
+            drawerCount: myGuessPayload.drawerCount,
+          }
+        : (state.dt.guessTurn || null); // fallback: preserve if dt:your_guess arrived early
       return {
         ...state,
+        phaseTimer: {
+          secondsLeft: action.payload.secondsLeft || 60,
+          active: true,
+          paused: false,
+        },
         dt: {
           ...state.dt,
           phase: 'guessing',
           totalGuessers: action.payload.totalGuessers,
           guessSecondsLeft: action.payload.secondsLeft || 60,
           guessedCount: 0,
-          // Preserve guessTurn if dt:your_guess already arrived (race condition guard)
-          guessTurn: state.dt.guessTurn || null,
+          guessTurn,
+          hasGuessed: false,
         },
       };
+    }
     case 'DT_YOUR_GUESS':
       return {
         ...state,
+        phaseTimer: {
+          secondsLeft: action.payload.secondsLeft || 60,
+          active: true,
+          paused: false,
+        },
         dt: {
           ...state.dt,
           phase: 'guessing',
@@ -1311,6 +1410,7 @@ export const gameReducer = (state, action) => {
     case 'DT_REVEAL_PHASE':
       return {
         ...state,
+        phaseTimer: { secondsLeft: 0, active: false, paused: false },
         dt: {
           ...state.dt,
           phase: 'reveal',
@@ -1323,6 +1423,9 @@ export const gameReducer = (state, action) => {
     case 'DT_REVEAL_UPDATE':
       return {
         ...state,
+        phaseTimer: action.payload.step === 2
+          ? state.phaseTimer
+          : { secondsLeft: 0, active: false, paused: false },
         dt: {
           ...state.dt,
           phase: 'reveal',

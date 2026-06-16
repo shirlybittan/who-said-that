@@ -6,6 +6,7 @@ import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
 import VoteCoin from '../components/game/VoteCoin';
 import VoteLocked from '../components/game/VoteLocked';
+import ConfirmVoteCard from '../game-core/player/ConfirmVoteCard';
 
 export default function SituationalVotingPage() {
   const { state, dispatch } = useGame();
@@ -13,6 +14,11 @@ export default function SituationalVotingPage() {
   const sit = state.sit;
   const sounds = useSounds();
   const [pendingVote, setPendingVote] = React.useState(null);
+
+  // Use server-driven timer (phaseTimer updated by phase_timer socket events)
+  const serverTimeLeft = state.phaseTimer?.secondsLeft ?? 0;
+  const timerActive = state.phaseTimer?.active ?? false;
+  const timerPaused = state.phaseTimer?.paused ?? false;
 
   const handleSelect = (answerId) => {
     if (sit.hasVoted) return;
@@ -108,6 +114,12 @@ export default function SituationalVotingPage() {
       <h1 className="text-3xl font-['Fredoka_One'] text-[#4ECDC4] mb-2 mt-4">{t.votePrompt}</h1>
       <p className="text-gray-400 font-['Nunito'] mb-1 italic text-center">"{sit.question}"</p>
 
+      {timerActive && !sit.hasVoted && (
+        <p className={`text-xl font-bold font-['Nunito'] mb-4 ${serverTimeLeft <= 5 ? 'text-red-400 animate-pulse' : serverTimeLeft <= 15 ? 'text-orange-400' : 'text-gray-400'}`}>
+          ⏳ {serverTimeLeft}s
+        </p>
+      )}
+
       {!state.isPlaying ? (
         // ── Cast / spectator view ─────────────────────────────────────────
         <div className="w-full max-w-md mt-6 bg-[#1A1A2E] rounded-2xl border border-[#2D2D44] p-8 text-center">
@@ -163,12 +175,14 @@ export default function SituationalVotingPage() {
           </div>
 
             {pendingVote && !sit.hasVoted && (
-              <button
-                onClick={handleConfirm}
-                className="mt-4 w-full py-3 rounded-2xl bg-[#4ECDC4] text-white font-['Fredoka_One'] text-xl active:scale-95 transition-transform"
-              >
-                Confirm Vote ✓
-              </button>
+              <ConfirmVoteCard
+                vote={state.players.find(p => p.id === pendingVote)}
+                onConfirm={handleConfirm}
+                onChange={() => setPendingVote(null)}
+                confirmLabel="✓ Confirm"
+                changeLabel="← Change"
+                titleLabel="Confirm your vote?"
+              />
             )}
 
               {sit.hasVoted && (

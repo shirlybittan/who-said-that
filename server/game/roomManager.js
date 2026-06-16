@@ -95,7 +95,8 @@ const createRoom = (socketId, playerName = 'Host', gameType = 'most-likely-to', 
     },
     mlt: {
       roundState: 'waiting',
-      currentPrompt: null,
+      phase: 'waiting',
+      prompt: null,         // was currentPrompt — updated to match VotingGameTemplate field name
       prompts: [],
       votes: {},
       scores: {},
@@ -108,7 +109,6 @@ const createRoom = (socketId, playerName = 'Host', gameType = 'most-likely-to', 
       allowSelfVote: false,
       paused: false,
       secondsLeft: 30,
-      timerRef: null
     },
     draw: {
       phase: 'waiting',
@@ -228,7 +228,11 @@ const joinRoom = (code, socketId, playerName, playerId) => {
   if (playerId) {
     const existingPlayer = room.players.find(p => p.id === playerId);
     if (existingPlayer) {
-      existingPlayer.socketId = socketId;
+      if (existingPlayer.phoneSocketId) {
+        existingPlayer.phoneSocketId = socketId;
+      } else {
+        existingPlayer.socketId = socketId;
+      }
       existingPlayer.isConnected = true;
       existingPlayer.name = playerName || existingPlayer.name;
       return { room, player: existingPlayer, isRejoin: true };

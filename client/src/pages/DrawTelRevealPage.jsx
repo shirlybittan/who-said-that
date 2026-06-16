@@ -22,15 +22,10 @@ export default function DrawTelRevealPage() {
   const step = reveal.step ?? 0;
   const isVoteStep = step === 2;
 
-  // Local vote countdown — starts when entering the vote step
-  const [voteSecondsLeft, setVoteSecondsLeft] = useState(reveal.voteSecondsLeft ?? DT_VOTE_SECS);
-  useEffect(() => {
-    if (!isVoteStep) return;
-    setVoteSecondsLeft(reveal.voteSecondsLeft ?? DT_VOTE_SECS);
-    const id = setInterval(() => setVoteSecondsLeft(s => Math.max(0, s - 1)), 1000);
-    return () => clearInterval(id);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isVoteStep]);
+  // Use synced phaseSecondsLeft for voting countdown
+  const voteSecondsLeft = state.phaseTimer?.active
+    ? state.phaseTimer.secondsLeft
+    : (reveal.voteSecondsLeft ?? DT_VOTE_SECS);
 
   const handleNext = () => {
     sounds.click?.();
@@ -108,19 +103,6 @@ export default function DrawTelRevealPage() {
                   <span className="text-gray-600 font-['Nunito']">No selfie</span>
                 </div>
               )}
-            </div>
-            {/* Full prompt */}
-            <div className="bg-[#1A1A2E] rounded-2xl border-2 border-[#FFE66D]/40 p-5 text-center">
-              <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest mb-2">The prompt</p>
-              <p className="text-2xl font-['Fredoka_One'] text-[#FFE66D] leading-snug mb-3">
-                "{reveal.finalText || ''}"
-              </p>
-              <div className="border-t border-[#2D2D44] pt-2">
-                <p className="text-sm text-gray-400 font-['Nunito']">
-                  Written by <span className="text-white font-semibold">{reveal.authorName}</span>
-                  {' '}about <span style={{ color: reveal.targetColor || '#FF6B6B' }} className="font-semibold">{reveal.targetName}</span>
-                </p>
-              </div>
             </div>
           </motion.div>
         )}

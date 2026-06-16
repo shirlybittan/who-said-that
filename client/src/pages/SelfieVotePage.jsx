@@ -4,6 +4,7 @@ import { socket } from '../socket';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
 import ReplayCanvas from '../components/game/ReplayCanvas';
+import ConfirmVoteCard from '../game-core/player/ConfirmVoteCard';
 
 export default function SelfieVotePage() {
   const { state, dispatch } = useGame();
@@ -89,14 +90,22 @@ export default function SelfieVotePage() {
         })}
       </motion.div>
 
-      {selected && !selfie.hasVoted && (
-        <button
-          onClick={handleConfirm}
-          className="mt-4 w-full max-w-md py-3 rounded-2xl bg-[#FF6B6B] text-white font-['Fredoka_One'] text-xl active:scale-95 transition-transform"
-        >
-          Confirm Vote ✓
-        </button>
-      )}
+      {selected && !selfie.hasVoted && (() => {
+        const selectedSub = selfie.submissions.find(s => s.drawerId === selected);
+        return (
+          <ConfirmVoteCard
+            vote={{
+              name: selectedSub ? `Drawing on ${selectedSub.ownerName}'s photo` : 'Anonymous Artist',
+              color: '#6B7280'
+            }}
+            onConfirm={handleConfirm}
+            onChange={() => setSelected(null)}
+            confirmLabel="✓ Confirm"
+            changeLabel="← Change"
+            titleLabel="Confirm your vote?"
+          />
+        );
+      })()}
 
       {selfie.hasVoted && (
         <p className="text-gray-400 font-['Nunito'] text-sm">

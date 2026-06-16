@@ -7,6 +7,7 @@ import { useSounds } from '../hooks/useSounds';
 import VoteCoin from '../components/game/VoteCoin';
 import MiniGameWrapper from '../components/MiniGameWrapper.jsx';
 import { useMiniGameLifecycle } from '../hooks/useMiniGameLifecycle.js';
+import ConfirmVoteCard from '../game-core/player/ConfirmVoteCard';
 
 export default function FillBlankPage() {
   const { state, dispatch } = useGame();
@@ -157,15 +158,6 @@ export default function FillBlankPage() {
           </MiniGameWrapper>
         </div>
 
-        {state.isHost && fitb.hasAnswered && (
-          <button
-            onClick={handleSkipToVote}
-            className="mt-6 text-sm text-gray-400 underline font-['Nunito'] hover:text-white transition"
-          >
-            Skip to voting
-          </button>
-        )}
-
         {/* Progress dots */}
         <div className="mt-6 flex gap-2">
           {Array.from({ length: fitb.totalAnswerers || 0 }).map((_, i) => (
@@ -196,43 +188,44 @@ export default function FillBlankPage() {
         >
           {fitb.answers.map((ans) => {
             const isOwn = fitb.myAnswerIndex >= 0 && ans.id === fitb.myAnswerIndex;
-            const selected = pendingVote === ans.id || fitb.myVote === ans.id;
-            
-            if (selected && !fitb.hasVoted) {
-              return (
-                <motion.div
-                  key={ans.id}
-                  className="w-full rounded-2xl p-4 border-2 font-['Nunito'] transition border-[#4ECDC4] bg-[#4ECDC4]/10"
-                  layoutId="selected-vote"
-                >
-                   <p className="text-xl text-white mb-4">{ans.text}</p>
-                   <div className="flex gap-2">
-                     <button onClick={() => setPendingVote(null)} className="flex-1 py-2 rounded-xl text-gray-400 bg-[#1A1A2E] hover:text-white transition">Cancel</button>
-                     <button onClick={handleVoteConfirm} className="flex-1 py-2 rounded-xl text-[#0D0D1A] bg-[#4ECDC4] font-bold hover:bg-[#3dbdb4] transition">Confirm Vote</button>
-                   </div>
-                </motion.div>
-              );
-            }
+            const isSelected = pendingVote === ans.id || fitb.myVote === ans.id;
 
             return (
               <motion.button
                 key={ans.id}
                 onClick={() => !fitb.hasVoted && !isOwn && setPendingVote(ans.id)}
-                disabled={fitb.hasVoted || isOwn || (pendingVote !== null && pendingVote !== ans.id)}
+                disabled={fitb.hasVoted || isOwn}
                 className={`w-full text-left rounded-2xl p-4 border-2 font-['Nunito'] transition
-                  ${selected ? 'border-[#FF6B6B] bg-[#FF6B6B]/10' : 'border-[#2D2D44] bg-[#1A1A2E]'}
-                  ${fitb.hasVoted || isOwn ? 'cursor-default' : 'hover:border-[#FF6B6B]/60 cursor-pointer'}
-                  ${isOwn ? 'opacity-50' : ''}
-                  ${pendingVote !== null && pendingVote !== ans.id && !fitb.hasVoted ? 'hidden' : 'block'}`}
+                  ${isSelected ? 'border-[#4ECDC4] bg-[#4ECDC4]/10' : 'border-[#2D2D44] bg-[#1A1A2E]'}
+                  ${fitb.hasVoted || isOwn ? 'cursor-default opacity-50' : 'hover:border-[#4ECDC4]/60 cursor-pointer'}
+                  ${isOwn ? 'opacity-40' : ''}`}
                 variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { duration: 0.25 } } }}
               >
                 <span className="text-white">{ans.text}</span>
                 {isOwn && <span className="ml-2 text-xs text-gray-500">(yours)</span>}
-                {selected && <span className="ml-2 text-[#FF6B6B]">✓</span>}
+                {isSelected && <span className="ml-2 text-[#4ECDC4]">✓</span>}
               </motion.button>
             );
           })}
         </motion.div>
+
+        {pendingVote !== null && !fitb.hasVoted && (() => {
+          const selectedAns = fitb.answers.find(a => a.id === pendingVote);
+          const selectedIndex = fitb.answers.findIndex(a => a.id === pendingVote);
+          return (
+            <ConfirmVoteCard
+              vote={{
+                label: selectedAns?.text || '',
+                badge: String.fromCharCode(65 + selectedIndex)
+              }}
+              onConfirm={handleVoteConfirm}
+              onChange={() => setPendingVote(null)}
+              confirmLabel="✓ Confirm"
+              changeLabel="← Change"
+              titleLabel="Confirm your vote?"
+            />
+          );
+        })()}
 
         {fitb.hasVoted && (
           <p className="text-gray-400 font-['Nunito'] text-sm">
@@ -240,14 +233,7 @@ export default function FillBlankPage() {
           </p>
         )}
 
-        {state.isHost && (
-          <button
-            onClick={handleShowResults}
-            className="mt-4 text-sm text-gray-400 underline font-['Nunito'] hover:text-white transition"
-          >
-            Show results now
-          </button>
-        )}
+
       </motion.div>
     );
   }
@@ -314,23 +300,9 @@ export default function FillBlankPage() {
           ))}
         </div>
 
-        {state.isHost && fitb.phase === 'results' && (
-          <button
-            onClick={handleNextRound}
-            className="w-full max-w-md bg-[#FF6B6B] text-white font-['Fredoka_One'] text-xl py-4 rounded-2xl hover:bg-[#e05a5a] transition mb-3"
-          >
-            {fitb.round >= fitb.totalRounds ? 'End Game' : 'Next Round →'}
-          </button>
-        )}
 
-        {state.isHost && fitb.phase === 'end' && (
-          <button
-            onClick={handleRestart}
-            className="w-full max-w-md bg-[#4ECDC4] text-black font-['Fredoka_One'] text-xl py-4 rounded-2xl hover:bg-[#3DBDB4] transition"
-          >
-            Play Again
-          </button>
-        )}
+
+
       </motion.div>
     );
   }

@@ -5,10 +5,10 @@ import { translations } from '../locales/translations';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
 import VoteLocked from '../components/game/VoteLocked';
+import ConfirmVoteCard from '../game-core/player/ConfirmVoteCard';
 
 export default function VotingPage() {
   const { state, dispatch } = useGame();
-  const [timeLeft, setTimeLeft] = useState(15);
   const t = translations[state.lang].voting;
   const sounds = useSounds();
   
@@ -16,8 +16,11 @@ export default function VotingPage() {
   const isRevealed = currentAnswer && !!currentAnswer.playerName;
   const isMyAnswer = state.myAnswerIndex !== null && state.currentAnswerIndex === state.myAnswerIndex;
 
+  // Retrieve the server-synchronized timer
+  const serverTimeLeft = state.phaseTimer?.secondsLeft ?? 0;
+  const timerActive = state.phaseTimer?.active ?? false;
+
   useEffect(() => {
-    setTimeLeft(15);
     sounds.reveal();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.currentAnswerIndex]);
@@ -26,9 +29,9 @@ export default function VotingPage() {
 
   useEffect(() => {
     if (!state.isPlaying) return;   // cast screen never auto-votes
-    if (state.hasVoted || isRevealed || state.allVotesIn) return;
-    if (timeLeft <= 0) {
-       const eligiblePlayers = state.players.filter(p => p.isConnected && p.id !== state.playerId);
+    if (state.hasVoted || isRevealed || state.allVotesIn || !timerActive) return;
+    if (serverTimeLeft <= 0) {
+       const eligiblePlayers = state.players.filter(p => p.isConnected && p.isPlaying && p.id !== state.playerId);
        if (eligiblePlayers.length > 0) {
          const target = pendingVoteId
            ? eligiblePlayers.find(p => p.id === pendingVoteId) || eligiblePlayers[Math.floor(Math.random() * eligiblePlayers.length)]
@@ -36,11 +39,8 @@ export default function VotingPage() {
          socket.emit('submit_vote', { code: state.roomCode, votedPlayerId: target.id });
          dispatch({ type: 'MARK_VOTED' });
        }
-       return;
     }
-    const timer = setInterval(() => setTimeLeft(prev => prev - 1), 1000);
-    return () => clearInterval(timer);
-  }, [timeLeft, state.hasVoted, isRevealed, state.allVotesIn, state.players, state.playerId, state.roomCode, dispatch, pendingVoteId]);
+  }, [serverTimeLeft, timerActive, state.hasVoted, isRevealed, state.allVotesIn, state.players, state.playerId, state.isPlaying, state.roomCode, dispatch, pendingVoteId]);
 
   const handleVote = (votedPlayerId) => {
     if (state.hasVoted) return;
@@ -54,11 +54,6 @@ export default function VotingPage() {
     socket.emit('submit_vote', { code: state.roomCode, votedPlayerId: pendingVoteId });
     dispatch({ type: 'MARK_VOTED' });
   };
-
-  const handleRevealAnswer = () => {
-    socket.emit('reveal_answer', { code: state.roomCode });
-  };
-
   const handleNextAnswer = () => {
     socket.emit('next_answer_request', { code: state.roomCode });
   };
@@ -73,8 +68,8 @@ export default function VotingPage() {
       <div className="flex justify-between w-full max-w-md items-center py-4 mb-4">
          <p className="text-xl font-['Fredoka_One'] text-[#FFE66D] uppercase tracking-widest text-center w-full relative">
            {t.answerNum.replace('{current}', state.currentAnswerIndex + 1).replace('{total}', state.answers.length)}
-           {!state.hasVoted && !isRevealed && !state.allVotesIn && (
-             <span className="absolute right-0 text-red-500 text-lg top-0">⏳ {timeLeft}s</span>
+           {!state.hasVoted && !isRevealed && !state.allVotesIn && timerActive && (
+             <span className="absolute right-0 text-red-500 text-lg top-0">⏳ {serverTimeLeft}s</span>
            )}
          </p>
       </div>
@@ -148,12 +143,14 @@ export default function VotingPage() {
       </motion.div>
 
       {state.isPlaying && pendingVoteId && !state.hasVoted && !isRevealed && (
-        <button
-          onClick={handleConfirmVote}
-          className="mt-5 w-full max-w-md py-4 rounded-2xl bg-[#FFE66D] text-black font-['Fredoka_One'] text-2xl active:scale-95 transition-transform"
-        >
-          Confirm Vote ✓
-        </button>
+        <ConfirmVoteCard
+          vote={state.players.find(p => p.id === pendingVoteId)}
+          onConfirm={handleConfirmVote}
+          onChange={() => setPendingVoteId(null)}
+          confirmLabel="✓ Confirm"
+          changeLabel="← Change"
+          titleLabel="Confirm your vote?"
+        />
       )}
 
       {state.hasVoted && !isRevealed && !state.allVotesIn && (

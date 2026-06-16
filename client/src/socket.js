@@ -14,7 +14,7 @@ const URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
  */
 const getAuthCredentials = (cb) => {
   cb({
-    playerId: localStorage.getItem('wst_playerId') || null,
+    playerId: sessionStorage.getItem('wst_playerId') || null,
     roomCode: localStorage.getItem('wst_roomCode') || null,
     playerName: localStorage.getItem('wst_playerName') || null,
   });

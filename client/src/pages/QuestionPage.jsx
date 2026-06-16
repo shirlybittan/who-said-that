@@ -199,13 +199,6 @@ export default function QuestionPage() {
           <p className="text-xs text-gray-500 font-['Nunito'] mt-3 text-center">
             {state.answeredCount} / {state.totalPlayers || state.players.length} {t.answered}
           </p>
-          <button
-            onClick={handleVoteSkip}
-            disabled={hasVotedSkip}
-            className={`mt-4 text-gray-400 font-['Nunito'] transition ${hasVotedSkip ? 'opacity-50 cursor-not-allowed' : 'hover:text-white underline block w-full'}`}
-          >
-            {hasVotedSkip ? t.votedSkip : t.voteSkip}
-          </button>
         </div>
       )}
     </motion.div>

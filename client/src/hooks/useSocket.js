@@ -13,9 +13,13 @@ export const useSocket = () => {
   const gameTypeRef = useRef(state.gameType);
   useEffect(() => { gameTypeRef.current = state.gameType; });
 
+  // Keep state updated in ref for closed-over event handlers
+  const stateRef = useRef(state);
+  useEffect(() => { stateRef.current = state; });
+
   useEffect(() => {
     const onConnect = () => {
-      const savedId = localStorage.getItem('wst_playerId');
+      const savedId = sessionStorage.getItem('wst_playerId');
       const savedCode = localStorage.getItem('wst_roomCode');
       const savedName = localStorage.getItem('wst_playerName');
       if (savedId && savedCode && savedName) {
@@ -570,6 +574,7 @@ export const useSocket = () => {
     const onDtDrawingPhase = (data) => {
       if (gameTypeRef.current !== 'draw-telephone') return;
       dispatch({ type: 'DT_DRAWING_PHASE', payload: data });
+      // Always navigate to wait — dt:your_turn will redirect active drawers immediately after
       navigate('/draw-tel-wait');
     };
     const onDtYourTurn = (data) => {
@@ -581,15 +586,38 @@ export const useSocket = () => {
     };
     const onDtChainProgress = (data) => {
       dispatch({ type: 'DT_CHAIN_PROGRESS', payload: data });
+      // If a chain completes and I'm no longer an active drawer, go to wait
+      const myId = stateRef.current.playerId;
+      const activeDrawerIds = data.activeDrawerIds || [];
+      if (myId && !activeDrawerIds.includes(myId)) {
+        const currentPath = window.location.pathname;
+        if (currentPath === '/draw-tel-draw') {
+          navigate('/draw-tel-wait');
+        }
+      }
     };
     const onDtDrawingProgress = (data) => {
       dispatch({ type: 'DT_DRAWING_PROGRESS', payload: data });
+      // When a new drawing turn is assigned to a different player (round 2+),
+      // players who are no longer active drawers need to go to the wait page.
+      // We check: if I'm not in activeDrawerIds AND I'm not on a relevant page already.
+      const myId = stateRef.current.playerId;
+      const activeDrawerIds = data.activeDrawerIds || [];
+      const notDrawing = myId && !activeDrawerIds.includes(myId);
+      if (notDrawing) {
+        // Only navigate away from the draw page (they may be on wait already)
+        const currentPath = window.location.pathname;
+        if (currentPath === '/draw-tel-draw') {
+          navigate('/draw-tel-wait');
+        }
+      }
     };
     const onDtGuessingPhase = (data) => {
       if (gameTypeRef.current !== 'draw-telephone') return;
+      // Reducer extracts guessTurn from guessPayloads using state.playerId directly.
+      // We always navigate to wait — DrawTelWaitPage immediately redirects to guess
+      // when guessTurn is set in state.
       dispatch({ type: 'DT_GUESSING_PHASE', payload: data });
-      // Only navigate to guess page if there's a guessTurn coming (via dt:your_guess)
-      // otherwise stay on wait page
       navigate('/draw-tel-wait');
     };
     const onDtYourGuess = (data) => {
@@ -618,6 +646,12 @@ export const useSocket = () => {
       dispatch({ type: 'DT_RESTARTED', payload: data });
       navigate('/lobby');
     };
+    const onDtPaused = () => {
+      dispatch({ type: 'DT_SET_PAUSED' });
+    };
+    const onDtResumed = () => {
+      dispatch({ type: 'DT_SET_RESUMED' });
+    };
 
     socket.on('dt:selfie_phase', onDtSelfiePhase);
     socket.on('dt:photo_received', onDtPhotoReceived);
@@ -637,6 +671,8 @@ export const useSocket = () => {
     socket.on('dt:vote_received', onDtVoteReceived);
     socket.on('dt:end', onDtEnd);
     socket.on('dt:restarted', onDtRestarted);
+    socket.on('dt:paused', onDtPaused);
+    socket.on('dt:resumed', onDtResumed);
 
     const onPhotoReused = ({ gameType }) => {
       if (gameType === 'selfie') dispatch({ type: 'SELFIE_MARK_PHOTO_SUBMITTED' });
@@ -767,6 +803,8 @@ export const useSocket = () => {
       socket.off('dt:vote_received', onDtVoteReceived);
       socket.off('dt:end', onDtEnd);
       socket.off('dt:restarted', onDtRestarted);
+      socket.off('dt:paused', onDtPaused);
+      socket.off('dt:resumed', onDtResumed);
       socket.off('player:photo_reused', onPhotoReused);
       socket.off('global_scores_updated', onGlobalScoresUpdated);
       socket.off('phase_timer', onPhaseTimer);

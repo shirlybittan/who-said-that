@@ -517,7 +517,7 @@ function QuestionPanel({ questionData, players, paused = false, serverSecondsLef
   );
 }
 
-function VotingPanel({ votingData, players }) {
+function VotingPanel({ votingData, players, phaseTimer }) {
   const current = votingData.answers?.[votingData.currentIndex];
   const authorId = current?.playerId;
   const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
@@ -529,7 +529,7 @@ function VotingPanel({ votingData, players }) {
         </p>
       </div>
 
-      <div className="text-center mb-2">
+      <div className="text-center mb-2 w-full max-w-2xl">
         <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest mb-2">🤔 Who wrote this?</p>
         <div className="w-full bg-[#1A1A2E] border-2 border-[#6C5CE7]/60 rounded-3xl p-8 relative"
           style={{ boxShadow: '0 0 40px #6C5CE720' }}>
@@ -541,18 +541,33 @@ function VotingPanel({ votingData, players }) {
         </div>
       </div>
 
-      <div className="w-full max-w-xl bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">Votes in</p>
-          <p className="text-2xl font-['Fredoka_One'] text-white">
-            {votingData.voteCount}<span className="text-gray-500">/{votingData.totalPlayers}</span>
-          </p>
-        </div>
-        <ProgressBar value={votingData.voteCount} total={votingData.totalPlayers} color="#6C5CE7" />
-        <div className="flex flex-wrap gap-3 justify-center mt-4">
-          {activePlayers.map(p => (
-            <PlayerAvatar key={p.id} player={p} size="sm" status={votingData.votedPlayerIds?.includes(p.id) ? 'voted' : 'waiting'} />
-          ))}
+      <div className="flex flex-col md:flex-row gap-6 w-full max-w-4xl justify-center items-stretch">
+        {/* Left: Timer */}
+        {phaseTimer && phaseTimer.active && (
+          <div className="flex flex-col items-center justify-center bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5 flex-shrink-0 w-44">
+            <TimerRing secondsLeft={phaseTimer.secondsLeft} paused={phaseTimer.paused} size={90} />
+            {phaseTimer.paused && (
+              <p className="text-[#FFE66D] font-['Fredoka_One'] text-sm mt-2">⏸ Paused</p>
+            )}
+          </div>
+        )}
+
+        {/* Right: Votes in & Player Avatars */}
+        <div className="flex-1 bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5 flex flex-col justify-between">
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">Votes in</p>
+              <p className="text-2xl font-['Fredoka_One'] text-white">
+                {votingData.voteCount}<span className="text-gray-500">/{votingData.totalPlayers}</span>
+              </p>
+            </div>
+            <ProgressBar value={votingData.voteCount} total={votingData.totalPlayers} color="#6C5CE7" />
+          </div>
+          <div className="flex flex-wrap gap-2 justify-center mt-4">
+            {activePlayers.map(p => (
+              <PlayerAvatar key={p.id} player={p} size="sm" status={votingData.votedPlayerIds?.includes(p.id) ? 'voted' : 'waiting'} />
+            ))}
+          </div>
         </div>
       </div>
     </div>
@@ -743,7 +758,7 @@ function TotPanel({ totData, players }) {
   );
 }
 
-function SitPanel({ sitData, players }) {
+function SitPanel({ sitData, players, phaseTimer }) {
   const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
   if (sitData.hasResults) {
     return (
@@ -803,6 +818,11 @@ function SitPanel({ sitData, players }) {
           {sitData.question}
         </h1>
       </div>
+
+      {phaseTimer && phaseTimer.active && (
+        <TimerRing secondsLeft={phaseTimer.secondsLeft} total={45} paused={phaseTimer.paused} size={100} />
+      )}
+
       <div className="w-full max-w-xl bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
         <div className="flex items-center justify-between mb-3">
           <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">
@@ -1129,7 +1149,7 @@ function DrawingHostPanel({ drawData, players, status }) {
 }
 
 // ─── Draw Telephone Host Panel ───────────────────────────────────────────────
-function DtHostPanel({ dtData, players, status, onRevealNext }) {
+function DtHostPanel({ dtData, players, status, onRevealNext, drawerTimers = {}, phaseTimer = null }) {
   const { phase, promptsSubmittedCount, totalPrompts, totalChains, chainsCompletedCount, chainProgress, guessedCount, totalGuessers, reveal, leaderboard } = dtData;
 
   // Countdown for prompting phase
@@ -1221,12 +1241,13 @@ function DtHostPanel({ dtData, players, status, onRevealNext }) {
           <div className="mt-4 flex flex-col gap-2">
             {activePlayers.map(p => {
               const isDrawing = activeDrawerIds.includes(p.id);
+              const timerVal = drawerTimers[p.id];
               return (
                 <div key={p.id} className="flex items-center gap-3 bg-[#0D0D1A] rounded-xl px-3 py-2">
                   <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: p.color }} />
                   <span className="text-white font-['Nunito'] text-sm flex-1">{p.name}</span>
                   <span className={`text-xs font-['Nunito'] px-2 py-0.5 rounded-full ${isDrawing ? 'bg-[#FF6B6B]/20 text-[#FF6B6B]' : 'bg-[#2D2D44] text-gray-500'}`}>
-                    {isDrawing ? '✏️ drawing' : '⏳ waiting'}
+                    {isDrawing ? `✏️ drawing${timerVal !== undefined ? ` (${timerVal}s)` : ''}` : '⏳ waiting'}
                   </span>
                 </div>
               );
@@ -1246,7 +1267,10 @@ function DtHostPanel({ dtData, players, status, onRevealNext }) {
           <h1 className="text-4xl font-['Fredoka_One'] text-[#FF6B6B]">Guessing Phase</h1>
           <p className="text-gray-300 font-['Nunito'] mt-1">Each target player guesses the original prompt</p>
         </motion.div>
-        <div className="w-full bg-[#1A1A2E] rounded-2xl p-6 border border-[#FF6B6B]/30">
+        {phaseTimer && phaseTimer.active && (
+          <TimerRing secondsLeft={phaseTimer.secondsLeft} total={60} paused={phaseTimer.paused} size={100} />
+        )}
+        <div className="w-full bg-[#1A1A2E] rounded-2xl p-6 border border-[#FF6B6B]/30 mt-3">
           <div className="flex justify-between items-center mb-3">
             <span className="text-gray-400 font-['Nunito']">Guesses received</span>
             <span className="text-[#FF6B6B] font-['Fredoka_One'] text-2xl">{guessedCount}<span className="text-gray-500">/{totalGuessers}</span></span>
@@ -1294,12 +1318,12 @@ function DtHostPanel({ dtData, players, status, onRevealNext }) {
           {step === 0 && (
             <motion.div
               key="ctx"
-              className="w-full grid grid-cols-2 gap-4"
+              className="w-full flex justify-center animate-fade-in"
               initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
             >
-              {/* Left: target chip + selfie */}
-              <div className="bg-[#1A1A2E] rounded-2xl border-2 border-[#FF6B6B]/40 p-5 flex flex-col items-center gap-3">
-                <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest">Someone wrote a prompt about…</p>
+              {/* Center: target chip + selfie */}
+              <div className="bg-[#1A1A2E] rounded-2xl border-2 border-[#FF6B6B]/40 p-5 flex flex-col items-center gap-3 w-full max-w-md">
+                <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest text-center">Someone wrote a prompt about…</p>
                 <div
                   className="inline-block px-5 py-2 rounded-2xl text-2xl font-['Fredoka_One']"
                   style={{ backgroundColor: targetColor || '#FF6B6B', color: '#fff' }}
@@ -1315,19 +1339,6 @@ function DtHostPanel({ dtData, players, status, onRevealNext }) {
                     <span className="text-gray-600 font-['Nunito']">No selfie</span>
                   </div>
                 )}
-              </div>
-              {/* Right: full prompt + author */}
-              <div className="bg-[#1A1A2E] rounded-2xl border-2 border-[#FFE66D]/40 p-5 flex flex-col justify-center items-center gap-4 text-center">
-                <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest">The prompt</p>
-                <p className="text-3xl font-['Fredoka_One'] text-[#FFE66D] leading-snug">
-                  "{finalText || ''}"
-                </p>
-                <div className="border-t border-[#2D2D44] pt-3 w-full">
-                  <p className="text-sm text-gray-400 font-['Nunito']">
-                    Written by <span className="text-white font-semibold">{authorName}</span>
-                    {' '}about <span style={{ color: targetColor || '#FF6B6B' }} className="font-semibold">{targetName}</span>
-                  </p>
-                </div>
               </div>
             </motion.div>
           )}
@@ -1531,11 +1542,6 @@ function FitbHostPanel({ fitbData, players, onSkipToVote, onShowResults, onNextR
             </div>
           ))}
         </div>
-        {onNextRound && (
-          <button onClick={onNextRound} className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#F9CA24] text-black hover:opacity-90 active:scale-95 transition">
-            Next Round →
-          </button>
-        )}
       </div>
     );
   }
@@ -1544,6 +1550,14 @@ function FitbHostPanel({ fitbData, players, onSkipToVote, onShowResults, onNextR
       <div className="flex flex-col items-center gap-6 w-full max-w-3xl">
         <h1 className="text-3xl font-['Fredoka_One'] text-[#F9CA24]">✏️ Fill in the Blank — Vote!</h1>
         <h2 className="text-xl font-['Nunito'] text-[#FFE66D] text-center">{fitbData.question}</h2>
+        <div className="w-full flex flex-col gap-2">
+          {(fitbData.answers || []).map((ans, i) => (
+            <div key={ans.id ?? i} className="flex items-center gap-3 rounded-2xl px-5 py-3 bg-[#1A1A2E] border border-[#2D2D44]">
+              <span className="text-sm font-['Fredoka_One'] text-[#F9CA24] w-5">{i + 1}.</span>
+              <p className="flex-1 text-white font-['Nunito'] italic">"{ans.text}"</p>
+            </div>
+          ))}
+        </div>
         <div className="w-full max-w-md bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
           <div className="flex items-center justify-between mb-3">
             <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">Votes in</p>
@@ -1567,7 +1581,7 @@ function FitbHostPanel({ fitbData, players, onSkipToVote, onShowResults, onNextR
         <p className="text-sm font-['Nunito'] text-gray-400 mt-1">Round {fitbData.round} of {fitbData.totalRounds}</p>
       </div>
       {fitbData.answerTimeLeft > 0 && (
-        <TimerRing secondsLeft={fitbData.answerTimeLeft} total={fitbData.answerTimeTotal || 30} paused={false} size={100} />
+        <TimerRing secondsLeft={fitbData.answerTimeLeft} total={fitbData.answerTimeTotal || 30} paused={!!fitbData.paused} size={100} />
       )}
       <div className="w-full bg-[#1A1A2E] border-2 border-[#F9CA24]/50 rounded-3xl p-8 text-center">
         <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-3">Complete the sentence</p>
@@ -1727,8 +1741,8 @@ function CaptionHostPanel({ captionData, players }) {
   const roundLabel = captionData?.totalRounds > 1 ? ` — Round ${captionData.round || 1}/${captionData.totalRounds}` : '';
 
   const photoBlock = captionData?.featuredPhotoData ? (
-    <div className="w-full rounded-2xl overflow-hidden border border-[#2D2D44]" style={{ aspectRatio: '4/3' }}>
-      <img src={captionData.featuredPhotoData} alt="featured" className="w-full h-full object-cover" />
+    <div className="w-full rounded-2xl overflow-hidden border border-[#2D2D44] bg-black" style={{ aspectRatio: '4/3' }}>
+      <img src={captionData.featuredPhotoData} alt="featured" className="w-full h-full object-contain" />
     </div>
   ) : null;
 
@@ -2084,6 +2098,7 @@ function CreateRoomForm({ onSubmit, onBack }) {
     { id: 'this-or-that',  label: '⚡ This or That',  accent: '#6C5CE7' },
     { id: 'drawing',       label: '🎨 Pictionary Battle',  accent: '#C39BD3' },
     { id: 'fill-in-the-blank', label: '✏️ Fill in the Blank', accent: '#F9CA24' },
+    { id: 'draw-telephone', label: '📞 Drawing in Chain', accent: '#FF6B6B' },
     { id: 'selfie-roast',  label: '📸 Draw on Friends', accent: '#FD79A8' },
     { id: 'caption',       label: '💬 Selfie Captions', accent: '#FD79A8' },
     { id: 'pmatch',        label: '🎭 Selfie Challenge', accent: '#FDCB6E' },
@@ -2270,7 +2285,7 @@ function CreateRoomForm({ onSubmit, onBack }) {
 // ─── Host control bar (creator only) ─────────────────────────────────────────
 // QUEUE_GAME_LABELS imported from '../config/hostControls'
 
-function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbData, photoVoteData, captionData, isMixedMode, onStart, onMltPauseResume, onMltChangeQuestion, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, onNewGame, onPlayAgain, onNewPartyPack, gameQueue, queueIndex, onSelfieNextRound, onSelfieSkipQuestion, onShowSelfieResults, onFitbChangeQuestion, onFitbSkipToVote, onFitbShowResults, onFitbNextRound, onPhotoVoteChangeQuestion, onPhotoVoteSkipToResults, onPhotoVoteNextRound, onCaptionChangeQuestion, onCaptionSkipToVoting, onCaptionSkipToResults, onCaptionNextRound, onAnswerPauseResume, answerPaused }) {
+function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbData, photoVoteData, captionData, isMixedMode, onStart, onMltPauseResume, onMltChangeQuestion, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, onNewGame, onPlayAgain, onNewPartyPack, gameQueue, queueIndex, onSelfieNextRound, onSelfieSkipQuestion, onShowSelfieResults, onFitbChangeQuestion, onFitbSkipToVote, onFitbShowResults, onFitbNextRound, onPhotoVoteChangeQuestion, onPhotoVoteSkipToResults, onPhotoVoteNextRound, onCaptionChangeQuestion, onCaptionSkipToVoting, onCaptionSkipToResults, onCaptionNextRound, onAnswerPauseResume, answerPaused, onFitbPauseResume, dtData, onDtPauseResume }) {
   if (!isRoomCreator) return null;
 
   const playingCount = players.filter(p => p.isPlaying && p.isConnected).length;
@@ -2336,11 +2351,12 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
         <button onClick={onAnswerPauseResume} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FFE66D] text-[#FFE66D] bg-[#FFE66D]/10 hover:bg-[#FFE66D]/20 active:scale-95 transition">
           {answerPaused ? '▶ Resume' : '⏸ Pause'}
         </button>
-        <button onClick={onSkipQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FFE66D] hover:text-[#FFE66D] active:scale-95 transition">
-          ⏭ Skip Question
-        </button>
-        <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-          🔀 Skip Mini Game
+        <button
+          onClick={() => socketRef.current?.emit('sit:force_results', { code: gameInfo.code })}
+          className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#FFE66D] text-black hover:bg-[#ffdd33] active:scale-95 transition"
+          style={{ boxShadow: '0 0 20px #FFE66D60' }}
+        >
+          Show Results →
         </button>
       </div>
     );
@@ -2380,19 +2396,15 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
   } else if (status === 'voting') {
     controls = (
       <div className="flex gap-3">
-        <button onClick={onSkipQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FFE66D] hover:text-[#FFE66D] active:scale-95 transition">
-          ⏭ Skip Question
+        <button onClick={onAnswerPauseResume} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FFE66D] text-[#FFE66D] bg-[#FFE66D]/10 hover:bg-[#FFE66D]/20 active:scale-95 transition">
+          {answerPaused ? '▶ Resume' : '⏸ Pause'}
         </button>
         <button
           onClick={onNextAnswer}
-          disabled={!votingData?.allVotesIn}
-          className={`px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl transition ${votingData?.allVotesIn ? 'bg-[#6C5CE7] text-white hover:bg-[#7d6fd4] active:scale-95' : 'bg-[#2D2D44] text-gray-500 cursor-not-allowed'}`}
-          style={votingData?.allVotesIn ? { boxShadow: '0 0 20px #6C5CE760' } : {}}
+          className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#6C5CE7] text-white hover:bg-[#7d6fd4] active:scale-95 transition"
+          style={{ boxShadow: '0 0 20px #6C5CE760' }}
         >
-          {votingData?.allVotesIn ? 'Next Answer →' : '⏳ Waiting for votes...'}
-        </button>
-        <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-          🔀 Skip Mini Game
+          Next Answer →
         </button>
       </div>
     );
@@ -2434,11 +2446,11 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
     if (fitbPhase === 'answering') {
       controls = (
         <div className="flex gap-3">
+          <button onClick={onFitbPauseResume} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FFE66D] text-[#FFE66D] bg-[#FFE66D]/10 hover:bg-[#FFE66D]/20 active:scale-95 transition">
+            {fitbData?.paused ? '▶ Resume' : '⏸ Pause'}
+          </button>
           <button onClick={onFitbChangeQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#F9CA24] hover:text-[#F9CA24] active:scale-95 transition">
             🔄 Change Question
-          </button>
-          <button onClick={onFitbSkipToVote} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FFE66D] hover:text-[#FFE66D] active:scale-95 transition">
-            ⏭ Skip to Vote
           </button>
           <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
             🔀 Skip Mini Game
@@ -2475,9 +2487,6 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
         <div className="flex gap-3">
           <button onClick={onCaptionChangeQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FD79A8] hover:text-[#FD79A8] active:scale-95 transition">
             🔄 Change Question
-          </button>
-          <button onClick={onCaptionSkipToVoting} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FD79A8] hover:text-[#FD79A8] active:scale-95 transition">
-            🗳️ Start Voting
           </button>
           <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
             🔀 Skip Mini Game
@@ -2517,7 +2526,18 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
     }
   } else if (status === 'photovote') {
     const pvPhase = photoVoteData?.phase;
-    if (pvPhase === 'voting') {
+    if (pvPhase === 'photo') {
+      controls = (
+        <div className="flex gap-3">
+          <button onClick={onPhotoVoteChangeQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FDCB6E] hover:text-[#FDCB6E] active:scale-95 transition">
+            🔄 Change Question
+          </button>
+          <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+            🔀 Skip Mini Game
+          </button>
+        </div>
+      );
+    } else if (pvPhase === 'voting') {
       controls = (
         <div className="flex gap-3">
           <button onClick={onPhotoVoteChangeQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FDCB6E] hover:text-[#FDCB6E] active:scale-95 transition">
@@ -2586,6 +2606,26 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
       <div className="flex gap-3">
         <button onClick={onSelfieNextRound} className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#FD79A8] text-black hover:bg-[#e8628f] active:scale-95 transition" style={{ boxShadow: '0 0 20px #FD79A840' }}>
           Next Round →
+        </button>
+        <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+          🔀 Skip Mini Game
+        </button>
+      </div>
+    );
+  } else if (status === 'dt-selfie') {
+    controls = (
+      <div className="flex gap-3">
+        <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
+          🔀 Skip Mini Game
+        </button>
+      </div>
+    );
+  } else if (['dt-prompting', 'dt-drawing', 'dt-guessing', 'dt-reveal'].includes(status)) {
+    const isPaused = !!dtData?.paused;
+    controls = (
+      <div className="flex gap-3">
+        <button onClick={onDtPauseResume} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FFE66D] text-[#FFE66D] bg-[#FFE66D]/10 hover:bg-[#FFE66D]/20 active:scale-95 transition">
+          {isPaused ? '▶ Resume' : '⏸ Pause'}
         </button>
         <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
           🔀 Skip Mini Game
@@ -2693,6 +2733,7 @@ export default function HostPage() {
   });
 
   const [phaseTimer, setPhaseTimer] = useState({ secondsLeft: 0, active: false, paused: false });
+  const [drawerTimers, setDrawerTimers] = useState({});
 
   const [questionData, setQuestionData] = useState({
     text: '', round: 0, totalRounds: 0, type: 'wst', target: null,
@@ -2726,6 +2767,7 @@ export default function HostPage() {
 
   const DT_INITIAL = {
     phase: 'waiting',
+    paused: false,
     promptsSubmittedCount: 0, totalPrompts: 0, submittedPlayerIds: [],
     totalChains: 0, chainsCompletedCount: 0, chainProgress: {},
     guessedCount: 0, totalGuessers: 0, guessedPlayerIds: [],
@@ -2834,7 +2876,7 @@ export default function HostPage() {
     });
 
     sock.on('mlt:timer', ({ secondsLeft }) => setMlt(prev => ({ ...prev, secondsLeft })));
-    sock.on('mlt:question_changed', (data) => setMlt(prev => ({ ...prev, currentPrompt: data.currentPrompt })));
+    sock.on('mlt:question_changed', (data) => setMlt(prev => ({ ...prev, prompt: data.currentPrompt, currentPrompt: data.currentPrompt })));
     sock.on('mlt:paused', () => setMlt(prev => ({ ...prev, paused: true })));
     sock.on('mlt:resumed', ({ secondsLeft }) => setMlt(prev => ({ ...prev, paused: false, secondsLeft })));
     sock.on('mlt:vote_received', ({ voteCount, totalVoters, votedPlayerIds }) => { console.log(`[Host] MLT vote: ${voteCount}/${totalVoters}`); setMlt(prev => ({ ...prev, voteCount, totalVoters, votedPlayerIds: votedPlayerIds || prev.votedPlayerIds })); });
@@ -3023,9 +3065,9 @@ export default function HostPage() {
       }));
       setStatus('fitb');
     });
-    sock.on('fitb:answer_timer', ({ secondsLeft }) => {
+    sock.on('fitb:answer_timer', ({ secondsLeft, paused }) => {
       if (!isActiveSock()) return;
-      setFitbData(prev => ({ ...prev, answerTimeLeft: secondsLeft }));
+      setFitbData(prev => ({ ...prev, answerTimeLeft: secondsLeft, paused: !!paused }));
     });
     sock.on('fitb:answer_received', ({ answeredCount, totalAnswerers, answeredPlayerIds }) => {
       setFitbData(prev => ({ ...prev, answeredCount, totalAnswerers, answeredPlayerIds: answeredPlayerIds || prev.answeredPlayerIds }));
@@ -3196,11 +3238,16 @@ export default function HostPage() {
       if (!isActiveSock()) return;
       if (p && p.length > 0) setPlayers(p);
       setDtData(prev => ({ ...prev, phase: 'drawing', totalChains, chainsCompletedCount: 0, chainProgress: {} }));
+      setDrawerTimers({});
       setStatus('dt-drawing');
     });
     sock.on('dt:chain_progress', ({ chainsCompleted, totalChains, activeDrawerIds }) => {
       if (!isActiveSock()) return;
       setDtData(prev => ({ ...prev, chainsCompletedCount: chainsCompleted, totalChains, activeDrawerIds: activeDrawerIds || prev.activeDrawerIds || [] }));
+    });
+    sock.on('dt:drawer_timer', ({ playerId, secondsLeft }) => {
+      if (!isActiveSock()) return;
+      setDrawerTimers(prev => ({ ...prev, [playerId]: secondsLeft }));
     });
     sock.on('dt:drawing_progress', ({ promptId, stepsDone, totalSteps, drawerName, activeDrawerIds }) => {
       if (!isActiveSock()) return;
@@ -3248,6 +3295,14 @@ export default function HostPage() {
       if (!isActiveSock()) return;
       setErrorMsg(message);
       setStatus('error');
+    });
+    sock.on('dt:paused', () => {
+      if (!isActiveSock()) return;
+      setDtData(prev => ({ ...prev, paused: true }));
+    });
+    sock.on('dt:resumed', () => {
+      if (!isActiveSock()) return;
+      setDtData(prev => ({ ...prev, paused: false }));
     });
 
     sock.on('game_changed', ({ gameType, players: p, gameName }) => {
@@ -3335,6 +3390,8 @@ export default function HostPage() {
             answeredCount: room.fitb.answeredCount || 0,
             totalAnswerers: room.fitb.totalAnswerers || 0,
             answeredPlayerIds: room.fitb.answeredPlayerIds || [],
+            paused: room.fitb.paused || false,
+            answerTimeLeft: room.fitb.answerSecondsLeft || 30,
           }));
           console.log(`[Host] FITB answering restored: ${room.fitb.answeredCount}/${room.fitb.totalAnswerers}`);
         } else if (room.fitb.phase === 'voting') {
@@ -3541,6 +3598,20 @@ export default function HostPage() {
     else sock.emit('answer:pause', { code: gameInfo.code });
   };
 
+  const handleFitbPauseResume = () => {
+    const sock = socketRef.current;
+    if (!sock) return;
+    if (fitbData.paused) sock.emit('fitb:resume', { code: gameInfo.code });
+    else sock.emit('fitb:pause', { code: gameInfo.code });
+  };
+
+  const handleDtPauseResume = () => {
+    const sock = socketRef.current;
+    if (!sock) return;
+    if (dtData.paused) sock.emit('dt:resume', { code: gameInfo.code });
+    else sock.emit('dt:pause', { code: gameInfo.code });
+  };
+
   // "Change Question" in MLT replaces the current round's prompt without advancing the round counter
   const handleMltChangeQuestion = () => socketRef.current?.emit('mlt:change_question', { code: gameInfo.code });
   const handleMltSkip = () => socketRef.current?.emit('mlt:skip', { code: gameInfo.code });
@@ -3707,7 +3778,7 @@ export default function HostPage() {
       case 'question':
         return <QuestionPanel questionData={questionData} players={players} paused={!!phaseTimer?.paused} serverSecondsLeft={phaseTimer?.secondsLeft} />;
       case 'voting':
-        return <VotingPanel votingData={votingData} players={players} />;
+        return <VotingPanel votingData={votingData} players={players} phaseTimer={phaseTimer} />;
       case 'round-end':
         return <RoundEndPanel roundEndData={roundEndData} players={players} />;
       case 'game-end':
@@ -3718,7 +3789,7 @@ export default function HostPage() {
         return <TotEndPanel totData={totData} />;
       case 'sit-voting':
       case 'sit-results':
-        return <SitPanel sitData={sitData} players={players} />;
+        return <SitPanel sitData={sitData} players={players} phaseTimer={phaseTimer} />;
       case 'drawing':
       case 'draw-voting':
       case 'draw-results':
@@ -3730,7 +3801,16 @@ export default function HostPage() {
       case 'dt-guessing':
       case 'dt-reveal':
       case 'dt-end':
-        return <DtHostPanel dtData={dtData} players={players} status={status} onRevealNext={() => socketRef.current?.emit('dt:reveal_next', { code: gameInfo.code })} />;
+        return (
+          <DtHostPanel
+            dtData={dtData}
+            players={players}
+            status={status}
+            drawerTimers={drawerTimers}
+            phaseTimer={phaseTimer}
+            onRevealNext={() => socketRef.current?.emit('dt:reveal_next', { code: gameInfo.code })}
+          />
+        );
       case 'fitb':
       case 'fitb-end':
         return <FitbHostPanel fitbData={fitbData} players={players} onSkipToVote={() => socketRef.current?.emit('fitb:skip_to_vote', { code: gameInfo.code })} onShowResults={() => socketRef.current?.emit('fitb:show_results', { code: gameInfo.code })} onNextRound={() => socketRef.current?.emit('fitb:next_round', { code: gameInfo.code })} />;
@@ -4009,6 +4089,7 @@ export default function HostPage() {
         onFitbSkipToVote={() => socketRef.current?.emit('fitb:skip_to_vote', { code: gameInfo.code })}
         onFitbShowResults={() => socketRef.current?.emit('fitb:show_results', { code: gameInfo.code })}
         onFitbNextRound={() => socketRef.current?.emit('fitb:next_round', { code: gameInfo.code })}
+        onFitbPauseResume={handleFitbPauseResume}
         photoVoteData={photoVoteData}
         onPhotoVoteChangeQuestion={() => socketRef.current?.emit('photovote:change_question', { code: gameInfo.code })}
         onPhotoVoteSkipToResults={() => socketRef.current?.emit('photovote:skip_to_results', { code: gameInfo.code })}
@@ -4020,6 +4101,8 @@ export default function HostPage() {
         onCaptionNextRound={() => socketRef.current?.emit('caption:next_round', { code: gameInfo.code })}
         onAnswerPauseResume={handleAnswerPauseResume}
         answerPaused={!!phaseTimer?.paused}
+        dtData={dtData}
+        onDtPauseResume={handleDtPauseResume}
       />}
     </div>
   );

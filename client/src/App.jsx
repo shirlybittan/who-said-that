@@ -125,7 +125,7 @@ const GlobalTimerOverlay = () => {
   const { state } = useGame();
   const timer = state.phaseTimer;
   // Hide timer in lobby, home, or end screens — it's only relevant during active gameplay
-      const hiddenPhases = ['lobby', 'home', 'game_end', 'gameEnd', 'dt', 'drawing', 'selfie', 'mlt', 'fitb', 'caption'];
+  const hiddenPhases = ['lobby', 'home', 'game_end', 'gameEnd', 'dt', 'drawing', 'selfie', 'mlt', 'fitb', 'caption', 'sit-voting', 'voting'];
   if (!timer?.active || timer.secondsLeft <= 0 || hiddenPhases.includes(state.phase)) return null;
   const total = state.roomConfig?.roundDurationSecs || 60;
   return (

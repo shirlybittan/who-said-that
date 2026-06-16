@@ -88,7 +88,7 @@ export default function CaptionWritePage() {
         {caption.featuredPhotoData && (
           <img
             src={caption.featuredPhotoData}
-            className="w-56 h-56 object-cover rounded-2xl border-2 border-[#FD79A8] mb-3"
+            className="w-56 h-56 object-contain rounded-2xl border-2 border-[#FD79A8] mb-3 bg-black"
             alt={`${caption.featuredOwnerName}'s selfie`}
           />
         )}
