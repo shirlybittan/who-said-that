@@ -21,7 +21,7 @@ export default function HomePage() {
   // in useSocket.js doesn't auto-rejoin a room that no longer exists and
   // doesn't show every new tab under the same old player name.
   useEffect(() => {
-    localStorage.removeItem('wst_playerId');
+    sessionStorage.removeItem('wst_playerId');
     localStorage.removeItem('wst_roomCode');
     dispatch({ type: 'CLEAR_SESSION' });
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -35,7 +35,7 @@ export default function HomePage() {
     const code = roomCode.toUpperCase();
 
     localStorage.removeItem('wst_roomCode');
-    localStorage.removeItem('wst_playerId');
+    sessionStorage.removeItem('wst_playerId');
     localStorage.setItem('wst_playerName', joinNickname.trim());
 
     if (socket.connected) {

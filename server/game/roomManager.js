@@ -228,7 +228,11 @@ const joinRoom = (code, socketId, playerName, playerId) => {
   if (playerId) {
     const existingPlayer = room.players.find(p => p.id === playerId);
     if (existingPlayer) {
-      existingPlayer.socketId = socketId;
+      if (existingPlayer.phoneSocketId) {
+        existingPlayer.phoneSocketId = socketId;
+      } else {
+        existingPlayer.socketId = socketId;
+      }
       existingPlayer.isConnected = true;
       existingPlayer.name = playerName || existingPlayer.name;
       return { room, player: existingPlayer, isRejoin: true };

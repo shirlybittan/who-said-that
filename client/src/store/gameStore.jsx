@@ -1341,7 +1341,19 @@ export const gameReducer = (state, action) => {
           },
         },
       };
-    case 'DT_GUESSING_PHASE':
+    case 'DT_GUESSING_PHASE': {
+      // The server embeds guessPayloads (targetPlayerId → payload) in the broadcast.
+      // Resolve this player's guess turn directly in the reducer — state.playerId is
+      // always correct here, unlike staleRef in socket handlers.
+      const myGuessPayload = action.payload.guessPayloads?.[state.playerId] || null;
+      const guessTurn = myGuessPayload
+        ? {
+            promptId: myGuessPayload.promptId,
+            finalStrokes: myGuessPayload.finalStrokes || [],
+            originalSelfieData: myGuessPayload.originalSelfieData || null,
+            drawerCount: myGuessPayload.drawerCount,
+          }
+        : (state.dt.guessTurn || null); // fallback: preserve if dt:your_guess arrived early
       return {
         ...state,
         phaseTimer: {
@@ -1355,10 +1367,11 @@ export const gameReducer = (state, action) => {
           totalGuessers: action.payload.totalGuessers,
           guessSecondsLeft: action.payload.secondsLeft || 60,
           guessedCount: 0,
-          // Preserve guessTurn if dt:your_guess already arrived (race condition guard)
-          guessTurn: state.dt.guessTurn || null,
+          guessTurn,
+          hasGuessed: false,
         },
       };
+    }
     case 'DT_YOUR_GUESS':
       return {
         ...state,

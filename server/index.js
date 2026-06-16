@@ -560,21 +560,21 @@ function cancelAllTimers(room) {
 
 // ─── Socket-identity helpers ────────────────────────────────────────────────
 // When a host player opens the TV/host-screen at /host, HostPage.jsx creates a
-// NEW socket and calls join_spectator, which overwrites hostPlayer.socketId with
-// the TV socket id.  The original phone socket id is preserved in phoneSocketId.
+// NEW socket and calls join_spectator, which sets hostPlayer.tvSocketId to the TV socket id.
+// This allows hostPlayer.socketId to remain strictly the phone controller socket, preventing
+// reconnection conflicts and restoring clear event targeting.
 //
-// findPlayer   — locate a player by EITHER the primary (TV/current) socket or
-//                the preserved phone socket.  Use for all inbound event handlers.
+// findPlayer   — locate a player by EITHER their phone socket, TV socket, or legacy phoneSocketId.
 //
-// getPlayerSocket — return the phone socket id when present (so the host player
-//                   receives their personal game events on their phone, not the
-//                   TV screen), falling back to the primary socketId.
+// getPlayerSocket — return the phone/mobile socket id when present so personal game events
+//                   reach their controller instead of the TV screen.
 
 function findPlayer(room, socketId) {
-  return room.players.find(p => p.socketId === socketId || p.phoneSocketId === socketId);
+  return room.players.find(p => p.socketId === socketId || p.tvSocketId === socketId || p.phoneSocketId === socketId);
 }
 
 function getPlayerSocket(player) {
+  if (player.tvSocketId) return player.socketId;
   return player.phoneSocketId || player.socketId;
 }
 // ────────────────────────────────────────────────────────────────────────────
@@ -916,6 +916,7 @@ io.on('connection', (socket) => {
       const targetPlayer = room.players[targetPlayerIndex];
       const targetSocketId = targetPlayer.socketId;
       const targetPhoneSocketId = targetPlayer.phoneSocketId;
+      const targetTvSocketId = targetPlayer.tvSocketId;
       
       // Remove from room
       room.players.splice(targetPlayerIndex, 1);
@@ -923,7 +924,7 @@ io.on('connection', (socket) => {
       // Notify remaining players
       io.to(code).emit('player_joined', { players: room.players });
       
-      // Disconnect the target player explicitly (both TV socket and phone socket if present)
+      // Disconnect the target player explicitly (TV socket, phone socket, and phoneSocketId if present)
       if (targetSocketId && io.sockets.sockets.get(targetSocketId)) {
         io.sockets.sockets.get(targetSocketId).emit('kicked');
         io.sockets.sockets.get(targetSocketId).disconnect(true);
@@ -931,6 +932,10 @@ io.on('connection', (socket) => {
       if (targetPhoneSocketId && io.sockets.sockets.get(targetPhoneSocketId)) {
         io.sockets.sockets.get(targetPhoneSocketId).emit('kicked');
         io.sockets.sockets.get(targetPhoneSocketId).disconnect(true);
+      }
+      if (targetTvSocketId && io.sockets.sockets.get(targetTvSocketId)) {
+        io.sockets.sockets.get(targetTvSocketId).emit('kicked');
+        io.sockets.sockets.get(targetTvSocketId).disconnect(true);
       }
     }
   });

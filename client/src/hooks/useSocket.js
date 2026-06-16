@@ -19,7 +19,7 @@ export const useSocket = () => {
 
   useEffect(() => {
     const onConnect = () => {
-      const savedId = localStorage.getItem('wst_playerId');
+      const savedId = sessionStorage.getItem('wst_playerId');
       const savedCode = localStorage.getItem('wst_roomCode');
       const savedName = localStorage.getItem('wst_playerName');
       if (savedId && savedCode && savedName) {
@@ -614,21 +614,11 @@ export const useSocket = () => {
     };
     const onDtGuessingPhase = (data) => {
       if (gameTypeRef.current !== 'draw-telephone') return;
+      // Reducer extracts guessTurn from guessPayloads using state.playerId directly.
+      // We always navigate to wait — DrawTelWaitPage immediately redirects to guess
+      // when guessTurn is set in state.
       dispatch({ type: 'DT_GUESSING_PHASE', payload: data });
-
-      // The server now includes guessPayloads map (targetPlayerId -> payload) in the broadcast.
-      // Check if this player's ID is a target — if so, dispatch DT_YOUR_GUESS immediately
-      // without waiting for the direct socket message (which may be lost).
-      const myId = stateRef.current.playerId;
-      const myPayload = data.guessPayloads?.[myId];
-      if (myPayload) {
-        dispatch({ type: 'DT_YOUR_GUESS', payload: myPayload });
-        navigate('/draw-tel-guess');
-      } else {
-        // Not a guesser yet, or guess payload not in broadcast — go to wait.
-        // DrawTelWaitPage will redirect to guess when dt:your_guess arrives.
-        navigate('/draw-tel-wait');
-      }
+      navigate('/draw-tel-wait');
     };
     const onDtYourGuess = (data) => {
       if (gameTypeRef.current !== 'draw-telephone') return;

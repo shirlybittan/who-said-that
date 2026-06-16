@@ -64,11 +64,15 @@ export default function DrawTelWaitPage() {
   const title =
     phase === 'guessing' ? 'Guessing phase…' :
     phase === 'drawing'  ? 'Drawing phase…' :
+    phase === 'reveal'   ? 'Reveal time!' :
+    phase === 'end'      ? 'Game over!' :
     'Waiting…';
 
   const subtitle =
     phase === 'guessing' ? `Waiting for guessers… (${dt.guessedCount}/${dt.totalGuessers})` :
     phase === 'drawing'  ? `${dt.chainsCompletedCount}/${dt.totalChains} chains done` :
+    phase === 'reveal'   ? 'Heading to the reveal…' :
+    phase === 'end'      ? 'Heading to results…' :
     'Hang tight!';
 
   return (
