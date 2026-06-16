@@ -1,9 +1,17 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { motion } from 'framer-motion';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
+<<<<<<< HEAD
 
+=======
+>>>>>>> origin/main
 import { useSounds } from '../hooks/useSounds';
 import { CANVAS_W, CANVAS_H, drawStroke, redrawOverlay } from '../utils/canvasUtils';
+import { useFullscreen } from '../hooks/useFullscreen';
+import TimerRing from '../components/game/TimerRing';
+import MiniGameWrapper from '../components/MiniGameWrapper.jsx';
+import { useMiniGameLifecycle } from '../hooks/useMiniGameLifecycle.js';
 
 const COLORS = [
   '#000000', '#FFFFFF', '#EF4444', '#F97316', '#EAB308',
@@ -15,8 +23,8 @@ const WIDTHS = [2, 6, 14];
 const getPos = (canvas, clientX, clientY) => {
   const rect = canvas.getBoundingClientRect();
   return {
-    x: Math.round((clientX - rect.left) * (CANVAS_W / rect.width)),
-    y: Math.round((clientY - rect.top) * (CANVAS_H / rect.height)),
+    x: Math.round((clientX - rect.left) * (canvas.width  / rect.width)),
+    y: Math.round((clientY - rect.top)  * (canvas.height / rect.height)),
   };
 };
 
@@ -34,6 +42,7 @@ export default function SelfieDrawPage() {
   const [color, setColor] = useState('#EF4444');
   const [width, setWidth] = useState(WIDTHS[1]);
   const [strokeCount, setStrokeCount] = useState(0);
+  const { isFullscreen, containerRef, toggleFullscreen } = useFullscreen();
 
   // Ensure canvas is transparent to show photo underneath
   useEffect(() => {
@@ -63,7 +72,7 @@ export default function SelfieDrawPage() {
 
   const onPointerDown = useCallback((e) => {
     e.preventDefault();
-    if (selfie.hasSubmittedDrawing) return;
+    // Allow drawing even after submit — each subsequent stroke updates the submission
     isDrawing.current = true;
     const pt = getEventPos(e);
     curStroke.current = { color, width, type: tool, points: [pt] };
@@ -80,6 +89,20 @@ export default function SelfieDrawPage() {
     drawStroke(ctx, curStroke.current);
   }, [getEventPos]);
 
+  const handleSubmit = () => {
+    sounds.answer?.();
+    socket.emit('selfie:submit_drawing', { code: state.roomCode, strokes: strokesRef.current });
+    if (!selfie.hasSubmittedDrawing) {
+      dispatch({ type: 'SELFIE_MARK_DRAWING_SUBMITTED' });
+    }
+  };
+
+  const { hasConfirmed, confirm, editResponse, markConfirmed } = useMiniGameLifecycle({
+    onSubmit: handleSubmit,
+    resetKey: selfie.assignedPrompt,
+    initialConfirmed: selfie.hasSubmittedDrawing,
+  });
+
   const onPointerUp = useCallback((e) => {
     e.preventDefault();
     if (!isDrawing.current || !curStroke.current) return;
@@ -87,45 +110,43 @@ export default function SelfieDrawPage() {
     if (curStroke.current.points.length > 0) {
       strokesRef.current.push({ ...curStroke.current, points: [...curStroke.current.points] });
       setStrokeCount(strokesRef.current.length);
+      if (hasConfirmed) {
+        socket.emit('selfie:submit_drawing', { code: state.roomCode, strokes: strokesRef.current });
+      }
     }
     curStroke.current = null;
-  }, []);
+  }, [hasConfirmed, state.roomCode]);
 
   const handleUndo = () => {
     strokesRef.current.pop();
     setStrokeCount(strokesRef.current.length);
     redrawOverlay(canvasRef.current, strokesRef.current);
+    if (hasConfirmed) {
+      socket.emit('selfie:submit_drawing', { code: state.roomCode, strokes: strokesRef.current });
+    }
   };
 
   const handleClear = () => {
     strokesRef.current = [];
     setStrokeCount(0);
     redrawOverlay(canvasRef.current, strokesRef.current);
-  };
-
-  const handleSubmit = () => {
-    if (selfie.hasSubmittedDrawing) return;
-    sounds.answer?.();
-    socket.emit('selfie:submit_drawing', { code: state.roomCode, strokes: strokesRef.current });
-    dispatch({ type: 'SELFIE_MARK_DRAWING_SUBMITTED' });
+    if (hasConfirmed) {
+      socket.emit('selfie:submit_drawing', { code: state.roomCode, strokes: [] });
+    }
   };
 
   // Auto-submit when host signals the drawing phase is ending (skip to vote)
   useEffect(() => {
     const onDrawingEnding = () => {
-      if (!selfie.hasSubmittedDrawing) {
+      if (!hasConfirmed) {
         socket.emit('selfie:submit_drawing', { code: state.roomCode, strokes: strokesRef.current });
         dispatch({ type: 'SELFIE_MARK_DRAWING_SUBMITTED' });
+        markConfirmed();
       }
     };
     socket.on('selfie:drawing_ending', onDrawingEnding);
     return () => socket.off('selfie:drawing_ending', onDrawingEnding);
-  }, [selfie.hasSubmittedDrawing, state.roomCode, dispatch]);
-
-  const handleSkip = () => {
-    sounds.click?.();
-    socket.emit('selfie:skip_to_vote', { code: state.roomCode });
-  };
+  }, [hasConfirmed, state.roomCode, dispatch, markConfirmed]);
 
   const handleRetake = () => {
     sounds.click?.();
@@ -142,27 +163,39 @@ export default function SelfieDrawPage() {
 
   return (
     <motion.div
-      className="flex flex-col items-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-4"
+      ref={containerRef}
+      className={`flex flex-col items-center bg-[#0D0D1A] text-[#F7F7F7] ${isFullscreen ? 'justify-center min-h-screen p-0' : 'min-h-screen p-4'}`}
       initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}
     >
-      <h1 className="text-2xl font-['Fredoka_One'] text-[#FF6B6B] mt-4 mb-1">🎨 Draw on {selfie.assignedOwnerName}'s selfie!</h1>
-      {selfie.assignedPrompt ? (
-        <div className="w-full max-w-sm bg-[#FFE66D]/10 border border-[#FFE66D]/40 rounded-xl px-4 py-2 mb-3 text-center">
-          <p className="text-[#FFE66D] font-['Fredoka_One'] text-base">{selfie.assignedPrompt}</p>
-        </div>
-      ) : (
-        <p className="text-gray-400 font-['Nunito'] text-xs mb-3">Draw on their selfie</p>
+      {!isFullscreen && (
+      <div className="flex items-center justify-between w-full max-w-sm mb-1">
+        <h1 className="text-2xl font-['Fredoka_One'] text-[#FF6B6B] mt-4">🎨 Draw on {selfie.assignedOwnerName}'s selfie!</h1>
+        {selfie.phase === 'drawing' && (
+          <div className="mt-4 flex-shrink-0">
+            <TimerRing secondsLeft={selfie.secondsLeft ?? 90} total={selfie.timeLimit || 90} size={52} />
+          </div>
+        )}
+      </div>
+      )}
+      {!isFullscreen && (
+        selfie.assignedPrompt ? (
+          <div className="w-full max-w-sm bg-[#FFE66D]/10 border border-[#FFE66D]/40 rounded-xl px-4 py-2 mb-3 text-center">
+            <p className="text-[#FFE66D] font-['Fredoka_One'] text-base">{selfie.assignedPrompt}</p>
+          </div>
+        ) : (
+          <p className="text-gray-400 font-['Nunito'] text-xs mb-3">Draw on their selfie</p>
+        )
       )}
 
       {/* Photo + canvas overlay */}
       <div
-        className="relative rounded-2xl overflow-hidden border-2 border-[#2D2D44] mb-3"
-        style={{ width: '100%', maxWidth: CANVAS_W, aspectRatio: `${CANVAS_W}/${CANVAS_H}` }}
+        className={`relative overflow-hidden ${isFullscreen ? 'w-full h-full flex-1' : 'rounded-2xl border-2 border-[#2D2D44] mb-3'}`}
+        style={isFullscreen ? {} : { width: '100%', maxWidth: CANVAS_W, aspectRatio: `${CANVAS_W}/${CANVAS_H}` }}
       >
         <img
           src={selfie.assignedPhotoData}
           alt={`${selfie.assignedOwnerName}'s selfie`}
-          className="absolute inset-0 w-full h-full object-cover"
+          className="absolute inset-0 w-full h-full object-contain bg-[#111827]"
           draggable={false}
         />
         <canvas
@@ -170,7 +203,7 @@ export default function SelfieDrawPage() {
           width={CANVAS_W}
           height={CANVAS_H}
           className="absolute inset-0 w-full h-full"
-          style={{ touchAction: 'none', cursor: selfie.hasSubmittedDrawing ? 'default' : 'crosshair' }}
+          style={{ touchAction: 'none', cursor: 'crosshair' }}
           onMouseDown={onPointerDown}
           onMouseMove={onPointerMove}
           onMouseUp={onPointerUp}
@@ -179,66 +212,129 @@ export default function SelfieDrawPage() {
           onTouchMove={onPointerMove}
           onTouchEnd={onPointerUp}
         />
+        {/* Fullscreen toggle */}
+        <button
+          onClick={toggleFullscreen}
+          className="absolute top-2 left-2 z-20 w-8 h-8 rounded-lg bg-black/60 text-white flex items-center justify-center text-sm hover:bg-black/80 transition"
+          title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+        >
+          {isFullscreen ? '⤡' : '⤢'}
+        </button>
+        {hasConfirmed && (
+          <div className="absolute top-2 right-2 bg-black/70 text-white text-xs font-['Nunito'] px-2 py-1 rounded-lg">
+            ✓ Submitted — keep drawing to update
+          </div>
+        )}
+        {/* Fullscreen toolbar overlay */}
+        {isFullscreen && (
+          <div className="absolute bottom-0 left-0 right-0 z-10 bg-black/70 backdrop-blur-sm px-4 pt-3 pb-4 flex flex-col items-center gap-2">
+            {selfie.assignedPrompt && (
+              <p className="text-[#FFE66D] font-['Fredoka_One'] text-sm text-center">{selfie.assignedPrompt}</p>
+            )}
+            <div className="flex flex-wrap justify-center gap-2">
+              {COLORS.map(c => (
+                <button
+                  key={c}
+                  onClick={() => { setColor(c); setTool('pen'); }}
+                  className={`w-7 h-7 rounded-full border-2 transition ${color === c && tool === 'pen' ? 'border-white scale-110' : 'border-transparent'}`}
+                  style={{ backgroundColor: c, boxShadow: '0 1px 4px rgba(0,0,0,0.6)' }}
+                />
+              ))}
+              <button
+                onClick={() => setTool('eraser')}
+                className={`w-7 h-7 rounded-full border-2 bg-[#1A1A2E] flex items-center justify-center text-xs transition ${tool === 'eraser' ? 'border-white scale-110' : 'border-[#2D2D44]'}`}
+              >✕</button>
+            </div>
+            <div className="flex gap-4 items-center">
+              {WIDTHS.map(w => (
+                <button
+                  key={w}
+                  onClick={() => setWidth(w)}
+                  className={`rounded-full bg-white flex-shrink-0 transition ${width === w ? 'ring-2 ring-[#4ECDC4] scale-110' : ''}`}
+                  style={{ width: w + 10, height: w + 10 }}
+                />
+              ))}
+              {strokeCount > 0 && (
+                <button onClick={handleUndo} className="bg-[#2D2D44] text-white px-3 py-1 rounded-lg font-['Nunito'] text-xs hover:bg-[#3D3D54] transition">↩</button>
+              )}
+              {strokeCount > 0 && (
+                <button onClick={handleClear} className="bg-[#2D2D44] text-white px-3 py-1 rounded-lg font-['Nunito'] text-xs hover:bg-[#3D3D54] transition">🗑</button>
+              )}
+              <button
+                onClick={confirm}
+                className="bg-[#FF6B6B] text-white font-['Fredoka_One'] text-sm px-4 py-1.5 rounded-xl hover:bg-[#e05a5a] transition"
+              >
+                {hasConfirmed ? '↑ Update' : 'Submit ✓'}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
-      {!selfie.hasSubmittedDrawing ? (
+      {!isFullscreen && (
         <>
-          {/* Color palette */}
-          <div className="flex flex-wrap justify-center gap-2 mb-2">
-            {COLORS.map(c => (
-              <button
-                key={c}
-                onClick={() => { setColor(c); setTool('pen'); }}
-                className={`w-8 h-8 rounded-full border-2 transition ${color === c && tool === 'pen' ? 'border-white scale-110' : 'border-transparent'}`}
-                style={{ backgroundColor: c, boxShadow: '0 1px 4px rgba(0,0,0,0.6)' }}
-              />
-            ))}
-            {/* Eraser */}
-            <button
-              onClick={() => setTool('eraser')}
-              className={`w-8 h-8 rounded-full border-2 bg-[#1A1A2E] flex items-center justify-center text-sm transition ${tool === 'eraser' ? 'border-white scale-110' : 'border-[#2D2D44]'}`}
+          <div className="w-full max-w-sm mt-3">
+            <MiniGameWrapper
+              hasConfirmed={hasConfirmed}
+              onConfirm={confirm}
+              onEditResponse={editResponse}
+              confirmLabel={selfie.hasSubmittedDrawing ? 'Update Drawing' : 'Submit Drawing'}
+              editLabel="✏️ Edit Drawing"
+              disableConfirm={strokeCount === 0}
+              isHost={state.isHost}
+              waitingMessage={`Waiting for others… (${selfie.drawingCount}/${selfie.totalDrawers})`}
             >
-              ✕
-            </button>
-          </div>
+              {/* Color palette */}
+              <div className="flex flex-wrap justify-center gap-2 mb-2">
+                {COLORS.map(c => (
+                  <button
+                    key={c}
+                    onClick={() => { setColor(c); setTool('pen'); }}
+                    className={`w-8 h-8 rounded-full border-2 transition ${color === c && tool === 'pen' ? 'border-white scale-110' : 'border-transparent'}`}
+                    style={{ backgroundColor: c, boxShadow: '0 1px 4px rgba(0,0,0,0.6)' }}
+                  />
+                ))}
+                {/* Eraser */}
+                <button
+                  onClick={() => setTool('eraser')}
+                  className={`w-8 h-8 rounded-full border-2 bg-[#1A1A2E] flex items-center justify-center text-sm transition ${tool === 'eraser' ? 'border-white scale-110' : 'border-[#2D2D44]'}`}
+                >
+                  ✕
+                </button>
+              </div>
 
-          {/* Width selector */}
-          <div className="flex gap-3 mb-3 items-center">
-            {WIDTHS.map(w => (
-              <button
-                key={w}
-                onClick={() => setWidth(w)}
-                className={`rounded-full bg-white flex-shrink-0 transition ${width === w ? 'ring-2 ring-[#4ECDC4] scale-110' : ''}`}
-                style={{ width: w + 10, height: w + 10 }}
-              />
-            ))}
-          </div>
+              {/* Width selector */}
+              <div className="flex gap-3 mb-3 items-center justify-center">
+                {WIDTHS.map(w => (
+                  <button
+                    key={w}
+                    onClick={() => setWidth(w)}
+                    className={`rounded-full bg-white flex-shrink-0 transition ${width === w ? 'ring-2 ring-[#4ECDC4] scale-110' : ''}`}
+                    style={{ width: w + 10, height: w + 10 }}
+                  />
+                ))}
+              </div>
 
-          <div className="flex gap-3 mb-3">
-            {strokeCount > 0 && (
-              <button
-                onClick={handleUndo}
-                className="bg-[#2D2D44] text-white px-4 py-2 rounded-xl font-['Nunito'] text-sm hover:bg-[#3D3D54] transition"
-              >
-                ↩ Undo
-              </button>
-            )}
-            {strokeCount > 0 && (
-              <button
-                onClick={handleClear}
-                className="bg-[#2D2D44] text-white px-4 py-2 rounded-xl font-['Nunito'] text-sm hover:bg-[#3D3D54] transition"
-              >
-                🗑 Clear
-              </button>
-            )}
+              <div className="flex gap-3 mb-3 justify-center">
+                {strokeCount > 0 && (
+                  <button
+                    onClick={handleUndo}
+                    className="bg-[#2D2D44] text-white px-4 py-2 rounded-xl font-['Nunito'] text-sm hover:bg-[#3D3D54] transition"
+                  >
+                    ↩ Undo
+                  </button>
+                )}
+                {strokeCount > 0 && (
+                  <button
+                    onClick={handleClear}
+                    className="bg-[#2D2D44] text-white px-4 py-2 rounded-xl font-['Nunito'] text-sm hover:bg-[#3D3D54] transition"
+                  >
+                    🗑 Clear
+                  </button>
+                )}
+              </div>
+            </MiniGameWrapper>
           </div>
-
-          <button
-            onClick={handleSubmit}
-            className="w-full max-w-xs bg-[#FF6B6B] text-white font-['Fredoka_One'] text-lg py-3 rounded-xl hover:bg-[#e05a5a] transition"
-          >
-            Submit Drawing ✓
-          </button>
 
           <button
             onClick={handleRetake}
@@ -247,26 +343,10 @@ export default function SelfieDrawPage() {
             📷 Retake Photo
           </button>
         </>
-      ) : (
-        <div className="w-full max-w-xs bg-[#1A1A2E] rounded-2xl border border-[#2D2D44] p-5 text-center">
-          <p className="text-[#4ECDC4] font-['Fredoka_One'] text-xl mb-2">Drawing submitted! ✓</p>
-          <p className="text-gray-400 font-['Nunito'] text-sm">
-            Waiting for others… ({selfie.drawingCount}/{selfie.totalDrawers})
-          </p>
-        </div>
-      )}
-
-      {state.isHost && selfie.hasSubmittedDrawing && (
-        <button
-          onClick={handleSkip}
-          className="mt-4 text-sm text-gray-400 underline font-['Nunito'] hover:text-white transition"
-        >
-          Skip to voting
-        </button>
       )}
 
       {/* Progress dots */}
-      {selfie.totalDrawers > 0 && (
+      {!isFullscreen && selfie.totalDrawers > 0 && (
         <div className="mt-4 flex gap-2">
           {Array.from({ length: selfie.totalDrawers }).map((_, i) => (
             <div

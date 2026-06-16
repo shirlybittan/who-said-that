@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { socket } from '../socket';
 import { useGame } from '../store/gameStore.jsx';
 import { useNavigate } from 'react-router-dom';
@@ -8,9 +8,18 @@ export const useSocket = () => {
   const { state, dispatch } = useGame();
   const navigate = useNavigate();
 
+  // Always-current ref to game type — prevents stale DT navigation events from
+  // overriding the UI when the game has already been switched to a different type.
+  const gameTypeRef = useRef(state.gameType);
+  useEffect(() => { gameTypeRef.current = state.gameType; });
+
+  // Keep state updated in ref for closed-over event handlers
+  const stateRef = useRef(state);
+  useEffect(() => { stateRef.current = state; });
+
   useEffect(() => {
     const onConnect = () => {
-      const savedId = localStorage.getItem('wst_playerId');
+      const savedId = sessionStorage.getItem('wst_playerId');
       const savedCode = localStorage.getItem('wst_roomCode');
       const savedName = localStorage.getItem('wst_playerName');
       if (savedId && savedCode && savedName) {
@@ -27,13 +36,14 @@ export const useSocket = () => {
       navigate('/lobby');
     };
 
-    const onJoinSuccess = ({ room, playerId, isRejoin, miniGameState }) => {
+    const onJoinSuccess = ({ room, playerId, isRejoin, miniGameState, uploadToken }) => {
       localStorage.setItem('wst_roomCode', room.code);
       const myPlayer = room.players.find(p => p.id === playerId);
       if (myPlayer?.name) localStorage.setItem('wst_playerName', myPlayer.name);
+      if (uploadToken) localStorage.setItem('wst_uploadToken', uploadToken);
       const { roomPayload, actions, route } = buildJoinRestorePlan({ room, playerId, isRejoin, miniGameState });
 
-      dispatch({ type: 'SET_ROOM', payload: roomPayload });
+      dispatch({ type: 'SET_ROOM', payload: { ...roomPayload, uploadToken: uploadToken || null } });
       dispatch({ type: 'SET_PLAYER_ID', payload: playerId });
       actions.forEach(action => dispatch(action));
       navigate(route);
@@ -51,8 +61,12 @@ export const useSocket = () => {
       dispatch({ type: 'UPDATE_CUSTOM_QUESTIONS', payload: customQuestions });
     };
 
-    const onPlayerDisconnected = () => {
-      // Logic for disconnect goes here if needed
+    const onPlayerDisconnected = ({ playerId, playerName }) => {
+      dispatch({ type: 'UPDATE_PLAYER_CONNECTION', payload: { playerId, isConnected: false } });
+    };
+
+    const onPlayerReconnected = ({ playerId, playerName, players }) => {
+      dispatch({ type: 'UPDATE_PLAYERS', payload: players });
     };
 
     const onGameStarted = (data) => {
@@ -239,6 +253,10 @@ export const useSocket = () => {
       dispatch({ type: 'DRAW_VOTE_RECEIVED', payload: data });
     };
 
+    const onDrawVoteRejected = () => {
+      dispatch({ type: 'DRAW_VOTE_REJECTED' });
+    };
+
     const onDrawResults = (data) => {
       dispatch({ type: 'DRAW_SET_RESULTS', payload: data });
     };
@@ -316,6 +334,18 @@ export const useSocket = () => {
 
     const onSelfieDrawingPhase = (data) => {
       dispatch({ type: 'SELFIE_DRAWING_PHASE', payload: data });
+    };
+
+    const onSelfieTimer = ({ secondsLeft }) => {
+      dispatch({ type: 'SELFIE_TIMER', payload: { secondsLeft } });
+    };
+
+    const onSelfiePaused = ({ secondsLeft }) => {
+      dispatch({ type: 'SELFIE_PAUSED', payload: { secondsLeft } });
+    };
+
+    const onSelfieResumed = ({ secondsLeft }) => {
+      dispatch({ type: 'SELFIE_RESUMED', payload: { secondsLeft } });
     };
 
     const onSelfieDrawingReceived = (data) => {
@@ -423,12 +453,21 @@ export const useSocket = () => {
     // ────────────────────────────────────────────────────────────────────────
 
     socket.on('connect', onConnect);
+
+    // If the socket is already connected when this effect runs (e.g. page reload after
+    // the socket auto-reconnected, or hot reload), trigger the rejoin immediately since
+    // the 'connect' event won't fire again for an already-established connection.
+    if (socket.connected) {
+      onConnect();
+    }
+
     socket.on('room_created', onRoomCreated);
     socket.on('join_success', onJoinSuccess);
     socket.on('player_joined', onPlayerJoined);
     socket.on('options_updated', onOptionsUpdated);
     socket.on('custom_questions_updated', onCustomQuestionsUpdated);
     socket.on('player_disconnected', onPlayerDisconnected);
+    socket.on('player_reconnected', onPlayerReconnected);
     socket.on('host_changed', onHostChanged);
     socket.on('game_started', onGameStarted);
     socket.on('new_question', onNewQuestion);
@@ -468,6 +507,7 @@ export const useSocket = () => {
     socket.on('draw:submission_received', onDrawSubmissionReceived);
     socket.on('draw:voting_started', onDrawVotingStarted);
     socket.on('draw:vote_received', onDrawVoteReceived);
+    socket.on('draw:vote_rejected', onDrawVoteRejected);
     socket.on('draw:results', onDrawResults);
     socket.on('draw:end', onDrawEnd);
     socket.on('draw:restarted', onDrawRestarted);
@@ -485,6 +525,9 @@ export const useSocket = () => {
     socket.on('selfie:photo_received', onSelfiePhotoReceived);
     socket.on('selfie:draw_assigned', onSelfieDrawAssigned);
     socket.on('selfie:drawing_phase', onSelfieDrawingPhase);
+    socket.on('selfie:timer', onSelfieTimer);
+    socket.on('selfie:paused', onSelfiePaused);
+    socket.on('selfie:resumed', onSelfieResumed);
     socket.on('selfie:drawing_received', onSelfieDrawingReceived);
     socket.on('selfie:voting_started', onSelfieVotingStarted);
     socket.on('selfie:vote_received', onSelfieVoteReceived);
@@ -525,8 +568,13 @@ export const useSocket = () => {
     const onDtPromptReceived = (data) => {
       dispatch({ type: 'DT_PROMPT_RECEIVED', payload: data });
     };
+    const onDtPromptRejected = () => {
+      dispatch({ type: 'DT_PROMPT_REJECTED' });
+    };
     const onDtDrawingPhase = (data) => {
+      if (gameTypeRef.current !== 'draw-telephone') return;
       dispatch({ type: 'DT_DRAWING_PHASE', payload: data });
+      // Always navigate to wait — dt:your_turn will redirect active drawers immediately after
       navigate('/draw-tel-wait');
     };
     const onDtYourTurn = (data) => {
@@ -538,17 +586,42 @@ export const useSocket = () => {
     };
     const onDtChainProgress = (data) => {
       dispatch({ type: 'DT_CHAIN_PROGRESS', payload: data });
+      // If a chain completes and I'm no longer an active drawer, go to wait
+      const myId = stateRef.current.playerId;
+      const activeDrawerIds = data.activeDrawerIds || [];
+      if (myId && !activeDrawerIds.includes(myId)) {
+        const currentPath = window.location.pathname;
+        if (currentPath === '/draw-tel-draw') {
+          navigate('/draw-tel-wait');
+        }
+      }
     };
     const onDtDrawingProgress = (data) => {
       dispatch({ type: 'DT_DRAWING_PROGRESS', payload: data });
+      // When a new drawing turn is assigned to a different player (round 2+),
+      // players who are no longer active drawers need to go to the wait page.
+      // We check: if I'm not in activeDrawerIds AND I'm not on a relevant page already.
+      const myId = stateRef.current.playerId;
+      const activeDrawerIds = data.activeDrawerIds || [];
+      const notDrawing = myId && !activeDrawerIds.includes(myId);
+      if (notDrawing) {
+        // Only navigate away from the draw page (they may be on wait already)
+        const currentPath = window.location.pathname;
+        if (currentPath === '/draw-tel-draw') {
+          navigate('/draw-tel-wait');
+        }
+      }
     };
     const onDtGuessingPhase = (data) => {
+      if (gameTypeRef.current !== 'draw-telephone') return;
+      // Reducer extracts guessTurn from guessPayloads using state.playerId directly.
+      // We always navigate to wait — DrawTelWaitPage immediately redirects to guess
+      // when guessTurn is set in state.
       dispatch({ type: 'DT_GUESSING_PHASE', payload: data });
-      // Only navigate to guess page if there's a guessTurn coming (via dt:your_guess)
-      // otherwise stay on wait page
       navigate('/draw-tel-wait');
     };
     const onDtYourGuess = (data) => {
+      if (gameTypeRef.current !== 'draw-telephone') return;
       dispatch({ type: 'DT_YOUR_GUESS', payload: data });
       navigate('/draw-tel-guess');
     };
@@ -573,11 +646,18 @@ export const useSocket = () => {
       dispatch({ type: 'DT_RESTARTED', payload: data });
       navigate('/lobby');
     };
+    const onDtPaused = () => {
+      dispatch({ type: 'DT_SET_PAUSED' });
+    };
+    const onDtResumed = () => {
+      dispatch({ type: 'DT_SET_RESUMED' });
+    };
 
     socket.on('dt:selfie_phase', onDtSelfiePhase);
     socket.on('dt:photo_received', onDtPhotoReceived);
     socket.on('dt:prompt_phase', onDtPromptPhase);
     socket.on('dt:prompt_received', onDtPromptReceived);
+    socket.on('dt:prompt_rejected', onDtPromptRejected);
     socket.on('dt:drawing_phase', onDtDrawingPhase);
     socket.on('dt:your_turn', onDtYourTurn);
     socket.on('dt:turn_timer', onDtTurnTimer);
@@ -591,6 +671,8 @@ export const useSocket = () => {
     socket.on('dt:vote_received', onDtVoteReceived);
     socket.on('dt:end', onDtEnd);
     socket.on('dt:restarted', onDtRestarted);
+    socket.on('dt:paused', onDtPaused);
+    socket.on('dt:resumed', onDtResumed);
 
     const onPhotoReused = ({ gameType }) => {
       if (gameType === 'selfie') dispatch({ type: 'SELFIE_MARK_PHOTO_SUBMITTED' });
@@ -618,6 +700,7 @@ export const useSocket = () => {
       socket.off('options_updated', onOptionsUpdated);
       socket.off('custom_questions_updated', onCustomQuestionsUpdated);
       socket.off('player_disconnected', onPlayerDisconnected);
+      socket.off('player_reconnected', onPlayerReconnected);
       socket.off('host_changed', onHostChanged);
       socket.off('game_started', onGameStarted);
       socket.off('new_question', onNewQuestion);
@@ -657,6 +740,7 @@ export const useSocket = () => {
       socket.off('draw:submission_received', onDrawSubmissionReceived);
       socket.off('draw:voting_started', onDrawVotingStarted);
       socket.off('draw:vote_received', onDrawVoteReceived);
+      socket.off('draw:vote_rejected', onDrawVoteRejected);
       socket.off('draw:results', onDrawResults);
       socket.off('draw:end', onDrawEnd);
       socket.off('draw:restarted', onDrawRestarted);
@@ -674,6 +758,9 @@ export const useSocket = () => {
       socket.off('selfie:photo_received', onSelfiePhotoReceived);
       socket.off('selfie:draw_assigned', onSelfieDrawAssigned);
       socket.off('selfie:drawing_phase', onSelfieDrawingPhase);
+      socket.off('selfie:timer', onSelfieTimer);
+      socket.off('selfie:paused', onSelfiePaused);
+      socket.off('selfie:resumed', onSelfieResumed);
       socket.off('selfie:drawing_received', onSelfieDrawingReceived);
       socket.off('selfie:voting_started', onSelfieVotingStarted);
       socket.off('selfie:vote_received', onSelfieVoteReceived);
@@ -702,6 +789,7 @@ export const useSocket = () => {
       socket.off('dt:photo_received', onDtPhotoReceived);
       socket.off('dt:prompt_phase', onDtPromptPhase);
       socket.off('dt:prompt_received', onDtPromptReceived);
+      socket.off('dt:prompt_rejected', onDtPromptRejected);
       socket.off('dt:drawing_phase', onDtDrawingPhase);
       socket.off('dt:your_turn', onDtYourTurn);
       socket.off('dt:turn_timer', onDtTurnTimer);
@@ -715,6 +803,8 @@ export const useSocket = () => {
       socket.off('dt:vote_received', onDtVoteReceived);
       socket.off('dt:end', onDtEnd);
       socket.off('dt:restarted', onDtRestarted);
+      socket.off('dt:paused', onDtPaused);
+      socket.off('dt:resumed', onDtResumed);
       socket.off('player:photo_reused', onPhotoReused);
       socket.off('global_scores_updated', onGlobalScoresUpdated);
       socket.off('phase_timer', onPhaseTimer);

@@ -6,20 +6,35 @@ import { translations } from '../locales/translations';
 import { useSounds } from '../hooks/useSounds';
 import VoteCoin from '../components/game/VoteCoin';
 import VoteLocked from '../components/game/VoteLocked';
+import ConfirmVoteCard from '../game-core/player/ConfirmVoteCard';
 
 export default function SituationalVotingPage() {
   const { state, dispatch } = useGame();
   const t = translations[state.lang].situational;
   const sit = state.sit;
   const sounds = useSounds();
+  const [pendingVote, setPendingVote] = React.useState(null);
 
-  const handleVote = (answerId) => {
+  // Use server-driven timer (phaseTimer updated by phase_timer socket events)
+  const serverTimeLeft = state.phaseTimer?.secondsLeft ?? 0;
+  const timerActive = state.phaseTimer?.active ?? false;
+  const timerPaused = state.phaseTimer?.paused ?? false;
+
+  const handleSelect = (answerId) => {
     if (sit.hasVoted) return;
-    if (answerId === state.playerId) return; // can't vote own answer
-    sounds.vote();
-    socket.emit('sit:vote', { code: state.roomCode, answerId });
-    dispatch({ type: 'SIT_MARK_VOTED', payload: { answerId } });
+    if (answerId === state.playerId) return;
+    sounds.click();
+    setPendingVote(answerId);
   };
+
+  const handleConfirm = () => {
+    if (!pendingVote || sit.hasVoted) return;
+    sounds.vote();
+    socket.emit('sit:vote', { code: state.roomCode, answerId: pendingVote });
+    dispatch({ type: 'SIT_MARK_VOTED', payload: { answerId: pendingVote } });
+  };
+
+  const handleVote = handleSelect; // backward compat
 
   const handleContinue = () => {
     sounds.click();
@@ -99,6 +114,12 @@ export default function SituationalVotingPage() {
       <h1 className="text-3xl font-['Fredoka_One'] text-[#4ECDC4] mb-2 mt-4">{t.votePrompt}</h1>
       <p className="text-gray-400 font-['Nunito'] mb-1 italic text-center">"{sit.question}"</p>
 
+      {timerActive && !sit.hasVoted && (
+        <p className={`text-xl font-bold font-['Nunito'] mb-4 ${serverTimeLeft <= 5 ? 'text-red-400 animate-pulse' : serverTimeLeft <= 15 ? 'text-orange-400' : 'text-gray-400'}`}>
+          ⏳ {serverTimeLeft}s
+        </p>
+      )}
+
       {!state.isPlaying ? (
         // ── Cast / spectator view ─────────────────────────────────────────
         <div className="w-full max-w-md mt-6 bg-[#1A1A2E] rounded-2xl border border-[#2D2D44] p-8 text-center">
@@ -135,7 +156,9 @@ export default function SituationalVotingPage() {
                   className={`w-full text-left rounded-2xl p-4 border-2 transition transform
                     ${isSelected
                       ? 'border-[#4ECDC4] bg-[#4ECDC4]/15 scale-[1.02]'
-                      : isOwn
+                      : pendingVote === ans.id
+                        ? 'border-yellow-400 bg-yellow-400/10 scale-[1.02]'
+                        : isOwn
                         ? 'border-[#2D2D44] bg-[#1A1A2E] opacity-40 cursor-not-allowed'
                         : sit.hasVoted
                           ? 'border-[#2D2D44] bg-[#1A1A2E] opacity-60 cursor-not-allowed'
@@ -151,18 +174,29 @@ export default function SituationalVotingPage() {
             })}
           </div>
 
-          {sit.hasVoted && (
-            <div className="mt-6">
-              <VoteLocked
-                label={t.voteLockedMsg}
-                voteCount={sit.voteCount}
-                totalVoters={sit.totalVoters}
-                accentColor="#4ECDC4"
+            {pendingVote && !sit.hasVoted && (
+              <ConfirmVoteCard
+                vote={state.players.find(p => p.id === pendingVote)}
+                onConfirm={handleConfirm}
+                onChange={() => setPendingVote(null)}
+                confirmLabel="✓ Confirm"
+                changeLabel="← Change"
+                titleLabel="Confirm your vote?"
               />
-            </div>
+            )}
+
+              {sit.hasVoted && (
+              <div className="mt-6">
+                <VoteLocked
+                  label={t.voteLockedMsg}
+                  voteCount={sit.voteCount}
+                  totalVoters={sit.totalVoters}
+                  accentColor="#4ECDC4"
+                />
+              </div>
+            )}
+            </>
           )}
-        </>
-      )}
     </motion.div>
   );
 }

@@ -48,6 +48,7 @@ export const getRouteForPhase = (phase, snapshot) => {
     case 'gameEnd':
       return '/game-end';
     case 'mlt':
+      if (snapshot?.roundState === 'results') return '/mlt-results';
       return '/mlt-vote';
     case 'mltEnd':
       return '/mlt-end';
@@ -214,7 +215,7 @@ const buildClassicRestore = (room, playerId) => {
     const actions = [{
       type: 'MLT_SET_PROMPT',
       payload: {
-        prompt: room.mlt?.currentPrompt || '',
+        prompt: room.mlt?.prompt || room.mlt?.currentPrompt || '',
         round: room.mlt?.round || 1,
         totalRounds: room.mlt?.totalRounds || 5,
         players: activePlayers.map((player) => ({ id: player.id, name: player.name, color: player.color })),
@@ -714,11 +715,9 @@ const buildMiniGameRestore = (room, snapshot) => {
 export const buildJoinRestorePlan = ({ room, playerId, isRejoin, miniGameState }) => {
   const roomPayload = getBaseRoomPayload(room, playerId, isRejoin);
 
-  if (roomPayload.joinedMidRound) {
-    return { roomPayload, actions: [], route: '/lobby' };
-  }
-
-  const route = getRouteForPhase(room.phase, miniGameState);
+  // For mlt phase, pass room.mlt as snapshot so getRouteForPhase can check roundState
+  const snapshot = room.phase === 'mlt' ? room.mlt : miniGameState;
+  const route = roomPayload.joinedMidRound ? '/lobby' : getRouteForPhase(room.phase, snapshot);
   const actions = miniGameState
     ? buildMiniGameRestore(room, miniGameState)
     : buildClassicRestore(room, playerId);

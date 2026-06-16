@@ -1,9 +1,52 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 
 import { useSounds } from '../hooks/useSounds';
 import { compressPhoto } from '../utils/imageUtils';
+
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
+
+/**
+ * Attempt a presigned PUT upload to cloud storage.
+ * Returns the public URL on success, or null if the server doesn't have
+ * storage configured (falls back to base64 socket path).
+ */
+async function tryCloudUpload(roomCode, playerId, dataUrl, uploadToken) {
+  // Derive mimeType from the data URI
+  const mimeMatch = dataUrl.match(/^data:(image\/[a-z]+);base64,/);
+  if (!mimeMatch) return null;
+  const mimeType = mimeMatch[1];
+
+  try {
+    const res = await fetch(`${SERVER_URL}/api/upload-photo-url`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roomCode, playerId, mimeType, uploadToken }),
+    });
+    if (!res.ok) return null; // Server returned 503 = storage not configured
+
+    const { uploadUrl, publicUrl } = await res.json();
+
+    // Convert base64 data URI to binary blob for the PUT request
+    const base64 = dataUrl.split(',')[1];
+    const binary = atob(base64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    const blob = new Blob([bytes], { type: mimeType });
+
+    const putRes = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': mimeType },
+      body: blob,
+    });
+    if (!putRes.ok) return null;
+
+    return publicUrl;
+  } catch {
+    return null; // Network error — fall back to base64
+  }
+}
 
 export default function SelfiePhotoPage() {
   const { state, dispatch } = useGame();
@@ -13,16 +56,13 @@ export default function SelfiePhotoPage() {
   const [preview, setPreview] = useState(null);
   const [compressed, setCompressed] = useState(null);
   const [processing, setProcessing] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState(false);
   const [usingSaved, setUsingSaved] = useState(false);
-
-  // Pre-fill with saved selfie if available and photo not yet submitted
-  useEffect(() => {
-    if (state.savedSelfie && !selfie.hasSubmittedPhoto && !compressed) {
-      setCompressed(state.savedSelfie);
-      setPreview(state.savedSelfie);
-      setUsingSaved(true);
-    }
-  }, []);
+  // When a saved selfie exists, show an explicit choice screen first (never auto-use)
+  const [showReuseChoice, setShowReuseChoice] = useState(
+    () => !!(state.savedSelfie && !selfie?.hasSubmittedPhoto)
+  );
 
   const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
@@ -40,19 +80,47 @@ export default function SelfiePhotoPage() {
     }
   };
 
-  const handleSubmit = () => {
-    if (!compressed || selfie.hasSubmittedPhoto) return;
+  const handleSubmit = async () => {
+    if (!compressed || selfie.hasSubmittedPhoto || uploading) return;
     sounds.answer?.();
-    socket.emit('selfie:submit_photo', { code: state.roomCode, photoData: compressed });
+    setUploading(true);
+    setUploadError(false);
+
+    // Try cloud upload first; fall back to inline base64 if unavailable
+    let photoData = compressed;
+    const cloudUrl = await tryCloudUpload(state.roomCode, state.playerId, compressed, state.uploadToken);
+    if (cloudUrl) photoData = cloudUrl;
+
+    // Confirm we still have something to send
+    if (!photoData) {
+      setUploadError(true);
+      setUploading(false);
+      return;
+    }
+
+    socket.emit('selfie:submit_photo', { code: state.roomCode, photoData });
     dispatch({ type: 'SELFIE_MARK_PHOTO_SUBMITTED' });
-    dispatch({ type: 'SAVED_SELFIE_STORED', payload: compressed });
+    dispatch({ type: 'SAVED_SELFIE_STORED', payload: compressed }); // always cache base64 locally
+    setUploading(false);
   };
 
   const handleRetake = () => {
     setPreview(null);
     setCompressed(null);
     setUsingSaved(false);
+    setShowReuseChoice(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleUseSaved = () => {
+    setCompressed(state.savedSelfie);
+    setPreview(state.savedSelfie);
+    setUsingSaved(true);
+    setShowReuseChoice(false);
+  };
+
+  const handleTakeNew = () => {
+    setShowReuseChoice(false);
   };
 
   return (
@@ -67,7 +135,34 @@ export default function SelfiePhotoPage() {
 
       {!selfie.hasSubmittedPhoto ? (
         <>
-          {!preview ? (
+          {/* Explicit consent screen — shown only when a saved selfie exists */}
+          {showReuseChoice ? (
+            <div className="w-full max-w-xs flex flex-col items-center gap-4">
+              <p className="text-base font-['Fredoka_One'] text-gray-300 text-center">
+                Use your saved selfie or take a new one?
+              </p>
+              <img
+                src={state.savedSelfie}
+                alt="Saved selfie"
+                className="w-full rounded-2xl border-2 border-[#2D2D44] object-contain bg-[#111827]"
+                style={{ maxHeight: 260 }}
+              />
+              <div className="flex gap-3 w-full">
+                <button
+                  onClick={handleTakeNew}
+                  className="flex-1 bg-[#1A1A2E] border border-[#2D2D44] text-gray-300 font-['Fredoka_One'] py-3 rounded-xl hover:bg-[#2D2D44] transition"
+                >
+                  📷 New Photo
+                </button>
+                <button
+                  onClick={handleUseSaved}
+                  className="flex-1 bg-[#4ECDC4] text-[#0D0D1A] font-['Fredoka_One'] py-3 rounded-xl hover:bg-[#3dbdb5] transition"
+                >
+                  ♻️ Reuse This
+                </button>
+              </div>
+            </div>
+          ) : !preview ? (
             <div className="w-full max-w-xs">
               <label
                 htmlFor="selfie-input"
@@ -98,7 +193,7 @@ export default function SelfiePhotoPage() {
               <img
                 src={preview}
                 alt="Preview"
-                className="w-full rounded-2xl border-2 border-[#4ECDC4] object-cover"
+                className="w-full rounded-2xl border-2 border-[#4ECDC4] object-contain bg-[#111827]"
                 style={{ maxHeight: 320 }}
               />
               <div className="flex gap-3 w-full">
@@ -110,11 +205,17 @@ export default function SelfiePhotoPage() {
                 </button>
                 <button
                   onClick={handleSubmit}
-                  className="flex-1 bg-[#FF6B6B] text-white font-['Fredoka_One'] py-3 rounded-xl hover:bg-[#e05a5a] transition"
+                  disabled={uploading}
+                  className="flex-1 bg-[#FF6B6B] text-white font-['Fredoka_One'] py-3 rounded-xl hover:bg-[#e05a5a] transition disabled:opacity-60"
                 >
-                  {usingSaved ? 'Use This ✓' : 'Use This!'}
+                  {uploading ? 'Uploading…' : usingSaved ? 'Use This ✓' : 'Use This!'}
                 </button>
               </div>
+              {uploadError && (
+                <p className="text-[#FF6B6B] font-['Nunito'] text-sm text-center mt-1">
+                  Upload failed. Check your connection and try again.
+                </p>
+              )}
             </div>
           )}
         </>

@@ -32,6 +32,7 @@ describe('getRouteForPhase', () => {
 
   it('routes mlt and mltEnd to the correct pages', () => {
     expect(getRouteForPhase('mlt', null)).toBe('/mlt-vote');
+    expect(getRouteForPhase('mlt', { roundState: 'results' })).toBe('/mlt-results');
     expect(getRouteForPhase('mltEnd', null)).toBe('/mlt-end');
   });
 
@@ -256,7 +257,7 @@ describe('buildJoinRestorePlan', () => {
 
     const plan = buildJoinRestorePlan({ room, playerId: 'p1', isRejoin: true, miniGameState: null });
 
-    expect(plan.route).toBe('/mlt-vote');
+    expect(plan.route).toBe('/mlt-results');
     const types = plan.actions.map((a) => a.type);
     expect(types).toContain('MLT_SET_RESULTS');
 

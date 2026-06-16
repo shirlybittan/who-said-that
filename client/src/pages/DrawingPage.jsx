@@ -7,10 +7,12 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
 import { CANVAS_W, CANVAS_H, redrawCanvas } from '../utils/canvasUtils';
+import { useFullscreen } from '../hooks/useFullscreen';
 import TimerRing from '../components/game/TimerRing';
 import ReplayCanvas from '../components/game/ReplayCanvas';
 import MiniGameWrapper from '../components/MiniGameWrapper.jsx';
 import { useMiniGameLifecycle } from '../hooks/useMiniGameLifecycle.js';
+import ConfirmVoteCard from '../game-core/player/ConfirmVoteCard';
 
 const COLORS = [
   '#000000', '#FFFFFF', '#EF4444', '#F97316', '#EAB308',
@@ -22,8 +24,8 @@ const WIDTHS = [2, 6, 14];
 const getPos = (canvas, clientX, clientY) => {
   const rect = canvas.getBoundingClientRect();
   return {
-    x: Math.round((clientX - rect.left) * (CANVAS_W / rect.width)),
-    y: Math.round((clientY - rect.top) * (CANVAS_H / rect.height)),
+    x: Math.round((clientX - rect.left) * (canvas.width  / rect.width)),
+    y: Math.round((clientY - rect.top)  * (canvas.height / rect.height)),
   };
 };
 
@@ -49,15 +51,15 @@ export default function DrawingPage() {
   const [color, setColor] = useState('#000000');
   const [width, setWidth] = useState(WIDTHS[1]);
   const [strokeCount, setStrokeCount] = useState(0); // proxy for undo button state
-
-  // Redirect if not in a drawing game
+  const [pendingVote, setPendingVote] = useState(null); // staged vote awaiting confirm
+  const { isFullscreen, containerRef, toggleFullscreen } = useFullscreen();
   useEffect(() => {
     if (state.phase && state.phase !== 'drawing' && state.phase !== 'drawEnd' && draw.phase === 'waiting') {
       navigate('/lobby');
     }
   }, [state.phase, draw.phase, navigate]);
 
-  // White canvas background on mount and new round
+  // White canvas background on mount, new round, or new word (skip word)
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -65,8 +67,9 @@ export default function DrawingPage() {
     setStrokeCount(0);
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
-  }, [draw.round]);
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draw.round, draw.yourWord]);
 
   // ── Drawing event handlers (all phases of pointer/touch) ─────────────────
   const startDraw = useCallback((x, y) => {
@@ -78,12 +81,10 @@ export default function DrawingPage() {
     if (canvas) {
       const ctx = canvas.getContext('2d');
       ctx.save();
-      if (tool === 'eraser') {
-        ctx.globalCompositeOperation = 'destination-out';
-        ctx.fillStyle = 'rgba(0,0,0,1)';
-      } else {
-        ctx.fillStyle = color;
-      }
+      // Eraser on white canvas paints white; no destination-out needed
+      const fillColor = tool === 'eraser' ? '#FFFFFF' : color;
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = fillColor;
       ctx.beginPath();
       ctx.arc(x, y, width / 2, 0, Math.PI * 2);
       ctx.fill();
@@ -99,20 +100,16 @@ export default function DrawingPage() {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     ctx.beginPath();
-    if (curStroke.current.type === 'eraser') {
-      ctx.globalCompositeOperation = 'destination-out';
-      ctx.strokeStyle = 'rgba(0,0,0,1)';
-    } else {
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.strokeStyle = curStroke.current.color;
-    }
+    // Eraser on white canvas paints white; no destination-out needed
+    const isEraser = curStroke.current.type === 'eraser';
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.strokeStyle = isEraser ? '#FFFFFF' : curStroke.current.color;
     ctx.lineWidth   = curStroke.current.width;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.moveTo(pts[pts.length - 2].x, pts[pts.length - 2].y);
     ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
     ctx.stroke();
-    ctx.globalCompositeOperation = 'source-over';
   }, []);
 
   const endDraw = useCallback(() => {
@@ -175,7 +172,7 @@ export default function DrawingPage() {
     if (canvas) {
       const ctx = canvas.getContext('2d');
       ctx.fillStyle = '#FFFFFF';
-      ctx.fillRect(0, 0, CANVAS_W, CANVAS_H);
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
     }
     if (draw.hasSubmitted && draw.phase === 'drawing') {
       socket.emit('draw:submit', { code: roomCode, strokes: [] });
@@ -205,9 +202,17 @@ export default function DrawingPage() {
 
   const handleVote = (votedForPlayerId) => {
     if (draw.hasVoted || votedForPlayerId === playerId) return;
-    socket.emit('draw:vote', { code: roomCode, votedForPlayerId });
-    dispatch({ type: 'DRAW_MARK_VOTED', payload: { votedForPlayerId } });
+    setPendingVote(votedForPlayerId);
   };
+
+  const handleConfirmVote = () => {
+    if (!pendingVote || draw.hasVoted) return;
+    socket.emit('draw:vote', { code: roomCode, votedForPlayerId: pendingVote });
+    dispatch({ type: 'DRAW_MARK_VOTED', payload: { votedForPlayerId: pendingVote } });
+    setPendingVote(null);
+  };
+
+  const handleCancelVote = () => setPendingVote(null);
 
   const handleSkipToVote = () => socket.emit('draw:skip_to_vote', { code: roomCode });
   const handleShowResults = () => socket.emit('draw:show_results', { code: roomCode });
@@ -242,31 +247,94 @@ export default function DrawingPage() {
           {draw.submittedCount || 0}/{draw.totalVoters || draw.players.length} {t.submitted}
         </p>
 
-        {/* Canvas wrapper */}
-        <div className="relative w-full max-w-md" style={{ aspectRatio: '4/3' }}>
-          <canvas
-            ref={canvasRef}
-            width={CANVAS_W}
-            height={CANVAS_H}
-            className="w-full h-full rounded-xl border-4 border-[#C39BD3] bg-white touch-none"
-            style={{ cursor: tool === 'eraser' ? 'cell' : 'crosshair', display: 'block' }}
-            onMouseDown={onMouseDown}
-            onMouseMove={onMouseMove}
-            onMouseUp={onMouseUp}
-            onMouseLeave={onMouseLeave}
-            onTouchStart={onTouchStart}
-            onTouchMove={onTouchMove}
-            onTouchEnd={onTouchEnd}
-          />
-          {draw.hasSubmitted && (
-            <div className="absolute top-2 right-2 bg-black/70 text-white text-xs font-['Nunito'] px-2 py-1 rounded-lg">
-              ✓ Submitted — keep drawing to update
+        {/* Canvas + fullscreen container */}
+        <div
+          ref={containerRef}
+          className={isFullscreen
+            ? 'fixed inset-0 z-50 bg-[#0D0D1A] flex flex-col items-center justify-center'
+            : 'relative w-full max-w-md'}
+        >
+          {/* Canvas aspect-ratio wrapper */}
+          <div className={isFullscreen
+            ? 'relative w-full h-full flex items-center justify-center'
+            : 'relative w-full'}
+            style={isFullscreen ? {} : { aspectRatio: '4/3' }}
+          >
+            <canvas
+              ref={canvasRef}
+              width={CANVAS_W}
+              height={CANVAS_H}
+              className={`bg-white touch-none ${isFullscreen
+                ? 'max-w-full max-h-full object-contain rounded-none border-0'
+                : 'w-full h-full rounded-xl border-4 border-[#C39BD3]'}`}
+              style={{ cursor: tool === 'eraser' ? 'cell' : 'crosshair', display: 'block' }}
+              onMouseDown={onMouseDown}
+              onMouseMove={onMouseMove}
+              onMouseUp={onMouseUp}
+              onMouseLeave={onMouseLeave}
+              onTouchStart={onTouchStart}
+              onTouchMove={onTouchMove}
+              onTouchEnd={onTouchEnd}
+            />
+
+            {/* Fullscreen toggle */}
+            <button
+              onClick={toggleFullscreen}
+              className="absolute top-2 left-2 z-10 bg-black/60 hover:bg-black/80 text-white rounded-lg px-2 py-1 text-base leading-none transition"
+              title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+            >
+              {isFullscreen ? '⤡' : '⤢'}
+            </button>
+
+            {draw.hasSubmitted && (
+              <div className="absolute top-2 right-2 bg-black/70 text-white text-xs font-['Nunito'] px-2 py-1 rounded-lg">
+                ✓ Submitted — keep drawing to update
+              </div>
+            )}
+          </div>
+
+          {/* Toolbar — overlay at bottom when fullscreen, normal flow otherwise */}
+          {isFullscreen && (
+            <div className="absolute bottom-0 left-0 right-0 bg-[#1A1A2E]/95 backdrop-blur-sm px-3 py-2 space-y-2">
+              <div className="flex gap-1.5 flex-wrap justify-center">
+                {COLORS.map(c => (
+                  <button key={c} onClick={() => { setTool('pen'); setColor(c); }}
+                    className="rounded-full border-4 transition-transform"
+                    style={{ width: 26, height: 26, backgroundColor: c, borderColor: color === c && tool === 'pen' ? '#FFE66D' : c === '#FFFFFF' ? '#555' : c, transform: color === c && tool === 'pen' ? 'scale(1.25)' : 'scale(1)', boxShadow: c === '#FFFFFF' ? '0 0 0 1px #555' : 'none' }}
+                  />
+                ))}
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {WIDTHS.map(w => (
+                    <button key={w} onClick={() => { setTool('pen'); setWidth(w); }}
+                      className="rounded-full bg-gray-700 flex items-center justify-center transition-all border-2"
+                      style={{ width: w + 16, height: w + 16, borderColor: width === w && tool === 'pen' ? '#FFE66D' : 'transparent' }}
+                    >
+                      <div className="rounded-full bg-white" style={{ width: w, height: w }} />
+                    </button>
+                  ))}
+                </div>
+                <button onClick={() => setTool('eraser')}
+                  className={`px-3 py-1 rounded-lg text-sm font-['Fredoka_One'] transition border-2 ${tool === 'eraser' ? 'bg-white text-black border-[#FFE66D]' : 'bg-[#2D2D44] text-white border-transparent'}`}
+                >
+                  ✏️ Eraser
+                </button>
+                <button onClick={handleUndo} disabled={strokeCount === 0}
+                  className="px-3 py-1 rounded-lg text-sm font-['Fredoka_One'] bg-[#2D2D44] text-white disabled:opacity-40 hover:bg-[#3D3D54] transition">
+                  ↩
+                </button>
+                <button onClick={handleClear} disabled={strokeCount === 0}
+                  className="px-3 py-1 rounded-lg text-sm font-['Fredoka_One'] bg-[#2D2D44] text-white disabled:opacity-40 hover:bg-[#3D3D54] transition">
+                  🗑
+                </button>
+              </div>
             </div>
           )}
         </div>
 
-        {/* Toolbar */}
-        <div className="w-full max-w-md mt-3 bg-[#1A1A2E] rounded-2xl p-3 space-y-3">
+        {/* Toolbar — normal (non-fullscreen) */}
+        <div className={`w-full max-w-md mt-3 bg-[#1A1A2E] rounded-2xl p-3 space-y-3 ${isFullscreen ? 'hidden' : ''}`}>
           {/* Colors */}
           <div className="flex gap-2 flex-wrap justify-center">
             {COLORS.map(c => (
@@ -327,20 +395,10 @@ export default function DrawingPage() {
               🗑 {t.clear}
             </button>
           </div>
-
-          {/* Host controls */}
-          {isHost && (
-            <button
-              onClick={handleSkipToVote}
-              className="w-full py-2 rounded-lg text-xs font-['Nunito'] text-gray-400 border border-gray-600 hover:border-gray-400 transition"
-            >
-              {t.skipToVote} →
-            </button>
-          )}
         </div>
 
         {/* Unified confirm / waiting controls */}
-        <div className="w-full max-w-md mt-3">
+        <div className={`w-full max-w-md mt-3 ${isFullscreen ? 'hidden' : ''}`}>
           <MiniGameWrapper
             hasConfirmed={hasConfirmed}
             onConfirm={confirm}
@@ -376,6 +434,7 @@ export default function DrawingPage() {
           {subs.map(sub => {
             const isOwn = sub.playerId === playerId;
             const voted = draw.votedForPlayerId === sub.playerId;
+            const isPending = pendingVote === sub.playerId;
             const canVote = !draw.hasVoted && !isOwn;
             return (
               <button
@@ -384,6 +443,7 @@ export default function DrawingPage() {
                 disabled={draw.hasVoted || isOwn}
                 className={`rounded-2xl overflow-hidden border-4 transition-all ${
                   voted ? 'border-[#FFE66D] shadow-[0_0_12px_#FFE66D80]' :
+                  isPending ? 'border-[#C39BD3] shadow-[0_0_12px_#C39BD380]' :
                   isOwn ? 'border-[#2D2D44] opacity-60' :
                   canVote ? 'border-[#2D2D44] hover:border-[#C39BD3] hover:shadow-[0_0_10px_#C39BD380] cursor-pointer' :
                   'border-[#2D2D44]'
@@ -401,7 +461,8 @@ export default function DrawingPage() {
                         {isOwn ? `${t.yourCaption}` : '???'}
                       </span>
                     </div>
-                    {canVote && <span className="text-xs font-['Fredoka_One'] text-[#C39BD3]">{t.voteBtn}</span>}
+                    {isPending && <span className="text-xs font-['Fredoka_One'] text-[#C39BD3]">Selected</span>}
+                    {canVote && !isPending && <span className="text-xs font-['Fredoka_One'] text-[#C39BD3]">{t.voteBtn}</span>}
                     {voted && <span className="text-xs text-[#FFE66D]">✓</span>}
                   </div>
                 </div>
@@ -409,6 +470,25 @@ export default function DrawingPage() {
             );
           })}
         </div>
+
+        {/* Pending vote confirm UI */}
+        {pendingVote && !draw.hasVoted && (() => {
+          const selectedSub = draw.submissions.find(s => s.playerId === pendingVote);
+          const selectedIndex = draw.submissions.findIndex(s => s.playerId === pendingVote);
+          return (
+            <ConfirmVoteCard
+              vote={{
+                label: selectedSub?.word ? `Drawing for "${selectedSub.word}"` : 'Anonymous Drawing',
+                badge: String.fromCharCode(65 + selectedIndex)
+              }}
+              onConfirm={handleConfirmVote}
+              onChange={handleCancelVote}
+              confirmLabel="✓ Confirm"
+              changeLabel="← Change"
+              titleLabel="Confirm your vote?"
+            />
+          );
+        })()}
 
         {/* Voted confirmation or waiting state */}
         {draw.hasVoted && (

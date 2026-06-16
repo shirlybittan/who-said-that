@@ -27,6 +27,7 @@ export default function MiniGameWrapper({
   onEditResponse,
   onChangePrompt,
   confirmLabel = '✓ Confirm',
+  editLabel = '✏️ Edit Response',
   disableConfirm = false,
   isHost = false,
   waitingMessage = 'Waiting for other players…',
@@ -60,7 +61,7 @@ export default function MiniGameWrapper({
             onClick={onEditResponse}
             className="w-full py-3 rounded-2xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FFE66D] hover:text-[#FFE66D] transition active:scale-95"
           >
-            ✏️ Edit Response
+            {editLabel}
           </button>
         </div>
       )}

@@ -59,7 +59,11 @@ export const thisOrThatAdapter = {
       },
       changeQuestion: () => {
         if (!socket || !roomCode) return;
-        socket.emit('tot:skip', { code: roomCode });
+        socket.emit('tot:change_question', { code: roomCode });
+      },
+      nextRound: () => {
+        if (!socket || !roomCode) return;
+        socket.emit('tot:next_round', { code: roomCode });
       },
       skipMiniGame: () => {
         if (!socket || !roomCode) return;

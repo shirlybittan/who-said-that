@@ -1,22 +1,32 @@
 /* eslint-disable no-unused-vars */
-import React from 'react';
+import React, { useState } from 'react';
+
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
 import GamePageWrapper from '../components/GamePageWrapper.jsx';
+import ConfirmVoteCard from '../game-core/player/ConfirmVoteCard';
 
 export default function CaptionVotePage() {
   const { state, dispatch } = useGame();
   const caption = state.caption;
   const sounds = useSounds();
+  const [selected, setSelected] = useState(null);
 
-  const handleVote = (captionId) => {
-    if (caption.hasVoted) return;
-    if (captionId === caption.myOwnCaptionId) return; // can't vote for own caption
+  const isFeaturedOwner = state.playerId === caption.featuredOwnerId;
+
+  const handleSelect = (captionId) => {
+    if (caption.hasVoted || captionId === caption.myOwnCaptionId) return;
+    sounds.click?.();
+    setSelected(captionId);
+  };
+
+  const handleConfirm = () => {
+    if (!selected || caption.hasVoted) return;
     sounds.vote?.();
-    socket.emit('caption:vote', { code: state.roomCode, captionId });
-    dispatch({ type: 'CAPTION_MARK_VOTED', payload: { captionId } });
+    socket.emit('caption:vote', { code: state.roomCode, captionId: selected });
+    dispatch({ type: 'CAPTION_MARK_VOTED', payload: { captionId: selected } });
   };
 
   return (
@@ -31,36 +41,64 @@ export default function CaptionVotePage() {
         <p className="text-gray-400 font-['Nunito'] text-sm text-center mb-4">
           Which caption fits {caption.featuredOwnerName}'s photo?
         </p>
+        {isFeaturedOwner && (
+          <p className="text-xs text-[#FD79A8] font-['Nunito'] mb-2">📸 It's your photo — but you still get to vote!</p>
+        )}
 
         {caption.featuredPhotoData && (
           <img
             src={caption.featuredPhotoData}
-            className="w-48 h-48 object-cover rounded-2xl border-2 border-[#FD79A8] mb-4"
+            className="w-48 h-48 object-contain rounded-2xl border-2 border-[#FD79A8] mb-4 bg-black"
             alt={`${caption.featuredOwnerName}'s selfie`}
           />
         )}
 
         {!caption.hasVoted ? (
+          <>
           <div className="w-full max-w-sm flex flex-col gap-3">
             {(caption.captions || []).map((c) => {
               const isOwn = c.id === caption.myOwnCaptionId;
+              const isSelected = selected === c.id;
               return (
                 <button
                   key={c.id}
-                  onClick={() => handleVote(c.id)}
+                  onClick={() => handleSelect(c.id)}
                   disabled={isOwn}
                   className={`w-full py-4 px-5 rounded-2xl border font-['Nunito'] text-base text-left transition-colors ${
                     isOwn
                       ? 'border-gray-700 bg-[#1A1A2E]/50 text-gray-500 cursor-not-allowed'
+                      : isSelected
+                      ? 'border-[#FD79A8] bg-[#FD79A8]/20 text-white'
+                      : selected
+                      ? 'bg-[#1A1A2E] border-gray-700 text-gray-400 opacity-60'
                       : 'bg-[#1A1A2E] border-gray-600 text-white hover:border-[#FD79A8] hover:bg-[#FD79A8]/10'
                   }`}
                 >
                   {isOwn ? <span className="mr-2 text-xs text-gray-500">(yours)</span> : null}
+                  {isSelected && <span className="mr-2">👆</span>}
                   {c.text}
                 </button>
               );
             })}
           </div>
+          {selected && (() => {
+            const selectedCaption = caption.captions.find(c => c.id === selected);
+            const selectedIndex = caption.captions.findIndex(c => c.id === selected);
+            return (
+              <ConfirmVoteCard
+                vote={{
+                  label: selectedCaption?.text || '',
+                  badge: String.fromCharCode(65 + selectedIndex)
+                }}
+                onConfirm={handleConfirm}
+                onChange={() => setSelected(null)}
+                confirmLabel="✓ Confirm"
+                changeLabel="← Change"
+                titleLabel="Confirm your vote?"
+              />
+            );
+          })()}
+          </>
         ) : (
           <div className="w-full max-w-sm flex flex-col gap-3">
             {(caption.captions || []).map((c) => (

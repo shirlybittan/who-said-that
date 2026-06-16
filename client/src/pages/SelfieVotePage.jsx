@@ -1,21 +1,28 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 
 import { useSounds } from '../hooks/useSounds';
 import ReplayCanvas from '../components/game/ReplayCanvas';
+import ConfirmVoteCard from '../game-core/player/ConfirmVoteCard';
 
 export default function SelfieVotePage() {
   const { state, dispatch } = useGame();
   const selfie = state.selfie;
   const sounds = useSounds();
+  const [selected, setSelected] = useState(null);
 
-  const handleVote = (drawerId) => {
-    if (selfie.hasVoted) return;
-    if (drawerId === state.playerId) return;
+  const handleSelect = (drawerId) => {
+    if (selfie.hasVoted || drawerId === state.playerId) return;
+    sounds.click?.();
+    setSelected(drawerId);
+  };
+
+  const handleConfirm = () => {
+    if (!selected || selfie.hasVoted) return;
     sounds.vote?.();
-    socket.emit('selfie:vote', { code: state.roomCode, drawerId });
-    dispatch({ type: 'SELFIE_MARK_VOTED', payload: { drawerId } });
+    socket.emit('selfie:vote', { code: state.roomCode, drawerId: selected });
+    dispatch({ type: 'SELFIE_MARK_VOTED', payload: { drawerId: selected } });
   };
 
   const handleShowResults = () => {
@@ -52,10 +59,12 @@ export default function SelfieVotePage() {
               key={sub.drawerId}
               variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { duration: 0.25 } } }}
               className={`rounded-2xl p-4 border-2 transition
-                ${selected ? 'border-[#FF6B6B] bg-[#FF6B6B]/10' : 'border-[#2D2D44] bg-[#1A1A2E]'}
+                ${selected === sub.drawerId && !selfie.hasVoted ? 'border-yellow-400 bg-yellow-400/10' : ''}
+                ${selfie.myVote === sub.drawerId ? 'border-[#FF6B6B] bg-[#FF6B6B]/10' : ''}
+                ${selected !== sub.drawerId && selfie.myVote !== sub.drawerId ? 'border-[#2D2D44] bg-[#1A1A2E]' : ''}
                 ${!selfie.hasVoted && !isOwn ? 'cursor-pointer hover:border-[#FF6B6B]/60' : ''}
                 ${isOwn ? 'opacity-60' : ''}`}
-              onClick={() => !selfie.hasVoted && !isOwn && handleVote(sub.drawerId)}
+              onClick={() => !selfie.hasVoted && !isOwn && handleSelect(sub.drawerId)}
             >
               <ReplayCanvas photoData={sub.photoData} strokes={sub.strokes} cssWidth="100%" className="rounded-xl overflow-hidden" />
               {sub.prompt && (
@@ -74,11 +83,29 @@ export default function SelfieVotePage() {
                 </span>
               </div>
               <span className="text-xs text-gray-500 font-['Nunito']">on {sub.ownerName}'s selfie</span>
-              {selected && <div className="mt-1 text-[#FF6B6B] font-['Fredoka_One']">✓ Your vote</div>}
+              {selected === sub.drawerId && !selfie.hasVoted && <div className="mt-1 text-yellow-400 font-['Fredoka_One']">👆 Selected</div>}
+              {selfie.myVote === sub.drawerId && <div className="mt-1 text-[#FF6B6B] font-['Fredoka_One']">✓ Your vote</div>}
             </motion.div>
           );
         })}
       </motion.div>
+
+      {selected && !selfie.hasVoted && (() => {
+        const selectedSub = selfie.submissions.find(s => s.drawerId === selected);
+        return (
+          <ConfirmVoteCard
+            vote={{
+              name: selectedSub ? `Drawing on ${selectedSub.ownerName}'s photo` : 'Anonymous Artist',
+              color: '#6B7280'
+            }}
+            onConfirm={handleConfirm}
+            onChange={() => setSelected(null)}
+            confirmLabel="✓ Confirm"
+            changeLabel="← Change"
+            titleLabel="Confirm your vote?"
+          />
+        );
+      })()}
 
       {selfie.hasVoted && (
         <p className="text-gray-400 font-['Nunito'] text-sm">
