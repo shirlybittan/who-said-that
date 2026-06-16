@@ -266,7 +266,7 @@ export const gameReducer = (state, action) => {
       localStorage.setItem('wst_lang', action.payload);
       return { ...state, lang: action.payload };
     case 'SAVED_SELFIE_STORED':
-      try { localStorage.setItem('wst_saved_selfie', action.payload); } catch (_) {}
+      try { localStorage.setItem('wst_saved_selfie', action.payload); } catch { /* ignore */ }
       return { ...state, savedSelfie: action.payload };
     case 'RESET_GAME':
       return initialState;

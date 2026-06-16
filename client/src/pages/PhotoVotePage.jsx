@@ -1,7 +1,7 @@
 import React from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
-import { motion } from 'framer-motion';
+
 import { useSounds } from '../hooks/useSounds';
 
 export default function PhotoVotePage() {
@@ -9,7 +9,7 @@ export default function PhotoVotePage() {
   const pv = state.photoVote;
   const sounds = useSounds();
 
-  const modeColor = pv.subType === 'photoassoc' ? '#A29BFE' : '#FDCB6E';
+  
 
   const handleVote = (targetPlayerId) => {
     if (pv.hasVoted || targetPlayerId === state.playerId) return;
@@ -30,7 +30,7 @@ export default function PhotoVotePage() {
         {(pv.photos || []).map((photo) => {
           const isMe = photo.playerId === state.playerId;
           const isVoted = pv.myVote === photo.playerId;
-          const isDimmed = pv.hasVoted && !isVoted;
+          
 
           return (
             <button

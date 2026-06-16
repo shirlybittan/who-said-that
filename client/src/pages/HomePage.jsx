@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 import React, { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { socket } from '../socket';

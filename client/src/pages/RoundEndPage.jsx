@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { translations } from '../locales/translations';
-import { motion } from 'framer-motion';
+
 import { useSounds } from '../hooks/useSounds';
 
 export default function RoundEndPage() {

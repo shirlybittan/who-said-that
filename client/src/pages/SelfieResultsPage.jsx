@@ -1,9 +1,9 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import Confetti from 'react-confetti';
-import { motion } from 'framer-motion';
+
 import { useSounds } from '../hooks/useSounds';
 import GameSwitcher from '../components/GameSwitcher.jsx';
 import ReplayCanvas from '../components/game/ReplayCanvas';

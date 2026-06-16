@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 import { createEmptyHostFrame, createEmptyPlayerFrame } from '../types/gameFrame.contract';
 
 export const triviaAdapter = {

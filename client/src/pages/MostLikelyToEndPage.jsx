@@ -4,7 +4,7 @@ import { useGame } from '../store/gameStore.jsx';
 import { translations } from '../locales/translations';
 import { socket } from '../socket';
 import Confetti from 'react-confetti';
-import { motion } from 'framer-motion';
+
 import { useSounds } from '../hooks/useSounds';
 import GameSwitcher from '../components/GameSwitcher.jsx';
 
@@ -42,7 +42,7 @@ export default function MostLikelyToEndPage() {
   const top3 = mlt.leaderboard.slice(0, 3);
   // Podium order: 2nd, 1st, 3rd
   const podiumOrder = [top3[1], top3[0], top3[2]].filter(Boolean);
-  const podiumHeights = { 0: 'h-24', 1: 'h-36', 2: 'h-16' }; // heights for 2nd/1st/3rd
+   // heights for 2nd/1st/3rd
   const podiumColors = { 0: '#C0C0C0', 1: '#FFE66D', 2: '#CD7F32' };
   const podiumPositions = [1, 0, 2]; // indices in top3 for left/center/right
 
