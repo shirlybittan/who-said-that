@@ -57,7 +57,7 @@ const sliceHandlers = {
 
 const initialState = {
   playerId: sessionStorage.getItem('wst_playerId') || null,
-  playerName: localStorage.getItem('wst_playerName') || null,
+  playerName: sessionStorage.getItem('wst_playerName') || null,
   roomCode: localStorage.getItem('wst_roomCode') || null,
   uploadToken: localStorage.getItem('wst_uploadToken') || null,
   isHost: false,
@@ -331,18 +331,18 @@ export const gameReducer = (state, action) => {
       localStorage.setItem('wst_lang', action.payload);
       return { ...state, lang: action.payload };
     case 'SAVED_SELFIE_STORED':
-      try { localStorage.setItem('wst_saved_selfie', action.payload); } catch (_) {}
+      try { localStorage.setItem('wst_saved_selfie', action.payload); } catch { /* ignore */ }
       return { ...state, savedSelfie: action.payload };
     case 'RESET_GAME':
       return initialState;
     case 'CLEAR_SESSION':
       // Clear the session-scoped playerId so this tab gets a fresh identity on
       // next join, while preserving persistent preferences (lang, savedSelfie).
-      try { sessionStorage.removeItem('wst_playerId'); } catch (_) {}
+      try { sessionStorage.removeItem('wst_playerId'); } catch { /* ignore */ }
       return { ...state, playerId: null, roomCode: null };
     case 'SET_PLAYER_ID':
       // Use sessionStorage so each browser tab gets its own player ID (avoids sharing bugs in multi-tab testing)
-      try { sessionStorage.setItem('wst_playerId', action.payload); } catch (_) {}
+      try { sessionStorage.setItem('wst_playerId', action.payload); } catch { /* ignore */ }
       return { ...state, playerId: action.payload };
     case 'SET_ROOM':
       return {

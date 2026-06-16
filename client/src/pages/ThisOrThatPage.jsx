@@ -1,8 +1,9 @@
+/* eslint-disable no-unused-vars */
 import React, { useState, useEffect } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { translations } from '../locales/translations';
-import { motion } from 'framer-motion';
+
 import { useSounds } from '../hooks/useSounds';
 import VoteLocked from '../components/game/VoteLocked';
 
@@ -43,7 +44,7 @@ export default function ThisOrThatPage() {
   const aVoters = (tot.voteDetails || []).filter(v => v.choice === 'a');
   const bVoters = (tot.voteDetails || []).filter(v => v.choice === 'b');
 
-  const myPlayerObj = players.find(p => p.id === playerId);
+  
 
   return (
     <motion.div className="flex flex-col items-center justify-start min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 pb-32" initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}>

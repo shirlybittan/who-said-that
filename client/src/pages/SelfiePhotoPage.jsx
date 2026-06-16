@@ -1,9 +1,10 @@
 import React, { useRef, useState } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
-import { motion } from 'framer-motion';
+
 import { useSounds } from '../hooks/useSounds';
 import { compressPhoto } from '../utils/imageUtils';
+
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
 

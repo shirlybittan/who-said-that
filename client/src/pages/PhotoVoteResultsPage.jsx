@@ -1,7 +1,7 @@
 import React from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
-import { motion } from 'framer-motion';
+
 
 export default function PhotoVoteResultsPage() {
   const { state } = useGame();

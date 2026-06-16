@@ -1,4 +1,6 @@
+/* eslint-disable no-unused-vars */
 import React, { useEffect, useRef } from 'react';
+
 import { useNavigate } from 'react-router-dom';
 import { useGame } from '../store/gameStore.jsx';
 import { motion } from 'framer-motion';

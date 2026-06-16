@@ -1,4 +1,6 @@
+/* eslint-disable no-unused-vars */
 import React, { useState, useEffect } from 'react';
+
 import { useSearchParams } from 'react-router-dom';
 import { socket } from '../socket';
 import { useGame } from '../store/gameStore.jsx';
