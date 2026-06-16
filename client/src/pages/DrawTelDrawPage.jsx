@@ -55,15 +55,16 @@ export default function DrawTelDrawPage() {
   const redrawAll = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
     const allStrokes = [...existingStrokesRef.current, ...strokesRef.current];
     if (selfieData) {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      allStrokes.forEach(s => drawStroke(ctx, s));
+      // Transparent overlay on photo — eraser uses destination-out via redrawOverlay
+      redrawOverlay(canvas, allStrokes);
     } else {
+      const ctx = canvas.getContext('2d');
       ctx.fillStyle = '#FFFFFF';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
-      allStrokes.forEach(s => drawStroke(ctx, s));
+      // White canvas — eraser paints white
+      allStrokes.forEach(s => drawStroke(ctx, s, { eraserColor: '#FFFFFF' }));
     }
   }, [selfieData]);
 
@@ -119,9 +120,17 @@ export default function DrawTelDrawPage() {
       const ctx = canvas.getContext('2d');
       ctx.save();
       if (tool === 'eraser') {
-        ctx.globalCompositeOperation = 'destination-out';
-        ctx.fillStyle = 'rgba(0,0,0,1)';
+        if (selfieData) {
+          // Selfie overlay: cut through to reveal photo
+          ctx.globalCompositeOperation = 'destination-out';
+          ctx.fillStyle = 'rgba(0,0,0,1)';
+        } else {
+          // White canvas: paint white
+          ctx.globalCompositeOperation = 'source-over';
+          ctx.fillStyle = '#FFFFFF';
+        }
       } else {
+        ctx.globalCompositeOperation = 'source-over';
         ctx.fillStyle = color;
       }
       ctx.beginPath();
@@ -129,7 +138,7 @@ export default function DrawTelDrawPage() {
       ctx.fill();
       ctx.restore();
     }
-  }, [color, width, tool, sounds]);
+  }, [color, width, tool, sounds, selfieData]);
 
   const moveDraw = useCallback((x, y) => {
     if (!isDrawing.current || !curStroke.current) return;
@@ -140,8 +149,15 @@ export default function DrawTelDrawPage() {
       const ctx = canvas.getContext('2d');
       ctx.beginPath();
       if (curStroke.current.type === 'eraser') {
-        ctx.globalCompositeOperation = 'destination-out';
-        ctx.strokeStyle = 'rgba(0,0,0,1)';
+        if (selfieData) {
+          // Selfie overlay: cut through to reveal photo
+          ctx.globalCompositeOperation = 'destination-out';
+          ctx.strokeStyle = 'rgba(0,0,0,1)';
+        } else {
+          // White canvas: paint white
+          ctx.globalCompositeOperation = 'source-over';
+          ctx.strokeStyle = '#FFFFFF';
+        }
       } else {
         ctx.globalCompositeOperation = 'source-over';
         ctx.strokeStyle = curStroke.current.color;
@@ -154,7 +170,7 @@ export default function DrawTelDrawPage() {
       ctx.stroke();
       ctx.restore();
     }
-  }, []);
+  }, [selfieData]);
 
   const endDraw = useCallback(() => {
     if (!isDrawing.current) return;
@@ -277,7 +293,7 @@ export default function DrawTelDrawPage() {
                     {turn?.position > 1 ? "Draw over the previous drawing!" : "Draw this prompt!"}
                   </p>
                 </div>
-                <TimerRing secondsLeft={turn?.secondsLeft ?? 0} total={60} size={52} />
+                <TimerRing secondsLeft={turn?.secondsLeft ?? 0} total={45} size={52} />
               </div>
 
               {/* Previous step content */}

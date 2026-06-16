@@ -3658,9 +3658,10 @@ io.on('connection', (socket) => {
   const startDtChainTimer = (io, room, code, promptId) => {
     const chain = room.dt.chains[promptId];
     if (!chain) return;
-    if (chain.secondsLeft === undefined || chain.secondsLeft <= 0) {
-      chain.secondsLeft = DT_DRAW_SECS;
-    }
+    // Always reset the timer to a full turn for each new participant
+    chain.secondsLeft = DT_DRAW_SECS;
+    // Clear any stale interval that may still be running
+    if (chain.timerRef) { clearInterval(chain.timerRef); chain.timerRef = null; }
     chain.timerRef = setInterval(() => {
       chain.secondsLeft--;
       // (activeTurns maps playerId→promptId, so invert the lookup)
@@ -3671,6 +3672,7 @@ io.on('connection', (socket) => {
         if (drawerPlayer?.socketId) {
           io.to(getPlayerSocket(drawerPlayer)).emit('dt:turn_timer', { promptId, secondsLeft: chain.secondsLeft });
         }
+        io.to(code).emit('dt:drawer_timer', { playerId: activeDrawerId, secondsLeft: chain.secondsLeft });
       }
       if (chain.secondsLeft <= 0) {
         clearInterval(chain.timerRef);
@@ -3771,19 +3773,39 @@ io.on('connection', (socket) => {
   const startDtGuessingPhase = (io, room, code) => {
     room.dt.phase = 'guessing';
     const totalGuessers = Object.keys(room.dt.chains).length;
-    io.to(code).emit('dt:guessing_phase', { totalGuessers, secondsLeft: DT_GUESS_SECS });
 
+    // Build per-player guess payloads and cache them on the chain for recovery
+    const guessPayloads = {};
+    for (const [promptId, chain] of Object.entries(room.dt.chains)) {
+      const finalStrokes = buildCombinedStrokes(chain);
+      const payload = {
+        promptId,
+        targetPlayerId: chain.targetPlayerId,
+        finalStrokes,
+        originalSelfieData: chain.originalSelfieData,
+        drawerCount: chain.drawingSteps.length,
+        secondsLeft: DT_GUESS_SECS,
+      };
+      chain._guessPayload = payload; // cache for recovery requests
+      guessPayloads[chain.targetPlayerId] = payload;
+    }
+
+    // Broadcast guessing phase to room (includes ALL payloads so each client can pick theirs)
+    // This acts as a fallback: even if the direct socket send fails, the room broadcast carries the data.
+    io.to(code).emit('dt:guessing_phase', {
+      totalGuessers,
+      secondsLeft: DT_GUESS_SECS,
+      guessPayloads, // map: targetPlayerId -> payload
+    });
+
+    // Also send direct targeted messages for reliability
     for (const [promptId, chain] of Object.entries(room.dt.chains)) {
       const targetPlayer = room.players.find(p => p.id === chain.targetPlayerId);
-      const finalStrokes = buildCombinedStrokes(chain);
-      if (targetPlayer?.socketId) {
-        io.to(getPlayerSocket(targetPlayer)).emit('dt:your_guess', {
-          promptId,
-          finalStrokes,
-          originalSelfieData: chain.originalSelfieData,
-          drawerCount: chain.drawingSteps.length,
-          secondsLeft: DT_GUESS_SECS,
-        });
+      if (targetPlayer) {
+        const sock = getPlayerSocket(targetPlayer);
+        if (sock) {
+          io.to(sock).emit('dt:your_guess', chain._guessPayload);
+        }
       }
     }
 
@@ -4062,7 +4084,7 @@ io.on('connection', (socket) => {
     if (!player || !player.isPlaying || !player.isConnected) return;
 
     const chain = room.dt.chains[promptId];
-    if (!chain || chain.phase !== 'drawing') return;
+    if (!chain || (chain.phase !== 'drawing' && chain.phase !== 'done')) return;
 
     // Check if this is an update of an already submitted step
     const existingStepIndex = chain.drawingSteps.findIndex(s => s.playerId === player.id);
@@ -4124,6 +4146,21 @@ io.on('connection', (socket) => {
       }
     } else {
       startDtChainTurn(io, room, code, promptId);
+    }
+  });
+
+  // Recovery handler: a player stuck on the wait page during guessing can request their guess data
+  socket.on('dt:request_guess', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'dt' || room.dt.phase !== 'guessing') return;
+    const player = findPlayer(room, socket.id);
+    if (!player || !player.isPlaying) return;
+    // Find which chain this player is the target of
+    for (const [promptId, chain] of Object.entries(room.dt.chains)) {
+      if (chain.targetPlayerId === player.id && chain._guessPayload) {
+        io.to(socket.id).emit('dt:your_guess', chain._guessPayload);
+        break;
+      }
     }
   });
 

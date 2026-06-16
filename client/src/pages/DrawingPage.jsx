@@ -80,12 +80,10 @@ export default function DrawingPage() {
     if (canvas) {
       const ctx = canvas.getContext('2d');
       ctx.save();
-      if (tool === 'eraser') {
-        ctx.globalCompositeOperation = 'destination-out';
-        ctx.fillStyle = 'rgba(0,0,0,1)';
-      } else {
-        ctx.fillStyle = color;
-      }
+      // Eraser on white canvas paints white; no destination-out needed
+      const fillColor = tool === 'eraser' ? '#FFFFFF' : color;
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = fillColor;
       ctx.beginPath();
       ctx.arc(x, y, width / 2, 0, Math.PI * 2);
       ctx.fill();
@@ -101,20 +99,16 @@ export default function DrawingPage() {
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     ctx.beginPath();
-    if (curStroke.current.type === 'eraser') {
-      ctx.globalCompositeOperation = 'destination-out';
-      ctx.strokeStyle = 'rgba(0,0,0,1)';
-    } else {
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.strokeStyle = curStroke.current.color;
-    }
+    // Eraser on white canvas paints white; no destination-out needed
+    const isEraser = curStroke.current.type === 'eraser';
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.strokeStyle = isEraser ? '#FFFFFF' : curStroke.current.color;
     ctx.lineWidth   = curStroke.current.width;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.moveTo(pts[pts.length - 2].x, pts[pts.length - 2].y);
     ctx.lineTo(pts[pts.length - 1].x, pts[pts.length - 1].y);
     ctx.stroke();
-    ctx.globalCompositeOperation = 'source-over';
   }, []);
 
   const endDraw = useCallback(() => {

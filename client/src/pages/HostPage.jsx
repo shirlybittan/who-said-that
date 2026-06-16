@@ -1149,7 +1149,7 @@ function DrawingHostPanel({ drawData, players, status }) {
 }
 
 // ─── Draw Telephone Host Panel ───────────────────────────────────────────────
-function DtHostPanel({ dtData, players, status, onRevealNext }) {
+function DtHostPanel({ dtData, players, status, onRevealNext, drawerTimers = {}, phaseTimer = null }) {
   const { phase, promptsSubmittedCount, totalPrompts, totalChains, chainsCompletedCount, chainProgress, guessedCount, totalGuessers, reveal, leaderboard } = dtData;
 
   // Countdown for prompting phase
@@ -1241,12 +1241,13 @@ function DtHostPanel({ dtData, players, status, onRevealNext }) {
           <div className="mt-4 flex flex-col gap-2">
             {activePlayers.map(p => {
               const isDrawing = activeDrawerIds.includes(p.id);
+              const timerVal = drawerTimers[p.id];
               return (
                 <div key={p.id} className="flex items-center gap-3 bg-[#0D0D1A] rounded-xl px-3 py-2">
                   <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: p.color }} />
                   <span className="text-white font-['Nunito'] text-sm flex-1">{p.name}</span>
                   <span className={`text-xs font-['Nunito'] px-2 py-0.5 rounded-full ${isDrawing ? 'bg-[#FF6B6B]/20 text-[#FF6B6B]' : 'bg-[#2D2D44] text-gray-500'}`}>
-                    {isDrawing ? '✏️ drawing' : '⏳ waiting'}
+                    {isDrawing ? `✏️ drawing${timerVal !== undefined ? ` (${timerVal}s)` : ''}` : '⏳ waiting'}
                   </span>
                 </div>
               );
@@ -1266,7 +1267,10 @@ function DtHostPanel({ dtData, players, status, onRevealNext }) {
           <h1 className="text-4xl font-['Fredoka_One'] text-[#FF6B6B]">Guessing Phase</h1>
           <p className="text-gray-300 font-['Nunito'] mt-1">Each target player guesses the original prompt</p>
         </motion.div>
-        <div className="w-full bg-[#1A1A2E] rounded-2xl p-6 border border-[#FF6B6B]/30">
+        {phaseTimer && phaseTimer.active && (
+          <TimerRing secondsLeft={phaseTimer.secondsLeft} total={60} paused={phaseTimer.paused} size={100} />
+        )}
+        <div className="w-full bg-[#1A1A2E] rounded-2xl p-6 border border-[#FF6B6B]/30 mt-3">
           <div className="flex justify-between items-center mb-3">
             <span className="text-gray-400 font-['Nunito']">Guesses received</span>
             <span className="text-[#FF6B6B] font-['Fredoka_One'] text-2xl">{guessedCount}<span className="text-gray-500">/{totalGuessers}</span></span>
@@ -2729,6 +2733,7 @@ export default function HostPage() {
   });
 
   const [phaseTimer, setPhaseTimer] = useState({ secondsLeft: 0, active: false, paused: false });
+  const [drawerTimers, setDrawerTimers] = useState({});
 
   const [questionData, setQuestionData] = useState({
     text: '', round: 0, totalRounds: 0, type: 'wst', target: null,
@@ -3233,11 +3238,16 @@ export default function HostPage() {
       if (!isActiveSock()) return;
       if (p && p.length > 0) setPlayers(p);
       setDtData(prev => ({ ...prev, phase: 'drawing', totalChains, chainsCompletedCount: 0, chainProgress: {} }));
+      setDrawerTimers({});
       setStatus('dt-drawing');
     });
     sock.on('dt:chain_progress', ({ chainsCompleted, totalChains, activeDrawerIds }) => {
       if (!isActiveSock()) return;
       setDtData(prev => ({ ...prev, chainsCompletedCount: chainsCompleted, totalChains, activeDrawerIds: activeDrawerIds || prev.activeDrawerIds || [] }));
+    });
+    sock.on('dt:drawer_timer', ({ playerId, secondsLeft }) => {
+      if (!isActiveSock()) return;
+      setDrawerTimers(prev => ({ ...prev, [playerId]: secondsLeft }));
     });
     sock.on('dt:drawing_progress', ({ promptId, stepsDone, totalSteps, drawerName, activeDrawerIds }) => {
       if (!isActiveSock()) return;
@@ -3791,7 +3801,16 @@ export default function HostPage() {
       case 'dt-guessing':
       case 'dt-reveal':
       case 'dt-end':
-        return <DtHostPanel dtData={dtData} players={players} status={status} onRevealNext={() => socketRef.current?.emit('dt:reveal_next', { code: gameInfo.code })} />;
+        return (
+          <DtHostPanel
+            dtData={dtData}
+            players={players}
+            status={status}
+            drawerTimers={drawerTimers}
+            phaseTimer={phaseTimer}
+            onRevealNext={() => socketRef.current?.emit('dt:reveal_next', { code: gameInfo.code })}
+          />
+        );
       case 'fitb':
       case 'fitb-end':
         return <FitbHostPanel fitbData={fitbData} players={players} onSkipToVote={() => socketRef.current?.emit('fitb:skip_to_vote', { code: gameInfo.code })} onShowResults={() => socketRef.current?.emit('fitb:show_results', { code: gameInfo.code })} onNextRound={() => socketRef.current?.emit('fitb:next_round', { code: gameInfo.code })} />;

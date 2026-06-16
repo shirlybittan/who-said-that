@@ -282,6 +282,7 @@ const initialState = {
     chainsCompletedCount: 0,
     totalChains: 0,
     chainProgress: {},           // { promptId: { stepsDone, totalSteps, drawerName } }
+    activeDrawerIds: [],         // player IDs currently drawing (updated by server)
     // Guessing phase
     guessTurn: null,             // { promptId, finalStrokes, drawerCount }
     hasGuessed: false,
@@ -1321,6 +1322,7 @@ export const gameReducer = (state, action) => {
           ...state.dt,
           chainsCompletedCount: action.payload.chainsCompleted,
           totalChains: action.payload.totalChains,
+          activeDrawerIds: action.payload.activeDrawerIds || [],
         },
       };
     case 'DT_DRAWING_PROGRESS':
@@ -1328,6 +1330,7 @@ export const gameReducer = (state, action) => {
         ...state,
         dt: {
           ...state.dt,
+          activeDrawerIds: action.payload.activeDrawerIds || [],
           chainProgress: {
             ...state.dt.chainProgress,
             [action.payload.promptId]: {
