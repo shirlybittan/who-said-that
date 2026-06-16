@@ -45,7 +45,7 @@ const words = [
   'multitasking', 'eavesdropping', 'photobombing', 'ghosting',
   // Pop culture & misc
   'wifi', 'meme', 'influencer', 'podcast', 'hangover', 'awkward silence',
-  'hot take', 'ghosting', 'situationship', 'main character', 'toxic trait',
+  'hot take', 'situationship', 'main character', 'toxic trait',
   'side quest', 'plot armor', 'gaslight', 'era', 'understood the assignment',
 ];
 
