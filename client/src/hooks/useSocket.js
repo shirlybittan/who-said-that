@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 import { useEffect, useRef } from 'react';
 import { socket } from '../socket';
 import { useGame } from '../store/gameStore.jsx';

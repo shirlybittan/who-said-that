@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 import React, { useState } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
@@ -11,13 +12,7 @@ export default function PhotoVotePage() {
   const sounds = useSounds();
   const [selected, setSelected] = useState(null);
 
-<<<<<<< HEAD
-  
-
-  const handleVote = (targetPlayerId) => {
-=======
   const handleSelect = (targetPlayerId) => {
->>>>>>> origin/main
     if (pv.hasVoted || targetPlayerId === state.playerId) return;
     sounds.click?.();
     setSelected(targetPlayerId);
@@ -43,11 +38,7 @@ export default function PhotoVotePage() {
           const isMe = photo.playerId === state.playerId;
           const isSelected = selected === photo.playerId;
           const isVoted = pv.myVote === photo.playerId;
-<<<<<<< HEAD
-          
-=======
           const isDimmed = (pv.hasVoted && !isVoted) || (selected && !isSelected && !pv.hasVoted);
->>>>>>> origin/main
 
           return (
             <button

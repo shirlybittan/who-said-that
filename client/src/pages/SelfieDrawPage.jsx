@@ -1,11 +1,9 @@
+/* eslint-disable no-unused-vars */
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
-<<<<<<< HEAD
 
-=======
->>>>>>> origin/main
 import { useSounds } from '../hooks/useSounds';
 import { CANVAS_W, CANVAS_H, drawStroke, redrawOverlay } from '../utils/canvasUtils';
 import { useFullscreen } from '../hooks/useFullscreen';

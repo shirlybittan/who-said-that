@@ -2353,7 +2353,7 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
           {answerPaused ? '▶ Resume' : '⏸ Pause'}
         </button>
         <button
-          onClick={() => socketRef.current?.emit('sit:force_results', { code: gameInfo.code })}
+          onClick={onSitNext}
           className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#FFE66D] text-black hover:bg-[#ffdd33] active:scale-95 transition"
           style={{ boxShadow: '0 0 20px #FFE66D60' }}
         >

@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 import React, { useState, useEffect } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
@@ -54,12 +55,7 @@ export default function VotingPage() {
     socket.emit('submit_vote', { code: state.roomCode, votedPlayerId: pendingVoteId });
     dispatch({ type: 'MARK_VOTED' });
   };
-<<<<<<< HEAD
 
-  
-
-=======
->>>>>>> origin/main
   const handleNextAnswer = () => {
     socket.emit('next_answer_request', { code: state.roomCode });
   };
