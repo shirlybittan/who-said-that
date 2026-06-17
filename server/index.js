@@ -24,6 +24,28 @@ const { words: drawWordBank, prompts: drawPrompts } = require('./questions/drawi
 const { selfiePrompts } = require('./questions/selfie');
 const { isConfigured: storageConfigured, createPresignedUpload, getPublicBaseUrl } = require('./storage/photoStorage');
 
+// Fisher-Yates shuffle (unbiased, unlike .sort(() => Math.random() - 0.5))
+const fisherYatesShuffle = (arr) => {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+};
+
+// Select `count` items from `pool`, preferring items not in `history`.
+// History is trimmed so at most 70% of the pool is excluded, ensuring there's
+// always a fresh pool to draw from. After consuming items, the caller should
+// append them to history.
+const selectWithHistory = (pool, history, count, keyFn = (x) => typeof x === 'string' ? x : (x.template || JSON.stringify(x))) => {
+  const maxExclude = Math.floor(pool.length * 0.7);
+  const recentHistory = history.slice(-maxExclude);
+  const unused = pool.filter(item => !recentHistory.includes(keyFn(item)));
+  const priorityPool = unused.length >= count ? unused : pool;
+  return fisherYatesShuffle(priorityPool).slice(0, count);
+};
+
 // ─── Per-player upload tokens (prevents unauthenticated presigned URL requests) ─
 // A token is issued over the socket on join_success and required for the HTTP
 // endpoint. Keys are unguessable UUIDs, values expire after 24h.
@@ -1496,12 +1518,9 @@ io.on('connection', (socket) => {
 
     const totalRounds = Math.min(Math.max(parseInt(rounds) || 5, 1), promptPool.length);
 
-    // Shuffle prompts
-    const shuffled = [...promptPool];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
+    // Use room-level history to avoid recently seen prompts
+    if (!room.promptHistory) room.promptHistory = { mlt: [], fitb: [], caption: [], pmatch: [], photoassoc: [] };
+    const shuffled = selectWithHistory(promptPool, room.promptHistory.mlt, totalRounds);
 
     // Init jokers: 2 per player per game
     const jokers = {};
@@ -1522,6 +1541,9 @@ io.on('connection', (socket) => {
         allowSelfVote:  true,
       },
     });
+
+    // Track used prompts in room-level history
+    shuffled.slice(0, totalRounds).forEach(p => room.promptHistory.mlt.push(p));
   });
 
   socket.on('mlt:vote', ({ code, targetPlayerId }) => {
@@ -1979,11 +2001,19 @@ io.on('connection', (socket) => {
   const fitbQuestions = require('./questions/fillInTheBlank');
 
   const pickFitbQuestion = (room, players) => {
-    const unused = fitbQuestions.filter(q => !(room.fitb.usedQuestions || []).includes(q));
+    // Use room-level prompt history (persists across game restarts) combined with
+    // per-session used questions for fine-grained deduplication within a session
+    if (!room.promptHistory) room.promptHistory = { mlt: [], fitb: [], caption: [], pmatch: [], photoassoc: [] };
+    const sessionUsed = room.fitb.usedQuestions || [];
+    const allUsed = [...new Set([...room.promptHistory.fitb, ...sessionUsed])];
+    const maxExclude = Math.floor(fitbQuestions.length * 0.7);
+    const recentUsed = allUsed.slice(-maxExclude);
+    const unused = fitbQuestions.filter(q => !recentUsed.includes(q));
     const pool = unused.length > 0 ? unused : fitbQuestions;
     const q = pool[Math.floor(Math.random() * pool.length)];
     if (!room.fitb.usedQuestions) room.fitb.usedQuestions = [];
     room.fitb.usedQuestions.push(q);
+    room.promptHistory.fitb.push(q);
     // Replace {name} with round-robin player selection so all players get equal turns
     const playingPlayers = players.filter(p => p.isConnected && p.isPlaying);
     if (q.includes('{name}') && playingPlayers.length > 0) {
@@ -2884,7 +2914,17 @@ io.on('connection', (socket) => {
 
     cancelAllTimers(room);
     const { captionPrompts } = require('./questions/captionPrompts');
-    const shuffled = [...captionPrompts].sort(() => Math.random() - 0.5);
+
+    // Use room-level history to avoid recently seen caption prompts
+    if (!room.promptHistory) room.promptHistory = { mlt: [], fitb: [], caption: [], pmatch: [], photoassoc: [] };
+    const captionHistory = room.promptHistory.caption;
+    const maxExclude = Math.floor(captionPrompts.length * 0.7);
+    const recentHistory = captionHistory.slice(-maxExclude);
+    const unusedCaptionPrompts = captionPrompts.filter(p => !recentHistory.includes(p.id));
+    const captionPool = unusedCaptionPrompts.length >= Math.min(rounds, captionPrompts.length)
+      ? unusedCaptionPrompts
+      : captionPrompts;
+    const shuffled = fisherYatesShuffle(captionPool);
 
     room.phase = 'caption';
     room.caption = {
@@ -2975,6 +3015,10 @@ io.on('connection', (socket) => {
     const promptObj = room.caption.prompts[room.caption.currentPromptIndex] || { text: 'Write a funny caption!' };
     room.caption.currentPrompt = promptObj.text;
     room.caption.usedPrompts.push(promptObj.text);
+    // Track prompt id in room-level history to avoid repetition across sessions
+    if (promptObj.id && room.promptHistory) {
+      room.promptHistory.caption.push(promptObj.id);
+    }
     room.caption.currentPromptIndex++;
 
     const owner = room.players.find(p => p.id === room.caption.featuredOwnerId);
@@ -3217,13 +3261,17 @@ io.on('connection', (socket) => {
 
     cancelAllTimers(room);
     const pvPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+
+    // Use room-level history to avoid recently seen prompts; fix biased sort
+    if (!room.promptHistory) room.promptHistory = { mlt: [], fitb: [], caption: [], pmatch: [], photoassoc: [] };
+    const historyKey = subType === 'pmatch' ? 'pmatch' : 'photoassoc';
     let prompts;
     if (subType === 'pmatch') {
       const { pmatchPrompts } = require('./questions/pmatchPrompts');
-      prompts = [...pmatchPrompts].sort(() => Math.random() - 0.5);
+      prompts = selectWithHistory(pmatchPrompts, room.promptHistory[historyKey], Math.min(rounds, pmatchPrompts.length));
     } else {
       const { photoAssocTraits } = require('./questions/photoAssocTraits');
-      prompts = [...photoAssocTraits].sort(() => Math.random() - 0.5);
+      prompts = selectWithHistory(photoAssocTraits, room.promptHistory[historyKey], Math.min(rounds, photoAssocTraits.length));
     }
 
     room.phase = 'photovote';
@@ -3509,6 +3557,14 @@ io.on('connection', (socket) => {
     if (!player || !player.isHost) return;
 
     if (room.photoVote.currentRound >= room.photoVote.totalRounds) {
+      // Persist used prompts to room-level history before ending
+      if (room.promptHistory && room.photoVote.prompts) {
+        const histKey = room.photoVote.subType === 'pmatch' ? 'pmatch' : 'photoassoc';
+        room.photoVote.prompts.forEach(p => {
+          const key = typeof p === 'string' ? p : (p.template || JSON.stringify(p));
+          room.promptHistory[histKey].push(key);
+        });
+      }
       mergeToGlobalScores(io, room, room.photoVote.scores);
       room.photoVote.phase = 'ended';
       io.to(code).emit('photovote:game_over', {

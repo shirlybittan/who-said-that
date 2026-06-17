@@ -75,6 +75,13 @@ const createRoom = (socketId, playerName = 'Host', gameType = 'most-likely-to', 
         ? Math.min(Math.max(roomConfig.roundDurationSecs, 20), 300) : 60,
       anonymousMode: !!roomConfig.anonymousMode,
     },
+    promptHistory: {
+      mlt: [],
+      fitb: [],
+      caption: [],
+      pmatch: [],
+      photoassoc: [],
+    },
     sit: {
       targetPlayerIndex: 0,   // cycles through non-host players
       votes: {},              // { voterPlayerId: authorPlayerId }

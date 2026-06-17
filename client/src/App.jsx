@@ -121,6 +121,13 @@ const AnimatedRoutes = () => {
   );
 };
 
+const LangWrapper = ({ children }) => {
+  const { state } = useGame();
+  const dir = state.lang === 'he' ? 'rtl' : 'ltr';
+  return <div dir={dir} className="w-full min-h-screen h-full">{children}</div>;
+};
+
+
 const GlobalTimerOverlay = () => {
   const { state } = useGame();
   const timer = state.phaseTimer;
@@ -139,7 +146,7 @@ const RoomCodeBadge = () => {
   const { state } = useGame();
   if (!state.roomCode || !state.phase || state.phase === 'game_end') return null;
   return (
-    <div className="fixed bottom-4 right-4 z-50 bg-[#1A1A2E]/90 backdrop-blur-sm border border-[#2D2D44] rounded-xl px-3 py-2 text-center shadow-lg pointer-events-none">
+    <div className="fixed bottom-4 end-4 z-50 bg-[#1A1A2E]/90 backdrop-blur-sm border border-[#2D2D44] rounded-xl px-3 py-2 text-center shadow-lg pointer-events-none">
       <p className="text-[10px] font-['Nunito'] text-gray-500 uppercase tracking-widest leading-none mb-0.5">Room</p>
       <p className="text-lg font-['Fredoka_One'] text-[#FFE66D] tracking-widest leading-tight">{state.roomCode}</p>
     </div>
@@ -157,7 +164,7 @@ const SoundToggle = () => {
     <button
       onClick={handleToggle}
       title={muted ? 'Unmute sounds' : 'Mute sounds'}
-      className="absolute top-4 right-20 bg-[#2D2D44] text-white px-3 py-1 rounded-full text-sm font-bold z-50 border border-gray-600 hover:bg-[#4ECDC4] hover:text-black transition"
+      className="absolute top-4 end-20 bg-[#2D2D44] text-white px-3 py-1 rounded-full text-sm font-bold z-50 border border-gray-600 hover:bg-[#4ECDC4] hover:text-black transition"
       aria-label={muted ? 'Unmute sounds' : 'Mute sounds'}
     >
       {muted ? '🔇' : '🔊'}
@@ -167,18 +174,49 @@ const SoundToggle = () => {
 
 const LangSwitcher = () => {
   const { state, dispatch } = useGame();
-  const toggleLanguage = () => {
-    const newLang = state.lang === 'en' ? 'fr' : 'en';
-    dispatch({ type: 'SET_LANG', payload: newLang });
+  const [open, setOpen] = useState(false);
+
+  const setLanguage = (lang) => {
+    dispatch({ type: 'SET_LANG', payload: lang });
+    setOpen(false);
+  };
+
+  const labels = {
+    en: 'EN 🇬🇧',
+    fr: 'FR 🇫🇷',
+    he: 'HE 🇮🇱'
   };
 
   return (
-    <button 
-      onClick={toggleLanguage} 
-      className="absolute top-4 right-4 bg-[#2D2D44] text-white px-3 py-1 rounded-full text-sm font-bold z-50 border border-gray-600 hover:bg-[#FFE66D] hover:text-black transition"
-    >
-      {state.lang === 'en' ? 'FR 🇫🇷' : 'EN 🇬🇧'}
-    </button>
+    <div className="absolute top-4 end-4 z-[999]">
+      <button 
+        onClick={() => setOpen(!open)} 
+        className="bg-[#2D2D44] text-white px-3 py-1 rounded-full text-sm font-bold border border-gray-600 hover:bg-[#FFE66D] hover:text-black transition flex items-center gap-1"
+      >
+        {labels[state.lang] || 'EN 🇬🇧'}
+        <span className="text-[10px]">{open ? '▲' : '▼'}</span>
+      </button>
+      <AnimatePresence>
+        {open && (
+          <motion.div 
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="absolute top-full mt-2 end-0 bg-[#1A1A2E] border border-[#2D2D44] rounded-lg shadow-xl overflow-hidden flex flex-col min-w-[100px]"
+          >
+            {Object.entries(labels).map(([lang, label]) => (
+              <button
+                key={lang}
+                onClick={() => setLanguage(lang)}
+                className={`px-4 py-2 text-start hover:bg-[#2D2D44] text-sm transition-colors ${state.lang === lang ? 'text-[#4ECDC4] font-bold' : 'text-white'}`}
+              >
+                {label}
+              </button>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 };
 
@@ -189,27 +227,29 @@ function App() {
 
   return (
     <BrowserRouter>
-      <Routes>
-        {/* Host / TV screen — manages its own socket, lives outside GameProvider */}
-        <Route path="/host" element={<HostPage />} />
+      <ErrorBoundary>
+        <GameProvider>
+          <LangWrapper>
+            <SoundToggle />
+            <LangSwitcher />
+            <Routes>
+              {/* Host / TV screen */}
+              <Route path="/host" element={<HostPage />} />
 
-        {/* Player / phone routes */}
-        <Route path="/*" element={
-          <ErrorBoundary>
-            <GameProvider>
-              <SocketHandler>
-                <div className="font-['Nunito'] min-h-screen bg-[#0D0D1A] text-[#F7F7F7] relative">
-                  <SoundToggle />
-                  <LangSwitcher />
-                  <RoomCodeBadge />
-                  <GlobalTimerOverlay />
-                  <AnimatedRoutes />
-                </div>
-              </SocketHandler>
-            </GameProvider>
-          </ErrorBoundary>
-        } />
-      </Routes>
+              {/* Player / phone routes */}
+              <Route path="/*" element={
+                <SocketHandler>
+                  <div className="font-['Nunito'] min-h-screen bg-[#0D0D1A] text-[#F7F7F7] relative">
+                    <RoomCodeBadge />
+                    <GlobalTimerOverlay />
+                    <AnimatedRoutes />
+                  </div>
+                </SocketHandler>
+              } />
+            </Routes>
+          </LangWrapper>
+        </GameProvider>
+      </ErrorBoundary>
     </BrowserRouter>
   );
 }
