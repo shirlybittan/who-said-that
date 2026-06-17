@@ -41,6 +41,7 @@ export default function MiniGameWrapper({
       {!hasConfirmed ? (
         /* ── Input Phase ─────────────────────────────────────────────── */
         <button
+          data-testid="player-answer-submit"
           onClick={onConfirm}
           disabled={disableConfirm}
           className={`w-full max-w-sm py-4 rounded-2xl font-['Fredoka_One'] text-xl uppercase shadow-lg transition active:scale-95 ${

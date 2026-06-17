@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { translations } from '../locales/translations.js';
-import React2, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import { QRCodeSVG } from 'qrcode.react';
@@ -462,7 +461,7 @@ function QuestionPanel({ questionData, players, paused = false, serverSecondsLef
   const secondsLeft = serverSecondsLeft !== undefined ? serverSecondsLeft : localSecondsLeft;
 
   return (
-    <div className="flex flex-col items-center gap-8 w-full max-w-5xl">
+    <div data-testid="host-question-screen" className="flex flex-col items-center gap-8 w-full max-w-5xl">
       <div className="flex items-center gap-4">
         <span className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">
           Round {questionData.round} of {questionData.totalRounds}
@@ -1989,6 +1988,7 @@ function SetupScreen({ onCreateRoom, onSpectate }) {
 
       <div className="flex flex-col sm:flex-row gap-6 w-full max-w-2xl">
         <button
+          data-testid="host-btn-create-room"
           onClick={onCreateRoom}
           className="flex-1 flex flex-col items-center gap-5 bg-[#1A1A2E] border-2 border-[#4ECDC4] rounded-3xl p-8 hover:bg-[#4ECDC4]/10 active:scale-[0.98] transition text-left"
           style={{ boxShadow: '0 0 40px #4ECDC420' }}
@@ -2299,6 +2299,7 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
   if (status === 'lobby') {
     controls = (
       <button
+        data-testid="lobby-start-btn"
         onClick={onStart}
         disabled={!canStart}
         className={`px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl transition ${canStart

@@ -189,6 +189,7 @@ export default function QuestionPage() {
             isHost={state.isHost}
           >
             <textarea
+              data-testid="player-answer-input"
               value={answer}
               onChange={(e) => handleAnswerChange(e.target.value)}
               placeholder={isSituational && target ? `What would ${target.name} say?` : t.typeAnswerPlaceholder}

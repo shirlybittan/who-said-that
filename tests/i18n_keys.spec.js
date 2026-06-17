@@ -21,9 +21,9 @@ test.describe('i18n keys test', () => {
       let keys = [];
       for (const key in obj) {
         if (typeof obj[key] === 'object' && obj[key] !== null) {
-          keys = keys.concat(extractKeys(obj[key], \`\${prefix}\${key}.\`));
+          keys = keys.concat(extractKeys(obj[key], `${prefix}${key}.`));
         } else {
-          keys.push(\`\${prefix}\${key}\`);
+          keys.push(`${prefix}${key}`);
         }
       }
       return keys;

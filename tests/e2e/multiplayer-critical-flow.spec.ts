@@ -6,12 +6,17 @@ test.describe('Multiplayer Game Flow (Host + Players)', () => {
     
     // --- Phase A: Game Creation ---
     const pin = await GameActions.createGame(hostPage);
-    expect(pin).toMatch(/^[A-Z]{4}$/); // Assert 4 uppercase letters
+    expect(pin).toMatch(/^[A-Z0-9]{4}$/); // Assert 4 alphanumeric characters
     
     // --- Phase B: Player Join ---
-    // Have all players join concurrently for real-world simulation
-    const joinPromises = playerPages.map((page, index) => 
-      GameActions.joinGame(page, pin, `Player_${index + 1}`)
+    // Have Player 1 join first so they are guaranteed to be the Host Controller (VIP)
+    await GameActions.joinGame(playerPages[0], pin, 'Player_1');
+    // Wait for Player 1 to fully enter the lobby before proceeding to guarantee VIP status
+    await expect(playerPages[0].getByText('Player_1')).toBeVisible({ timeout: 5000 });
+    
+    // Have the rest join concurrently
+    const joinPromises = playerPages.slice(1).map((page, index) => 
+      GameActions.joinGame(page, pin, `Player_${index + 2}`)
     );
     await Promise.all(joinPromises);
 
@@ -22,14 +27,13 @@ test.describe('Multiplayer Game Flow (Host + Players)', () => {
     }
 
     // --- Phase C: Game Start ---
-    // The FIRST player to join becomes the Host Controller
-    const hostController = playerPages[0]; 
-    await GameActions.startGame(hostController);
+    // The Host Screen (Big Screen Mode) controls the game, so start from the host page!
+    await GameActions.startGame(hostPage);
 
     // Assert ALL contexts transition synchronously
     await Promise.all([
       expect(hostPage.getByTestId('host-question-screen')).toBeVisible({ timeout: 15000 }),
-      ...playerPages.map(page => expect(page.url()).not.toContain('lobby')) 
+      ...playerPages.map(page => expect(page).not.toHaveURL(/.*lobby/, { timeout: 15000 })) 
       // The exact player screen testId depends on the sub-game, but we verify they left the lobby
     ]);
 

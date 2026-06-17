@@ -402,6 +402,7 @@ export default function LobbyPage() {
           )}
 
           <button
+            data-testid="lobby-start-btn"
             disabled={state.players?.filter(p => p.isPlaying).length < 3}
             onClick={handleStartGame}
             style={state.players?.filter(p => p.isPlaying).length >= 3 ? { backgroundColor: activeType.color } : {}}

@@ -188,7 +188,7 @@ const LangSwitcher = () => {
   };
 
   return (
-    <div className="absolute top-4 end-4 z-[999]">
+    <div className="fixed top-4 right-4 z-[9999]">
       <button 
         onClick={() => setOpen(!open)} 
         className="bg-[#2D2D44] text-white px-3 py-1 rounded-full text-sm font-bold border border-gray-600 hover:bg-[#FFE66D] hover:text-black transition flex items-center gap-1"
@@ -202,7 +202,7 @@ const LangSwitcher = () => {
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="absolute top-full mt-2 end-0 bg-[#1A1A2E] border border-[#2D2D44] rounded-lg shadow-xl overflow-hidden flex flex-col min-w-[100px]"
+            className="absolute top-full mt-2 right-0 bg-[#1A1A2E] border border-[#2D2D44] rounded-lg shadow-xl overflow-hidden flex flex-col min-w-[100px]"
           >
             {Object.entries(labels).map(([lang, label]) => (
               <button
