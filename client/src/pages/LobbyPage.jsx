@@ -412,7 +412,7 @@ export default function LobbyPage() {
         </div>
       ) : (
         <div className="fixed bottom-0 w-full bg-[#1A1A2E] p-6 border-t-2 border-[#FF6B6B] flex flex-col items-center shadow-[0_-10px_30px_rgba(0,0,0,0.5)] z-50">
-            <p className="text-[#FF6B6B] font-['Fredoka_One'] text-xl animate-pulse">{t.waitingHost}</p>
+            <p className="text-[#FF6B6B] font-['Fredoka_One'] text-xl animate-pulse" data-testid="player-waiting-screen">{t.waitingHost}</p>
         </div>
       )}
     </div>

@@ -161,7 +161,7 @@ function LobbyPanel({ gameInfo, players, joinUrl, onKickPlayer }) {
         </div>
         <div className="text-center">
           <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-1">or enter code</p>
-          <p className="text-5xl font-['Fredoka_One'] tracking-[0.2em] text-white">{gameInfo.code}</p>
+          <p className="text-5xl font-['Fredoka_One'] tracking-[0.2em] text-white" data-testid="host-lobby-pin">{gameInfo.code}</p>
         </div>
       </div>
 
@@ -186,7 +186,7 @@ function LobbyPanel({ gameInfo, players, joinUrl, onKickPlayer }) {
               {activePlayers.length} joined
             </span>
           </div>
-          <div className="flex flex-wrap gap-4">
+          <div className="flex flex-wrap gap-4" data-testid="host-lobby-player-list">
             {activePlayers.map(p => (
               <div key={p.id} className="flex flex-col items-center gap-1 group relative">
                 <PlayerAvatar player={p} size="md" />
@@ -285,7 +285,7 @@ function MltResultsPanel({ mlt, players }) {
   const prompt = typeof mlt.prompt === 'object' ? (mlt.prompt?.en || mlt.prompt) : (mlt.prompt || '');
   const maxCount = Math.max(...(mlt.results || []).map(r => r.count), 1);
   return (
-    <div className="flex flex-col items-center gap-8 w-full max-w-4xl">
+    <div className="flex flex-col items-center gap-8 w-full max-w-4xl" data-testid="host-question-screen">
       <motion.div
         className="text-center"
         initial={{ opacity: 0, y: -20 }}
@@ -525,7 +525,7 @@ function VotingPanel({ votingData, players, phaseTimer }) {
   const authorId = current?.playerId;
   const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
   return (
-    <div className="flex flex-col items-center gap-8 w-full max-w-4xl">
+    <div className="flex flex-col items-center gap-8 w-full max-w-4xl" data-testid="host-question-screen">
       <div className="flex items-center gap-3">
         <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">
           Answer {votingData.currentIndex + 1} of {votingData.answers?.length || 0}
@@ -693,7 +693,7 @@ function TotPanel({ totData, players }) {
   const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
   if (totData.resultsVisible) {
     return (
-      <div className="flex flex-col items-center gap-8 w-full max-w-4xl">
+      <div className="flex flex-col items-center gap-8 w-full max-w-4xl" data-testid="host-question-screen">
         <div className="text-center">
           <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest mb-2">Results · Round {totData.round}/{totData.totalRounds}</p>
           <h2 className="text-2xl font-['Fredoka_One'] text-[#FFE66D]">{totData.question}</h2>
@@ -1879,7 +1879,7 @@ function SelfieHostPanel({ selfieData, players, onSkipToVote, onShowResults }) {
   const roundLabel = selfieData.totalRounds > 1 ? ` — Round ${selfieData.round}/${selfieData.totalRounds}` : '';
   if (selfieData.phase === 'results') {
     return (
-      <div className="flex flex-col items-center gap-8 w-full max-w-4xl">
+      <div className="flex flex-col items-center gap-8 w-full max-w-4xl" data-testid="host-question-screen">
         <h1 className="text-4xl font-['Fredoka_One'] text-[#FD79A8]">🎨 Selfie Artist — Results{roundLabel}!</h1>
         <div className="w-full flex flex-col gap-3">
           {(selfieData.leaderboard || []).map((entry, i) => (

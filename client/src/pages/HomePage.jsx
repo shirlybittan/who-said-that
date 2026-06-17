@@ -95,6 +95,7 @@ export default function HomePage() {
           value={joinNickname}
           onChange={(e) => setJoinNickname(e.target.value)}
           maxLength={15}
+          data-testid="player-input-name"
           className="w-full p-3 rounded-xl text-black text-[16px] border-2 border-transparent focus:border-[#FFE66D] focus:outline-none"
         />
         <div className="flex gap-2">
@@ -104,10 +105,12 @@ export default function HomePage() {
             maxLength={4}
             value={roomCode}
             onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+            data-testid="player-input-pin"
             className="w-3/5 p-3 rounded-xl text-black text-center font-bold text-xl uppercase border-2 border-transparent focus:border-[#FFE66D] focus:outline-none min-w-0"
           />
           <button
             onClick={handleJoinRoom}
+            data-testid="player-btn-join"
             className="w-2/5 bg-[#FFE66D] hover:bg-[#ffdd33] text-black font-bold py-3 px-2 rounded-xl transition active:scale-95 text-lg font-['Fredoka_One'] shadow-lg truncate"
           >
             {t.joinBtn}
