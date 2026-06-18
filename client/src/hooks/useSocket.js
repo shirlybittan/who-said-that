@@ -614,11 +614,15 @@ export const useSocket = () => {
     };
     const onDtGuessingPhase = (data) => {
       if (gameTypeRef.current !== 'draw-telephone') return;
-      // Reducer extracts guessTurn from guessPayloads using state.playerId directly.
-      // We always navigate to wait — DrawTelWaitPage immediately redirects to guess
-      // when guessTurn is set in state.
       dispatch({ type: 'DT_GUESSING_PHASE', payload: data });
-      navigate('/draw-tel-wait');
+      
+      const myId = sessionStorage.getItem('wst_playerId');
+      const hasGuessPayload = data.guessPayloads && data.guessPayloads[myId];
+      if (hasGuessPayload || stateRef.current.dt.guessTurn) {
+        navigate('/draw-tel-guess');
+      } else {
+        navigate('/draw-tel-wait');
+      }
     };
     const onDtYourGuess = (data) => {
       if (gameTypeRef.current !== 'draw-telephone') return;

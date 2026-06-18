@@ -1,14 +1,14 @@
 import { Page, expect } from '@playwright/test';
 
 export class GameActions {
-  static async createGame(hostPage: Page) {
+  static async createGame(hostPage: Page, gameName: string = 'Who Said That?') {
     await hostPage.goto('http://localhost:5173/host');
     const setupCreateBtn = hostPage.getByTestId('host-btn-create-room');
     await expect(setupCreateBtn).toBeVisible({ timeout: 5000 });
     await setupCreateBtn.click();
     
     // Select the specific game type
-    const gameTypeBtn = hostPage.locator('button', { hasText: 'Who Said That?' });
+    const gameTypeBtn = hostPage.locator('button', { hasText: gameName });
     await expect(gameTypeBtn).toBeVisible({ timeout: 5000 });
     await gameTypeBtn.click();
     
