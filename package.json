@@ -1,6 +1,7 @@
 {
   "scripts": {
-    "dev": "concurrently \"npm run dev --prefix client\" \"npm start --prefix server\""
+    "dev": "concurrently \"npm run dev --prefix client\" \"npm start --prefix server\"",
+    "test:e2e": "playwright test tests/e2e"
   },
   "dependencies": {
     "@playwright/test": "^1.60.0",

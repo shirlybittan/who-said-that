@@ -12,12 +12,12 @@ npm run dev
 
 To run the suite in headless mode:
 ```bash
-npx playwright test tests/e2e/multiplayer-game.spec.ts
+npx playwright test tests/e2e/multiplayer-critical-flow.spec.ts
 ```
 
 To run with UI mode (excellent for debugging multiplayer sync):
 ```bash
-npx playwright test tests/e2e/multiplayer-game.spec.ts --ui
+npx playwright test tests/e2e/multiplayer-critical-flow.spec.ts --ui
 ```
 
 ## CI Integration
