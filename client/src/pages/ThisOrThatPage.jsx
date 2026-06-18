@@ -21,12 +21,17 @@ export default function ThisOrThatPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tot.question]);
 
-  const handleVote = (choice) => {
+  const handleSelect = (choice) => {
     if (tot.hasVoted || tot.resultsVisible) return;
-    sounds.vote();
+    sounds.click?.();
     setLocalChoice(choice);
-    socket.emit('tot:vote', { code: roomCode, choice });
-    dispatch({ type: 'TOT_MARK_VOTED', payload: { choice } });
+  };
+
+  const handleConfirm = () => {
+    if (tot.hasVoted || tot.resultsVisible || !localChoice) return;
+    sounds.vote();
+    socket.emit('tot:vote', { code: roomCode, choice: localChoice });
+    dispatch({ type: 'TOT_MARK_VOTED', payload: { choice: localChoice } });
   };
 
   const handleNextRound = () => {
@@ -72,7 +77,7 @@ export default function ThisOrThatPage() {
           {state.isPlaying ? (<>
           {/* Choice A */}
           <button
-            onClick={() => handleVote('a')}
+            onClick={() => handleSelect('a')}
             disabled={tot.hasVoted}
             className={`w-full rounded-2xl p-5 text-xl font-['Fredoka_One'] transition-all border-2 active:scale-95
               ${localChoice === 'a'
@@ -97,7 +102,7 @@ export default function ThisOrThatPage() {
 
           {/* Choice B */}
           <button
-            onClick={() => handleVote('b')}
+            onClick={() => handleSelect('b')}
             disabled={tot.hasVoted}
             className={`w-full rounded-2xl p-5 text-xl font-['Fredoka_One'] transition-all border-2 active:scale-95
               ${localChoice === 'b'
@@ -112,6 +117,17 @@ export default function ThisOrThatPage() {
               <span className="flex-1 text-center">{tot.b}</span>
             </div>
           </button>
+
+          {/* Confirm Button */}
+          {!tot.hasVoted && localChoice && (
+            <motion.button
+              initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+              onClick={handleConfirm}
+              className="mt-4 w-full bg-[#6C5CE7] hover:bg-[#5a4fd4] text-white font-bold py-4 px-6 rounded-xl transition transform active:scale-95 text-xl font-['Fredoka_One'] shadow-[0_0_20px_rgba(108,92,231,0.4)] uppercase"
+            >
+              Confirm Choice
+            </motion.button>
+          )}
 
           {tot.hasVoted && (
             <VoteLocked

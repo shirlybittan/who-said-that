@@ -46,7 +46,6 @@ export default function DrawTelDrawPage() {
   const [color, setColor] = useState('#000000');
   const [width, setWidth] = useState(WIDTHS[1]);
   const [strokeCount, setStrokeCount] = useState(0);
-  const [submitted, setSubmitted] = useState(false);
   const { isFullscreen, containerRef, toggleFullscreen } = useFullscreen();
 
   const existingStrokesRef = useRef([]);
@@ -73,7 +72,6 @@ export default function DrawTelDrawPage() {
     strokesRef.current = [];
     existingStrokesRef.current = turn?.existingStrokes || [];
     setStrokeCount(0);
-    setSubmitted(false);
     const canvas = canvasRef.current;
     if (!canvas) return;
     if (selfieData) {
@@ -97,18 +95,16 @@ export default function DrawTelDrawPage() {
       strokes: strokesRef.current,
     });
     dispatch({ type: 'DT_MARK_TURN_SUBMITTED' });
-    setSubmitted(true);
   }, [roomCode, turn?.promptId, sounds, dispatch]);
 
   const { hasConfirmed, confirm, editResponse, markConfirmed } = useMiniGameLifecycle({
     onSubmit: handleSubmit,
     resetKey: turn?.promptId,
-    initialConfirmed: submitted,
+    initialConfirmed: dt.hasSubmittedTurn,
   });
 
   const handleEditResponse = () => {
     editResponse();
-    setSubmitted(false);
   };
 
   const startDraw = useCallback((x, y) => {
@@ -215,23 +211,23 @@ export default function DrawTelDrawPage() {
 
   // Auto-submit at ≤1 second (belt-and-suspenders alongside dt:time_up)
   useEffect(() => {
-    if (!submitted && turn && dt.currentTurn?.secondsLeft <= 1) {
+    if (!hasConfirmed && turn && dt.currentTurn?.secondsLeft <= 1) {
       handleSubmit();
       markConfirmed();
     }
-  }, [dt.currentTurn?.secondsLeft, submitted, turn, handleSubmit, markConfirmed]);
+  }, [dt.currentTurn?.secondsLeft, hasConfirmed, turn, handleSubmit, markConfirmed]);
 
   // Force-submit when server says time is up
   useEffect(() => {
     const onTimeUp = ({ promptId }) => {
-      if (!submitted && turn?.promptId === promptId) {
+      if (!hasConfirmed && turn?.promptId === promptId) {
         handleSubmit();
         markConfirmed();
       }
     };
     socket.on('dt:time_up', onTimeUp);
     return () => socket.off('dt:time_up', onTimeUp);
-  }, [submitted, turn, handleSubmit, markConfirmed]);
+  }, [hasConfirmed, turn, handleSubmit, markConfirmed]);
 
   // Listen for live background drawing updates from the previous drawer
   useEffect(() => {
@@ -334,130 +330,119 @@ export default function DrawTelDrawPage() {
               </div>
             </div>
           </div>
-
           {/* Right: Canvas + Controls */}
           <div className="lg:w-[420px] flex flex-col gap-3">
-            <div
-              ref={containerRef}
-              className={isFullscreen
-                ? 'fixed inset-0 z-50 bg-[#0D0D1A] flex flex-col items-center justify-center'
-                : 'relative flex flex-col gap-3'}
+            <MiniGameWrapper
+              hasConfirmed={hasConfirmed}
+              onConfirm={confirm}
+              onEditResponse={handleEditResponse}
+              confirmLabel={dt.hasSubmittedTurn ? "Update Drawing" : "Submit Drawing"}
+              disableConfirm={strokeCount === 0}
             >
-            <div className={`relative w-full ${isFullscreen ? 'flex-1 flex items-center justify-center' : ''}`}
-              style={isFullscreen ? {} : { aspectRatio: `${CANVAS_W}/${CANVAS_H}` }}
-            >
-              {/* Selfie photo behind the canvas */}
-              {selfieData && (
-                <img
-                  src={selfieData}
-                  className="absolute inset-0 w-full h-full object-contain rounded-2xl pointer-events-none bg-[#111827]"
-                  alt="selfie background"
-                />
-              )}
-              <canvas
-                ref={canvasRef}
-                width={CANVAS_W}
-                height={CANVAS_H}
-                className={`absolute inset-0 w-full h-full rounded-2xl ${selfieData ? 'bg-transparent' : 'bg-white'}`}
-                style={{ touchAction: 'none' }}
-                onTouchStart={onTouchStart}
-                onTouchMove={onTouchMove}
-                onTouchEnd={endDraw}
-                onMouseDown={onMouseDown}
-                onMouseMove={onMouseMove}
-                onMouseUp={endDraw}
-                onMouseLeave={endDraw}
-              />
-              {/* Fullscreen toggle */}
-              <button
-                onClick={toggleFullscreen}
-                className="absolute top-2 left-2 z-10 bg-black/60 hover:bg-black/80 text-white rounded-lg px-2 py-1 text-base leading-none transition"
-                title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+              <div
+                ref={containerRef}
+                className={isFullscreen
+                  ? `fixed inset-0 z-50 bg-[#0D0D1A] flex flex-col items-center justify-center ${hasConfirmed ? 'pointer-events-none opacity-80' : ''}`
+                  : `relative flex flex-col gap-3 ${hasConfirmed ? 'pointer-events-none opacity-80' : ''}`}
               >
-                {isFullscreen ? '⤡' : '⤢'}
-              </button>
-              {hasConfirmed && (
-                <div className="absolute top-2 right-2 bg-black/70 text-white text-xs font-['Nunito'] px-2 py-1 rounded-lg">
-                  ✓ Submitted — keep drawing to update
-                </div>
-              )}
-            </div>
-
-            {/* Toolbar */}
-            <div className={`bg-[#1A1A2E] rounded-2xl p-3 border border-[#2D2D44] flex flex-col gap-2 ${isFullscreen ? 'absolute bottom-0 left-0 right-0 rounded-none rounded-t-2xl bg-[#1A1A2E]/95 backdrop-blur-sm' : ''}`}>
-              {/* Colors */}
-              <div className="flex justify-between">
-                {COLORS.map(c => (
-                  <button
-                    key={c}
-                    onClick={() => {
-                      setTool('pen');
-                      setColor(c);
-                    }}
-                    className={`w-7 h-7 rounded-full border-2 transition ${
-                      tool === 'pen' && color === c ? 'border-white scale-110' : 'border-transparent'
-                    }`}
-                    style={{ backgroundColor: c }}
+                <div className={`relative w-full ${isFullscreen ? 'flex-1 flex items-center justify-center' : ''}`}
+                  style={isFullscreen ? {} : { aspectRatio: `${CANVAS_W}/${CANVAS_H}` }}
+                >
+                  {/* Selfie photo behind the canvas */}
+                  {selfieData && (
+                    <img src={selfieData} alt="selfie background" className="absolute inset-0 w-full h-full object-contain bg-[#111827] rounded-2xl" />
+                  )}
+                  <canvas
+                    ref={canvasRef}
+                    width={CANVAS_W}
+                    height={CANVAS_H}
+                    onMouseDown={onMouseDown}
+                    onMouseMove={onMouseMove}
+                    onMouseUp={endDraw}
+                    onMouseLeave={endDraw}
+                    onTouchStart={onTouchStart}
+                    onTouchMove={onTouchMove}
+                    onTouchEnd={endDraw}
+                    onTouchCancel={endDraw}
+                    className="w-full h-auto bg-transparent border-2 border-[#2D2D44] rounded-2xl shadow-inner touch-none relative z-10"
+                    style={isFullscreen ? { maxHeight: '100vh', width: 'auto', maxWidth: '100vw' } : {}}
                   />
-                ))}
-                <button
-                  onClick={() => {
-                    setTool('eraser');
-                  }}
-                  className={`w-7 h-7 rounded-full border-2 transition flex items-center justify-center ${
-                    tool === 'eraser' ? 'border-white scale-110 bg-gray-400' : 'border-transparent bg-gray-600'
-                  }`}
-                >
-                  <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                </button>
-              </div>
-              {/* Widths */}
-              <div className="flex items-center gap-3 bg-[#0D0D1A] rounded-lg p-2">
-                {WIDTHS.map(w => (
+                  
+                  {/* Fullscreen toggle button */}
                   <button
-                    key={w}
-                    onClick={() => {
-                      setWidth(w);
-                    }}
-                    className={`flex-1 h-8 rounded-md flex items-center justify-center transition ${
-                      width === w ? 'bg-[#FF6B6B]' : 'bg-[#2D2D44] hover:bg-gray-600'
-                    }`}
+                    onClick={toggleFullscreen}
+                    className="absolute top-2 left-2 z-20 bg-black/50 p-2 rounded-lg text-white hover:bg-black/80 transition"
                   >
-                    <div className="bg-white rounded-full" style={{ width: w, height: w }} />
+                    {isFullscreen ? '↙️' : '↗️'}
                   </button>
-                ))}
-              </div>
-              {/* Actions */}
-              <div className="flex gap-2">
-                <button
-                  onClick={handleUndo}
-                  disabled={strokeCount === 0}
-                  className="flex-1 py-2 rounded-lg bg-[#2D2D44] text-white font-['Nunito'] disabled:opacity-50"
-                >
-                  Undo
-                </button>
-                <button
-                  onClick={handleClear}
-                  disabled={strokeCount === 0}
-                  className="flex-1 py-2 rounded-lg bg-[#2D2D44] text-white font-['Nunito'] disabled:opacity-50"
-                >
-                  Clear
-                </button>
-              </div>
-            </div>
+                </div>
 
-            <div className={`w-full ${isFullscreen ? 'hidden' : ''}`}>
-              <MiniGameWrapper
-                hasConfirmed={hasConfirmed}
-                onConfirm={confirm}
-                onEditResponse={handleEditResponse}
-                confirmLabel={submitted ? "Update Drawing" : "Submit Drawing"}
-                disableConfirm={strokeCount === 0}
-              />
-            </div>
-            </div>{/* end fullscreen container */}
+                {/* Toolbar */}
+                <div className={`bg-[#1A1A2E] rounded-2xl p-3 border border-[#2D2D44] flex flex-col gap-2 w-full ${isFullscreen ? 'absolute bottom-0 left-0 right-0 rounded-none rounded-t-2xl bg-[#1A1A2E]/95 backdrop-blur-sm z-20' : ''}`}>
+                  {/* Colors */}
+                  <div className="flex justify-between">
+                    {COLORS.map(c => (
+                      <button
+                        key={c}
+                        onClick={() => {
+                          setTool('pen');
+                          setColor(c);
+                        }}
+                        className={`w-7 h-7 rounded-full border-2 transition ${
+                          tool === 'pen' && color === c ? 'border-white scale-110' : 'border-transparent'
+                        }`}
+                        style={{ backgroundColor: c }}
+                      />
+                    ))}
+                    <button
+                      onClick={() => {
+                        setTool('eraser');
+                      }}
+                      className={`w-7 h-7 rounded-full border-2 transition flex items-center justify-center ${
+                        tool === 'eraser' ? 'border-white scale-110 bg-gray-400' : 'border-transparent bg-gray-600'
+                      }`}
+                    >
+                      <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
+                  {/* Widths */}
+                  <div className="flex items-center gap-3 bg-[#0D0D1A] rounded-lg p-2">
+                    {WIDTHS.map(w => (
+                      <button
+                        key={w}
+                        onClick={() => {
+                          setWidth(w);
+                        }}
+                        className={`flex-1 h-8 rounded-md flex items-center justify-center transition ${
+                          width === w ? 'bg-[#FF6B6B]' : 'bg-[#2D2D44] hover:bg-gray-600'
+                        }`}
+                      >
+                        <div className="bg-white rounded-full" style={{ width: w, height: w }} />
+                      </button>
+                    ))}
+                  </div>
+                  {/* Actions */}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleUndo}
+                      disabled={strokeCount === 0}
+                      className="flex-1 py-2 rounded-lg bg-[#2D2D44] text-white font-['Nunito'] disabled:opacity-50"
+                    >
+                      Undo
+                    </button>
+                    <button
+                      onClick={handleClear}
+                      disabled={strokeCount === 0}
+                      className="flex-1 py-2 rounded-lg bg-[#2D2D44] text-white font-['Nunito'] disabled:opacity-50"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </MiniGameWrapper>
           </div>
         </div>
       </motion.div>
