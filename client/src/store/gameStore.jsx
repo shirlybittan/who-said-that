@@ -58,8 +58,8 @@ const sliceHandlers = {
 const initialState = {
   playerId: sessionStorage.getItem('wst_playerId') || null,
   playerName: sessionStorage.getItem('wst_playerName') || null,
-  roomCode: localStorage.getItem('wst_roomCode') || null,
-  uploadToken: localStorage.getItem('wst_uploadToken') || null,
+  roomCode: sessionStorage.getItem('wst_roomCode') || null,
+  uploadToken: sessionStorage.getItem('wst_uploadToken') || null,
   isHost: false,
   isPlaying: true,
   joinedMidRound: false,

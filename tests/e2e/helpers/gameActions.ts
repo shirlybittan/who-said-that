@@ -33,7 +33,7 @@ export class GameActions {
     await playerPage.getByTestId('player-btn-join').click();
 
     // Verify player is in the lobby
-    await expect(playerPage.getByTestId('host-btn-start').or(playerPage.getByTestId('player-waiting-screen'))).toBeVisible({ timeout: 10000 });
+    await expect(playerPage.getByTestId('lobby-start-btn').or(playerPage.getByTestId('player-waiting-screen'))).toBeVisible({ timeout: 10000 });
   }
 
   static async startGame(playerPage: Page) {

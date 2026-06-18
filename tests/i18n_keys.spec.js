@@ -7,9 +7,10 @@ test.describe('i18n keys test', () => {
     // Read translations.js manually to avoid Babel export syntax issues
     const translationsContent = fs.readFileSync(path.join(__dirname, '../client/src/locales/translations.js'), 'utf8');
     
-    // Quick hack to extract the object
-    const objStr = translationsContent.replace('export const translations = ', '').trim().replace(/;$/, '');
-    const translations = JSON.parse(objStr);
+    const vm = require('vm');
+    const sandbox = {};
+    vm.runInNewContext(translationsContent.replace(/^export const translations\s*=\s*/, 'translations = '), sandbox);
+    const translations = sandbox.translations;
 
     const langs = Object.keys(translations);
     expect(langs.length).toBeGreaterThanOrEqual(3);

@@ -1,6 +1,4 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useGame } from '../store/gameStore.jsx';
-import { translations } from '../locales/translations.js';
 import { useSearchParams } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import { QRCodeSVG } from 'qrcode.react';

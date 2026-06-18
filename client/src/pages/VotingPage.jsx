@@ -20,12 +20,14 @@ export default function VotingPage() {
   const serverTimeLeft = state.phaseTimer?.secondsLeft ?? 0;
   const timerActive = state.phaseTimer?.active ?? false;
 
+  const [pendingVoteId, setPendingVoteId] = useState(null);
+
   useEffect(() => {
     sounds.reveal();
+    // Clear pending vote from the previous answer
+    setPendingVoteId(null);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.currentAnswerIndex]);
-
-  const [pendingVoteId, setPendingVoteId] = useState(null);
 
   useEffect(() => {
     if (!state.isPlaying) return;   // cast screen never auto-votes

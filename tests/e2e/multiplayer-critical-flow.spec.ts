@@ -45,5 +45,13 @@ test.describe('Multiplayer Game Flow (Host + Players)', () => {
     // await hostController.getByTestId('btn-pause').click();
     // await expect(hostPage.getByText('⏸ Paused')).toBeVisible();
 
+    // --- Phase G: Storage and UI Uniqueness Validation ---
+    // Assert that the names are safely stored in sessionStorage (prevents cross-tab pollution bug)
+    const player1Page = playerPages[0];
+    const sessionName = await player1Page.evaluate(() => sessionStorage.getItem('wst_playerName'));
+    expect(sessionName).toBe('Player_1');
+    const localName = await player1Page.evaluate(() => localStorage.getItem('wst_playerName'));
+    expect(localName).toBeNull();
+
   });
 });

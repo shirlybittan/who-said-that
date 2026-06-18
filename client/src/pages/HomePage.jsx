@@ -22,7 +22,8 @@ export default function HomePage() {
   // doesn't show every new tab under the same old player name.
   useEffect(() => {
     sessionStorage.removeItem('wst_playerId');
-    localStorage.removeItem('wst_roomCode');
+    sessionStorage.removeItem('wst_roomCode');
+    sessionStorage.removeItem('wst_playerName');
     dispatch({ type: 'CLEAR_SESSION' });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -34,9 +35,9 @@ export default function HomePage() {
 
     const code = roomCode.toUpperCase();
 
-    localStorage.removeItem('wst_roomCode');
+    sessionStorage.removeItem('wst_roomCode');
     sessionStorage.removeItem('wst_playerId');
-    localStorage.setItem('wst_playerName', joinNickname.trim());
+    sessionStorage.setItem('wst_playerName', joinNickname.trim());
 
     if (socket.connected) {
       socket.emit('join_room', { code, playerName: joinNickname.trim(), playerId: null });
