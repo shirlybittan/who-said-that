@@ -8,11 +8,9 @@ test('Draw Telephone - selfie to drawing phase integration', async ({ browser })
   // Host Creates Room
   await hostPage.locator('button:has-text("Create New Room")').click();
   // Select "Drawing in Chain" (which is Draw Telephone)
-  await hostPage.locator('button', { hasText: /Drawing in Chain/i }).waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
   const dtBtn = hostPage.locator('button', { hasText: /Drawing in Chain/i }).first();
-  if (await dtBtn.isVisible()) {
-    await dtBtn.click();
-  }
+  await expect(dtBtn).toBeVisible({ timeout: 5000 });
+  await dtBtn.click();
 
   await hostPage.locator('button:has-text("Create & Display")').click();
 
@@ -92,11 +90,12 @@ test('Draw Telephone - selfie to drawing phase integration', async ({ browser })
       }
       
       // Handle Drawing Phase
-      const canvas = p.locator('canvas');
+      const canvas = p.locator('canvas').last();
       if (await canvas.count() > 0 && await canvas.isVisible()) {
-        // Just draw a small line
-        await canvas.click({ position: { x: 50, y: 50 } });
-        await canvas.click({ position: { x: 100, y: 100 } });
+        await canvas.dragTo(canvas, {
+          sourcePosition: { x: 50, y: 50 },
+          targetPosition: { x: 100, y: 100 }
+        });
         // Click Submit Drawing
         const submitDrawBtn = p.locator('button', { hasText: /Submit Drawing|Done/i });
         if (await submitDrawBtn.count() > 0 && await submitDrawBtn.isVisible()) {

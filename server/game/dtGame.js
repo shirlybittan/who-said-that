@@ -1,5 +1,6 @@
 const { selfiePrompts } = require('../questions/selfie');
 const { words: drawWordBank, prompts: drawPrompts } = require('../questions/drawing');
+const { isConfigured: storageConfigured, getPublicBaseUrl } = require('../storage/photoStorage');
 const TimerManager = require('./TimerManager');
 const VoteCollector = require('./VoteCollector');
 const { buildMiniGameSnapshot } = require('./miniGameSnapshot');
@@ -597,7 +598,7 @@ function setupDtGame(io, socket, {
     if (!player || !player.isHost) return;
 
     cancelAllTimers(room);
-    const { captionPrompts } = require('./questions/captionPrompts');
+    const { captionPrompts } = require('../questions/captionPrompts');
 
     // Use room-level history to avoid recently seen caption prompts
     if (!room.promptHistory) room.promptHistory = { mlt: [], fitb: [], caption: [], pmatch: [], photoassoc: [] };
@@ -923,7 +924,7 @@ function setupDtGame(io, socket, {
     if (!player || !player.isHost) return;
     cancelAllTimers(room);
     const pvPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
-    const { pmatchPrompts } = require('./questions/pmatchPrompts');
+    const { pmatchPrompts } = require('../questions/pmatchPrompts');
     const prompts = [...pmatchPrompts].sort(() => Math.random() - 0.5);
     room.phase = 'photovote';
     room.photoVote = { subType: 'pmatch', phase: 'photo', photos: {}, currentRound: 1, totalRounds: 5, prompts, currentPromptIndex: 0, votes: {}, scores: {} };
@@ -951,10 +952,10 @@ function setupDtGame(io, socket, {
     const historyKey = subType === 'pmatch' ? 'pmatch' : 'photoassoc';
     let prompts;
     if (subType === 'pmatch') {
-      const { pmatchPrompts } = require('./questions/pmatchPrompts');
+      const { pmatchPrompts } = require('../questions/pmatchPrompts');
       prompts = selectWithHistory(pmatchPrompts, room.promptHistory[historyKey], Math.min(rounds, pmatchPrompts.length));
     } else {
-      const { photoAssocTraits } = require('./questions/photoAssocTraits');
+      const { photoAssocTraits } = require('../questions/photoAssocTraits');
       prompts = selectWithHistory(photoAssocTraits, room.promptHistory[historyKey], Math.min(rounds, photoAssocTraits.length));
     }
 
