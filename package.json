@@ -4,13 +4,13 @@
     "test:e2e": "playwright test tests/e2e"
   },
   "dependencies": {
-    "@playwright/test": "^1.60.0",
     "qrcode.react": "^4.2.0",
     "react-confetti": "^6.4.0",
     "react-router-dom": "^6.30.3",
     "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.0",
     "autoprefixer": "^10.4.27",
     "postcss": "^8.5.8",
     "tailwindcss": "^4.2.2"
