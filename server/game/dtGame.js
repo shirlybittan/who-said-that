@@ -23,6 +23,8 @@ function setupDtGame(io, socket, {
   mergeToGlobalScores,
   fisherYatesShuffle,
   selectWithHistory,
+  storageConfigured,
+  getPublicBaseUrl,
 }) {
   socket.on('selfie:start', ({ code, rounds }) => {
     const room = getRoom(code);
@@ -1655,29 +1657,40 @@ function setupDtGame(io, socket, {
     const missingPhotos = playingPlayers.filter(p => !allPhotos[p.id]);
     const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
 
-    if (missingPhotos.length > 0) {
-      // Need selfies first — track which players already have photos
-      room.dt.phase = 'selfie';
-      room.dt.selfiePhotos = {};
-      playingPlayers.forEach(p => {
-        if (allPhotos[p.id]) room.dt.selfiePhotos[p.id] = true;
-      });
-      const photoCount = Object.keys(room.dt.selfiePhotos).length;
-      io.to(code).emit('dt:selfie_phase', { players, photoCount, totalPhotographers: playingPlayers.length });
-      // Notify players whose photos are already saved so they see "reusing" UI
-      playingPlayers.forEach(p => {
-        if (allPhotos[p.id] && p.socketId) {
-          io.to(getPlayerSocket(p)).emit('player:photo_reused', { gameType: 'dt' });
-        }
-      });
-      // If all photos already saved, skip selfie phase immediately
-      if (photoCount >= playingPlayers.length) {
-        room.dt.phase = 'prompting';
-        io.to(code).emit('dt:prompt_phase', { players, totalPrompts: playingPlayers.length, secondsLeft: DT_PROMPT_SECS });
-        startDtPromptTimer(io, room, code);
+    room.dt.phase = 'selfie';
+    room.dt.selfiePhotos = {}; // Players must explicitly submit or reuse
+
+    const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
+    io.to(code).emit('dt:selfie_phase', { players, photoCount: 0, totalPhotographers: playingPlayers.length });
+
+    // Notify players whose photos are already saved so they can choose to reuse them
+    playingPlayers.forEach(p => {
+      if (allPhotos[p.id] && p.socketId) {
+        io.to(getPlayerSocket(p)).emit('player:photo_reused', { gameType: 'dt', waitingForConsent: true });
       }
-    } else {
-      io.to(code).emit('dt:prompt_phase', { players, totalPrompts: playingPlayers.length, secondsLeft: DT_PROMPT_SECS });
+    });
+  });
+
+  socket.on('dt:reuse_photo', ({ code }) => {
+    const room = getRoom(code);
+    if (!room || room.phase !== 'dt' || room.dt.phase !== 'selfie') return;
+    const player = findPlayer(room, socket.id);
+    if (!player || !player.isPlaying) return;
+
+    if (!room.playerPhotos || !room.playerPhotos[player.id]) return; // No photo to reuse
+    if (room.dt.selfiePhotos[player.id]) return; // Already submitted/reused
+
+    room.dt.selfiePhotos[player.id] = true;
+    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const photoCount = Object.keys(room.dt.selfiePhotos).length;
+    const submittedPlayerIds = Object.keys(room.dt.selfiePhotos);
+
+    io.to(code).emit('dt:photo_received', { photoCount, totalPhotographers: playingPlayers.length, submittedPlayerIds });
+
+    if (photoCount >= playingPlayers.length) {
+      room.dt.phase = 'prompting';
+      const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
+      io.to(code).emit('dt:prompt_phase', { players, totalPrompts: players.length, secondsLeft: DT_PROMPT_SECS });
       startDtPromptTimer(io, room, code);
     }
   });
@@ -1962,7 +1975,10 @@ function setupDtGame(io, socket, {
     const maxStep = 2; // 3 steps (0,1,2) regardless of N drawing steps
 
     if (room.dt.revealStep >= maxStep) {
-      // Already on last step — advance to next chain
+      // Advance to next chain, cancelling the vote timer if it's active
+      if (room._timers && room._timers.dtVote) {
+        room._timers.dtVote.cancel();
+      }
       advanceDtReveal(io, room, code);
       return;
     }
@@ -2148,4 +2164,10 @@ function setupDtGame(io, socket, {
   });
 }
 
-module.exports = { setupDtGame };
+module.exports = { 
+  setupDtGame,
+  DT_DRAW_SECS,
+  DT_PROMPT_SECS,
+  DT_GUESS_SECS,
+  DT_VOTE_SECS 
+};

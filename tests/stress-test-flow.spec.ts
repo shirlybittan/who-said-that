@@ -4,7 +4,7 @@ import { test, expect } from '@playwright/test';
 test.setTimeout(1800000); // 30 minutes
 
 test('Massive 10-Player Playlist Stress Test', async ({ browser }) => {
-  const TOTAL_PLAYERS = 10;
+  const TOTAL_PLAYERS = 15;
   
   // 1. Host Context
   const hostContext = await browser.newContext();

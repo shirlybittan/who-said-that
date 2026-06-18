@@ -17,7 +17,7 @@ const { buildMiniGameSnapshot } = require('./game/miniGameSnapshot');
 const TimerManager = require('./game/TimerManager');
 const SubmissionTracker = require('./game/SubmissionTracker');
 const VoteCollector = require('./game/VoteCollector');
-const { setupDtGame } = require('./game/dtGame');
+const { setupDtGame, DT_DRAW_SECS, DT_PROMPT_SECS, DT_GUESS_SECS, DT_VOTE_SECS } = require('./game/dtGame');
 const { createMltGame } = require('./game/mltGame');
 const { createTotGame } = require('./game/totGame');
 const mltPromptBank = require('./questions/mostLikelyTo');
@@ -2348,7 +2348,7 @@ io.on('connection', (socket) => {
 
   // ─── Selfie Roast handlers ─────────────────────────────────────────────────
 
-    setupDtGame(io, socket, { getPlayerSocket, findPlayer, cancelAllTimers, mergeToGlobalScores, fisherYatesShuffle, selectWithHistory });
+    setupDtGame(io, socket, { getPlayerSocket, findPlayer, cancelAllTimers, mergeToGlobalScores, fisherYatesShuffle, selectWithHistory, storageConfigured, getPublicBaseUrl });
 
   // ─── Change game (keep same room/players, switch game type) ───────────────
 

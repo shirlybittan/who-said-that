@@ -616,7 +616,7 @@ export const useSocket = () => {
       if (gameTypeRef.current !== 'draw-telephone') return;
       dispatch({ type: 'DT_GUESSING_PHASE', payload: data });
       
-      const myId = sessionStorage.getItem('wst_playerId');
+      const myId = stateRef.current.playerId || sessionStorage.getItem('wst_playerId');
       const hasGuessPayload = data.guessPayloads && data.guessPayloads[myId];
       if (hasGuessPayload || stateRef.current.dt.guessTurn) {
         navigate('/draw-tel-guess');
@@ -678,7 +678,8 @@ export const useSocket = () => {
     socket.on('dt:paused', onDtPaused);
     socket.on('dt:resumed', onDtResumed);
 
-    const onPhotoReused = ({ gameType }) => {
+    const onPhotoReused = ({ gameType, waitingForConsent }) => {
+      if (waitingForConsent) return; // Client will explicitly submit via "Reuse" button
       if (gameType === 'selfie') dispatch({ type: 'SELFIE_MARK_PHOTO_SUBMITTED' });
       else if (gameType === 'caption') dispatch({ type: 'CAPTION_MARK_PHOTO_SUBMITTED' });
       else if (gameType === 'photovote') dispatch({ type: 'PHOTOVOTE_MARK_PHOTO_SUBMITTED' });

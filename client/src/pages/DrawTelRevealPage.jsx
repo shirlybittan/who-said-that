@@ -255,21 +255,32 @@ export default function DrawTelRevealPage() {
 
       </AnimatePresence>
 
-      {/* Host controls — hidden on the vote step (server auto-advances) */}
-      {isHost && !isVoteStep && (
+      {/* Host controls */}
+      {isHost && (
         <div className="w-full max-w-md mt-6 space-y-2">
-          <button
-            onClick={handleNext}
-            className="w-full bg-[#FF6B6B] text-white font-['Fredoka_One'] text-lg py-3 rounded-xl transition hover:bg-[#ff5252]"
-          >
-            Next →
-          </button>
-          <button
-            onClick={handleEndGame}
-            className="w-full text-sm text-gray-500 underline font-['Nunito'] hover:text-white transition"
-          >
-            End Game
-          </button>
+          {isVoteStep ? (
+            <button
+              onClick={handleNext}
+              className="w-full bg-[#EAB308] text-[#0D0D1A] font-['Fredoka_One'] text-lg py-3 rounded-xl transition hover:bg-[#cda007]"
+            >
+              Skip to Next Drawing ⏭️
+            </button>
+          ) : (
+            <button
+              onClick={handleNext}
+              className="w-full bg-[#FF6B6B] text-white font-['Fredoka_One'] text-lg py-3 rounded-xl transition hover:bg-[#ff5252]"
+            >
+              Next →
+            </button>
+          )}
+          {!isVoteStep && (
+            <button
+              onClick={handleEndGame}
+              className="w-full text-sm text-gray-500 underline font-['Nunito'] hover:text-white transition"
+            >
+              End Game
+            </button>
+          )}
         </div>
       )}
     </motion.div>
