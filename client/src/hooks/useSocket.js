@@ -590,10 +590,12 @@ export const useSocket = () => {
       const myId = stateRef.current.playerId;
       const activeDrawerIds = data.activeDrawerIds || [];
       if (myId && !activeDrawerIds.includes(myId)) {
-        const currentPath = window.location.pathname;
-        if (currentPath === '/draw-tel-draw') {
-          navigate('/draw-tel-wait');
-        }
+        setTimeout(() => {
+          const currentPath = window.location.pathname;
+          if (currentPath === '/draw-tel-draw' && stateRef.current.dt.phase === 'drawing') {
+            navigate('/draw-tel-wait');
+          }
+        }, 50);
       }
     };
     const onDtDrawingProgress = (data) => {
@@ -606,18 +608,22 @@ export const useSocket = () => {
       const notDrawing = myId && !activeDrawerIds.includes(myId);
       if (notDrawing) {
         // Only navigate away from the draw page (they may be on wait already)
-        const currentPath = window.location.pathname;
-        if (currentPath === '/draw-tel-draw') {
-          navigate('/draw-tel-wait');
-        }
+        setTimeout(() => {
+          const currentPath = window.location.pathname;
+          if (currentPath === '/draw-tel-draw' && stateRef.current.dt.phase === 'drawing') {
+            navigate('/draw-tel-wait');
+          }
+        }, 50);
       }
     };
     const onDtGuessingPhase = (data) => {
+      console.log('[DT] Received dt:guessing_phase', data);
       if (gameTypeRef.current !== 'draw-telephone') return;
       dispatch({ type: 'DT_GUESSING_PHASE', payload: data });
       
       const myId = stateRef.current.playerId || sessionStorage.getItem('wst_playerId');
       const hasGuessPayload = data.guessPayloads && data.guessPayloads[myId];
+      console.log(`[DT] myId=${myId}, hasGuessPayload=${!!hasGuessPayload}`);
       if (hasGuessPayload || stateRef.current.dt.guessTurn) {
         navigate('/draw-tel-guess');
       } else {
@@ -633,6 +639,7 @@ export const useSocket = () => {
       dispatch({ type: 'DT_GUESS_RECEIVED', payload: data });
     };
     const onDtRevealPhase = (data) => {
+      console.log('[DT] Received dt:reveal_phase', data);
       dispatch({ type: 'DT_REVEAL_PHASE', payload: data });
       navigate('/draw-tel-reveal');
     };

@@ -90,6 +90,41 @@ test('Draw Telephone - selfie to drawing phase integration', async ({ browser })
       if (await submitBtn.count() > 0 && await submitBtn.first().isVisible()) {
         await submitBtn.first().click().catch(() => {});
       }
+      
+      // Handle Drawing Phase
+      const canvas = p.locator('canvas');
+      if (await canvas.count() > 0 && await canvas.isVisible()) {
+        // Just draw a small line
+        await canvas.click({ position: { x: 50, y: 50 } });
+        await canvas.click({ position: { x: 100, y: 100 } });
+        // Click Submit Drawing
+        const submitDrawBtn = p.locator('button', { hasText: /Submit Drawing|Done/i });
+        if (await submitDrawBtn.count() > 0 && await submitDrawBtn.isVisible()) {
+          await submitDrawBtn.click();
+        }
+      }
+
+      // Handle Guessing Phase
+      const isGuessPage = await p.locator('text="What\'s the original prompt?"').isVisible().catch(() => false);
+      if (isGuessPage) {
+        const guessInput = p.locator('input[type="text"]');
+        if (await guessInput.isVisible() && (await guessInput.inputValue()) === "") {
+          await guessInput.fill(`My guess is ${Math.random()}`);
+          await p.locator('button', { hasText: /Submit Guess/i }).click();
+        }
+      }
+
+      // Handle Voting in Reveal Phase
+      const voteBtns = p.locator('button', { hasText: /Correct|Close|Wrong/i });
+      if (await voteBtns.count() > 0 && await voteBtns.first().isVisible()) {
+        await voteBtns.first().click().catch(() => {});
+      }
+    }
+    
+    // Host handles Next during Reveal
+    const hostNextBtn = hostPage.locator('button', { hasText: /Next|Advance|See Scores/i });
+    if (await hostNextBtn.count() > 0 && await hostNextBtn.isVisible()) {
+      await hostNextBtn.click().catch(() => {});
     }
   }
 

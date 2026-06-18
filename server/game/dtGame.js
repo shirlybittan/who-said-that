@@ -15,6 +15,11 @@ const {
   evictStaleRooms,
 } = require('./roomManager');
 
+const DT_DRAW_SECS = 45;   // seconds per drawing turn
+const DT_PROMPT_SECS = 60;  // seconds to write a prompt before auto-generation
+const DT_GUESS_SECS = 60;   // seconds to guess before auto-submit
+const DT_VOTE_SECS = 30;    // seconds to vote before auto-advance
+
 // We need to pass in dependencies from index.js
 function setupDtGame(io, socket, {
   getPlayerSocket,
@@ -1299,12 +1304,6 @@ function setupDtGame(io, socket, {
   // target player (bijection, derangement preferred).  A drawing chain of all OTHER
   // players passes the canvas step-by-step.  The target then guesses the original
   // prompt from the final drawing.  All players vote correct/close/wrong.
-
-  const DT_DRAW_SECS = 45;   // seconds per drawing turn
-  const DT_PROMPT_SECS = 60;  // seconds to write a prompt before auto-generation
-  const DT_GUESS_SECS = 60;   // seconds to guess before auto-submit
-  const DT_VOTE_SECS = 30;    // seconds to vote before auto-advance
-
   // Helper: sanitize strokes (same rules as the regular drawing game)
   const sanitizeDtStrokes = (strokes) => {
     if (!Array.isArray(strokes)) return [];
@@ -1532,6 +1531,7 @@ function setupDtGame(io, socket, {
 
     // Broadcast guessing phase to room (includes ALL payloads so each client can pick theirs)
     // This acts as a fallback: even if the direct socket send fails, the room broadcast carries the data.
+    console.log(`[DT] Emitting dt:guessing_phase to room ${code}. Total guessers: ${totalGuessers}. Payloads:`, Object.keys(guessPayloads));
     io.to(code).emit('dt:guessing_phase', {
       totalGuessers,
       secondsLeft: DT_GUESS_SECS,
@@ -1659,8 +1659,6 @@ function setupDtGame(io, socket, {
 
     room.dt.phase = 'selfie';
     room.dt.selfiePhotos = {}; // Players must explicitly submit or reuse
-
-    const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
     io.to(code).emit('dt:selfie_phase', { players, photoCount: 0, totalPhotographers: playingPlayers.length });
 
     // Notify players whose photos are already saved so they can choose to reuse them
@@ -1756,11 +1754,16 @@ function setupDtGame(io, socket, {
     }
 
     // Create chains (without participant lists — built separately below)
+    console.log(`[DT] Creating chains for room ${code}. playingPlayers=${playingPlayers.length}, prompts=${room.dt.prompts.length}, shuffled=${shuffled.length}`);
     for (let i = 0; i < room.dt.prompts.length; i++) {
       const prompt = room.dt.prompts[i];
-      const targetPlayerId = shuffled[i];
+      const targetPlayerId = shuffled[i % shuffled.length];
+      if (!targetPlayerId) {
+        console.error(`[DT ERROR] targetPlayerId is undefined! i=${i}, shuffled=${JSON.stringify(shuffled)}`);
+      }
       const targetPlayer = playingPlayers.find(p => p.id === targetPlayerId);
       const finalText = prompt.templateText.replace(/\[name\]/gi, targetPlayer?.name || '?');
+      console.log(`[DT] Created chain ${prompt.id} with targetPlayerId=${targetPlayerId}`);
       room.dt.chains[prompt.id] = {
         id: prompt.id,
         authorId: prompt.authorId,
