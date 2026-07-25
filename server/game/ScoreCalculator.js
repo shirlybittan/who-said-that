@@ -29,38 +29,60 @@
  *   maxVotes:   number
  * }}
  */
+/**
+ * Count a votes map into per-target totals, and derive the top vote-getters.
+ *
+ * The single source of truth for the "count votes → find winner(s)" step that
+ * every voting game and every snapshot/restore path needs. Centralising it stops
+ * those hand-rolled copies from drifting (the classic "one player sees different
+ * scores" bug). Scoring/points stay game-specific — this only counts.
+ *
+ * @param {object} votes                    - { [voterId]: targetId }
+ * @param {object} [opts]
+ * @param {Array}  [opts.players]           - seed these players' counts to 0 so
+ *                                            they always appear in the result
+ * @param {boolean}[opts.countUnseeded=true]- when a seed list is given, whether
+ *                                            to also count votes for targets NOT
+ *                                            in it (false = ignore unknown targets)
+ * @param {boolean}[opts.excludeSelf=false] - drop self-votes (voter === target)
+ * @returns {{ voteCounts: object, maxVotes: number, winners: string[] }}
+ */
+function tallyVotes(votes, { players = null, countUnseeded = true, excludeSelf = false } = {}) {
+  const voteCounts = {};
+  if (players) players.forEach(p => { voteCounts[p.id] = 0; });
+
+  Object.entries(votes || {}).forEach(([voterId, targetId]) => {
+    if (excludeSelf && voterId === targetId) return;
+    if (voteCounts[targetId] === undefined) {
+      if (!countUnseeded) return; // seeded-only mode: ignore votes for unknown targets
+      voteCounts[targetId] = 0;
+    }
+    voteCounts[targetId] += 1;
+  });
+
+  const values = Object.values(voteCounts);
+  const maxVotes = values.length ? Math.max(0, ...values) : 0;
+  const winners = maxVotes > 0 ? Object.keys(voteCounts).filter(id => voteCounts[id] === maxVotes) : [];
+
+  return { voteCounts, maxVotes, winners };
+}
+
 function calculateVotingScores({ votes, players, config = {} }) {
   const {
     pointsPerVote = 100,
     allowSelfVote = false,
   } = config;
 
+  // Seed all eligible players and ignore votes for anyone outside that list —
+  // matching the classic per-vote scoring behaviour.
+  const { voteCounts, maxVotes, winners } = tallyVotes(votes, {
+    players,
+    countUnseeded: false,
+    excludeSelf: !allowSelfVote,
+  });
+
   const scores = {};
-  const voteCounts = {};
-
-  players.forEach(p => {
-    scores[p.id] = 0;
-    voteCounts[p.id] = 0;
-  });
-
-  Object.entries(votes).forEach(([voterId, targetId]) => {
-    if (!allowSelfVote && voterId === targetId) return;
-    if (voteCounts[targetId] !== undefined) {
-      voteCounts[targetId]++;
-    }
-  });
-
-  Object.entries(voteCounts).forEach(([playerId, count]) => {
-    scores[playerId] = count * pointsPerVote;
-  });
-
-  const maxVotes = players.length > 0
-    ? Math.max(...Object.values(voteCounts))
-    : 0;
-
-  const winners = maxVotes > 0
-    ? Object.keys(voteCounts).filter(id => voteCounts[id] === maxVotes)
-    : [];
+  players.forEach(p => { scores[p.id] = (voteCounts[p.id] || 0) * pointsPerVote; });
 
   return { scores, voteCounts, winners, maxVotes };
 }
@@ -92,4 +114,4 @@ function mergeRoundScores(cumulativeScores, roundScores) {
   return cumulativeScores;
 }
 
-module.exports = { calculateVotingScores, buildLeaderboard, mergeRoundScores };
+module.exports = { tallyVotes, calculateVotingScores, buildLeaderboard, mergeRoundScores };
