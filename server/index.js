@@ -19,6 +19,7 @@ const { loadRooms } = require('./game/persistence');
 const { selectQuestions, selectSituationalQuestions, selectThisOrThatQuestions, selectDrawingQuestion, selectMixedQuestions, shuffleAnswers } = require('./game/gameLogic');
 const { buildMiniGameSnapshot } = require('./game/miniGameSnapshot');
 const { computeCanonicalRoute } = require('./game/canonicalRoute');
+const { tallyVotes } = require('./game/ScoreCalculator');
 const eventLog = require('./game/eventLog');
 const TimerManager = require('./game/TimerManager');
 const SubmissionTracker = require('./game/SubmissionTracker');
@@ -375,10 +376,8 @@ const resolveDrawVoting = (io, room, code) => {
   if (!room.draw || room.draw.phase !== 'voting') return;
   room.draw.phase = 'results';
   const playingPlayers = room.players.filter(p => p.isPlaying);
-  // Tally votes
-  const voteCounts = {};
-  playingPlayers.forEach(p => { voteCounts[p.id] = 0; });
-  Object.values(room.draw.votes).forEach(votedFor => { if (voteCounts[votedFor] !== undefined) voteCounts[votedFor]++; });
+  // Tally votes (shared primitive: seed players, ignore votes for unknown targets)
+  const { voteCounts } = tallyVotes(room.draw.votes, { players: playingPlayers, countUnseeded: false });
   // Add to running scores
   Object.entries(voteCounts).forEach(([pid, v]) => { room.draw.scores[pid] = (room.draw.scores[pid] || 0) + v; });
   const roundScores = { ...voteCounts };
@@ -631,14 +630,11 @@ const assignTotTitles = (leaderboard) => {
 const closeSitVoting = (io, room, code) => {
   room.phase = 'sit-results';
 
-  // Tally votes per answer (answerId = authorPlayerId)
-  const voteCounts = {};
-  room.answers.forEach(a => { voteCounts[a.playerId] = 0; });
-  Object.values(room.sit.votes).forEach(authorId => {
-    if (voteCounts[authorId] !== undefined) voteCounts[authorId]++;
+  // Tally votes per answer (answerId = authorPlayerId) via the shared primitive.
+  const { voteCounts, maxVotes } = tallyVotes(room.sit.votes, {
+    players: room.answers.map(a => ({ id: a.playerId })),
+    countUnseeded: false,
   });
-
-  const maxVotes = Math.max(...Object.values(voteCounts), 0);
 
   // Award 1 point to author(s) of most-voted answer
   if (maxVotes > 0) {
