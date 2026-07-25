@@ -1,7 +1,8 @@
 {
   "scripts": {
     "dev": "concurrently \"npm run dev --prefix client\" \"npm start --prefix server\"",
-    "test:e2e": "playwright test tests/e2e"
+    "test:e2e": "playwright test tests/e2e",
+    "test:playlist": "node tests/integration/playlist.js"
   },
   "dependencies": {
     "qrcode.react": "^4.2.0",
