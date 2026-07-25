@@ -35,17 +35,40 @@ const delay = (ms) => new Promise(r => setTimeout(r, ms));
 let disconnects = []; // unexpected disconnect log
 
 // ─── Client wrapper ──────────────────────────────────────────────────────────
-function mkClient(name) {
-  const socket = io(URL, { transports: ['websocket'], forceNew: true });
-  const c = { name, socket, id: null, roster: [] };
-  socket.on('disconnect', (reason) => { disconnects.push(`${name}:${reason}`); });
-  socket.on('error', (d) => { console.log(`   [err ${name}] ${d && d.message}`); });
+// Wire the base listeners onto whatever socket the client currently holds (so a
+// reconnected socket gets them too). Intentional disconnects set expectDisconnect
+// so they aren't counted against the "no silent drops" invariant.
+function attachBase(c) {
+  const s = c.socket;
+  s.on('disconnect', (reason) => { if (!c.expectDisconnect) disconnects.push(`${c.name}:${reason}`); });
+  s.on('error', (d) => { console.log(`   [err ${c.name}] ${d && d.message}`); });
   // Track the FULL room roster only from events that carry the complete player
   // list (host + all players). Game payloads that carry only *playing* players
   // (e.g. mlt:prompt) must not be used here or they'd hide the host.
   const trackRoster = (d) => { if (d && Array.isArray(d.players)) c.roster = d.players; };
-  ['player_joined', 'player_disconnected', 'player_reconnected', 'game_changed'].forEach(ev => socket.on(ev, trackRoster));
+  ['player_joined', 'player_disconnected', 'player_reconnected', 'game_changed'].forEach(ev => s.on(ev, trackRoster));
+}
+
+function mkClient(name) {
+  const c = { name, socket: io(URL, { transports: ['websocket'], forceNew: true }), id: null, roster: [], expectDisconnect: false };
+  attachBase(c);
   return c;
+}
+
+// Simulate a real drop (network loss / app kill) and a reconnect carrying the
+// persisted identity in the handshake — exactly how the client auto-rejoins.
+// Asserts the reconnection guarantees: same id (no duplicate) + isRejoin.
+async function dropAndReconnect(c, code) {
+  const oldId = c.id;
+  c.expectDisconnect = true;
+  c.socket.close();
+  await delay(500); // let the server register the disconnect
+  c.socket = io(URL, { transports: ['websocket'], forceNew: true, auth: { playerId: oldId, roomCode: code, playerName: c.name } });
+  attachBase(c);
+  const js = await waitEvent(c, 'join_success', T);
+  assert(js.isRejoin === true, `${c.name} reconnect not flagged isRejoin`);
+  assert(js.playerId === oldId, `${c.name} got a NEW id on reconnect (${js.playerId} != ${oldId}) — duplicate risk`);
+  c.expectDisconnect = false;
 }
 
 // Wait for a single event on one client.
@@ -375,6 +398,33 @@ async function playDt(host, players, code) {
   host.socket.off('dt:reveal_update', revealH);
 }
 
+// Mid-game disconnect + reconnect during a live round. Proves a player can drop
+// and come back into the SAME game without a duplicate, and the game still
+// completes with everyone. Stresses the reconnection work (phases 1 & 4).
+async function recoveryDrill(host, players, code) {
+  const victim = players[2]; // P3
+  const voting = waitAll(players, 'mlt:voting_started');
+  host.socket.emit('mlt:start', { code, rounds: 1, allowSelfVote: true });
+  await voting;
+
+  // Drop + reconnect the victim BEFORE any votes (so the round can't advance
+  // without them), then everyone votes and the round must still resolve.
+  await dropAndReconnect(victim, code);
+
+  const results = waitAll(players, 'mlt:results');
+  emitAll(players, 'mlt:vote', (p, i) => ({ code, targetPlayerId: players[(i + 1) % players.length].id }));
+  await results;
+  const end = waitAll(players, 'mlt:end');
+  host.socket.emit('mlt:next_round', { code });
+  await end;
+
+  // No duplicate victim, roster intact.
+  const roster = host.roster;
+  const victimEntries = roster.filter(p => p.id === victim.id);
+  assert(victimEntries.length === 1, `duplicate victim after reconnect (${victimEntries.length})`);
+  assert(new Set(roster.map(p => p.id)).size === roster.length, 'duplicate ids after reconnect');
+}
+
 // ─── Playlist ────────────────────────────────────────────────────────────────
 const PLAYLIST = [
   ['most-likely-to', (h, p, c) => playMlt(h, p, c, 2)],
@@ -396,6 +446,21 @@ const LOOPS = parseInt(process.env.LOOPS || '1', 10); // replay the whole playli
   const { host, players, code } = await setup();
   console.log(`Room ${code} — host + ${players.length} players joined.\n`);
   let gamesPlayed = 0;
+
+  // Recovery pass: a player drops and reconnects mid-round before the playlist.
+  process.stdout.write('▶ recovery (mid-game disconnect/reconnect) ... ');
+  disconnects = [];
+  host.socket.emit('change_game', { code, newGameType: 'most-likely-to' });
+  await delay(350);
+  try {
+    await recoveryDrill(host, players, code);
+  } catch (e) {
+    console.log(`FAIL\n   ✗ ${e.message}`);
+    [host, ...players].forEach(c => c.socket.close());
+    process.exit(1);
+  }
+  checkpoint(host, players, code, 'recovery');
+  console.log('ok');
 
   for (let loop = 1; loop <= LOOPS; loop++) {
     if (LOOPS > 1) console.log(`— playlist pass ${loop}/${LOOPS} —`);
