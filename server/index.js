@@ -87,8 +87,16 @@ setInterval(() => {
   }
 }, 60 * 60 * 1000);
 
+// CORS origin: lock to an allowlist in production via ALLOWED_ORIGINS
+// (comma-separated). Unset → '*' (open) for local dev; warn if left open in prod.
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '').split(',').map(o => o.trim()).filter(Boolean);
+const corsOrigin = ALLOWED_ORIGINS.length ? ALLOWED_ORIGINS : '*';
+if (corsOrigin === '*' && process.env.NODE_ENV === 'production') {
+  console.warn('[cors] ALLOWED_ORIGINS is not set — allowing ALL origins. Set it to lock down production.');
+}
+
 const app = express();
-app.use(cors());
+app.use(cors({ origin: corsOrigin }));
 app.use(express.json());
 
 app.get('/ping', (req, res) => res.json({ status: 'awake' }));
@@ -196,7 +204,7 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: '*', // Allow all origins for dev
+    origin: corsOrigin, // '*' for dev; ALLOWED_ORIGINS allowlist in prod
     methods: ['GET', 'POST'],
   },
   // Tighter heartbeat so a silently-dropped player (phone sleep, tunnel, closed
