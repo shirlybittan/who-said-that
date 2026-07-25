@@ -639,14 +639,18 @@ const closeSitVoting = (io, room, code) => {
     .filter(p => p.isConnected && p.isPlaying)
     .map(p => ({ id: p.id, name: p.name, color: p.color }));
 
-  io.to(code).emit('sit:results', {
+  const payload = {
     answers: answersWithDetails,
     scores: { ...room.scores },
     players: scorePlayers,
     winners: room.answers
       .filter(a => voteCounts[a.playerId] === maxVotes && maxVotes > 0)
       .map(a => a.playerId),
-  });
+  };
+  // Stash authoritative results for reconnect restore (client uses these instead
+  // of recomputing the tally from raw votes — avoids drift).
+  room.sit.lastResults = payload;
+  io.to(code).emit('sit:results', payload);
 };
 
 // ─────────────────────────────────────────────────────────────────────────────

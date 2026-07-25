@@ -565,3 +565,29 @@ describe('buildJoinRestorePlan', () => {
     expect(markAction.payload.answerId).toBe(1);
   });
 });
+
+describe('server-computed results are preferred on restore (no client recompute)', () => {
+  it('mlt: uses room.mlt.lastResults verbatim when present', () => {
+    const lastResults = { results: [{ playerId: 'p1', count: 2, pct: 100 }], majorityPlayerIds: ['p1'], scores: { p1: 1 }, players: [], jokersUsed: [] };
+    const room = { ...baseRoom, phase: 'mlt', mlt: { ...baseRoom.mlt, roundState: 'results', prompt: 'Q', round: 1, votes: { p2: 'p1', p3: 'p1' }, scores: { p1: 1 }, lastResults } };
+    const plan = buildJoinRestorePlan({ room, playerId: 'p2', isRejoin: true, miniGameState: null });
+    const setResults = plan.actions.find((a) => a.type === 'MLT_SET_RESULTS');
+    expect(setResults.payload).toBe(lastResults); // same reference — used verbatim, not recomputed
+  });
+
+  it('mlt: falls back to recomputing from votes when lastResults is absent', () => {
+    const room = { ...baseRoom, phase: 'mlt', mlt: { ...baseRoom.mlt, roundState: 'results', prompt: 'Q', round: 1, votes: { p2: 'p1', p3: 'p1' }, scores: {} } };
+    const plan = buildJoinRestorePlan({ room, playerId: 'p2', isRejoin: true, miniGameState: null });
+    const setResults = plan.actions.find((a) => a.type === 'MLT_SET_RESULTS');
+    expect(setResults).toBeTruthy();
+    expect(setResults.payload.results.find((r) => r.playerId === 'p1').count).toBe(2);
+  });
+
+  it('sit: uses room.sit.lastResults verbatim when present', () => {
+    const lastResults = { answers: [{ id: 'p1', votes: 3 }], scores: { p1: 1 }, players: [], winners: ['p1'] };
+    const room = { ...baseRoom, phase: 'sit-results', currentQuestion: 'Q', answers: [{ playerId: 'p1', playerName: 'Alice', text: 'a' }], sit: { votes: { p2: 'p1' }, lastResults } };
+    const plan = buildJoinRestorePlan({ room, playerId: 'p2', isRejoin: true, miniGameState: null });
+    const setResults = plan.actions.find((a) => a.type === 'SIT_SET_RESULTS');
+    expect(setResults.payload).toBe(lastResults);
+  });
+});
