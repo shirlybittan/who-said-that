@@ -1,3 +1,5 @@
+const { tallyVotes } = require('./ScoreCalculator');
+
 const mapPlayer = (player) => ({ id: player.id, name: player.name, color: player.color });
 
 const getActivePlayers = (room) =>
@@ -26,11 +28,8 @@ const buildDrawSnapshot = (room, playerId) => {
     };
   });
 
-  const voteCounts = {};
-  activePlayers.forEach((player) => { voteCounts[player.id] = 0; });
-  Object.values(room.draw?.votes || {}).forEach((votedFor) => {
-    if (voteCounts[votedFor] !== undefined) voteCounts[votedFor] += 1;
-  });
+  // Only votes for still-active players count (seeded, unknown targets ignored).
+  const { voteCounts } = tallyVotes(room.draw?.votes, { players: activePlayers, countUnseeded: false });
 
   const results = submissions
     .map((submission) => ({ ...submission, votes: voteCounts[submission.playerId] || 0 }))
@@ -212,12 +211,7 @@ const buildCaptionSnapshot = (room, playerId) => {
 
 const buildPhotoVoteResults = (room) => {
   const activePlayers = getActivePlayers(room);
-  const voteCounts = {};
-  Object.values(room.photoVote?.votes || {}).forEach((targetId) => {
-    voteCounts[targetId] = (voteCounts[targetId] || 0) + 1;
-  });
-  const maxVotes = Math.max(0, ...Object.values(voteCounts));
-  const winners = Object.keys(voteCounts).filter((id) => voteCounts[id] === maxVotes && maxVotes > 0);
+  const { voteCounts, winners } = tallyVotes(room.photoVote?.votes);
 
   return {
     roundScores: Object.entries(room.photoVote?.votes || {}).reduce((scores, [voterId, targetId]) => {

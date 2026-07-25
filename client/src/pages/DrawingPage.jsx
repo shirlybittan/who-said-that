@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
 import { CANVAS_W, CANVAS_H, redrawCanvas } from '../utils/canvasUtils';
+import { saveStrokes, loadStrokes, clearStrokes, clearRoomStrokes } from '../utils/strokeAutosave';
 import { useFullscreen } from '../hooks/useFullscreen';
 import TimerRing from '../components/game/TimerRing';
 import ReplayCanvas from '../components/game/ReplayCanvas';
@@ -52,13 +53,24 @@ export default function DrawingPage() {
   const [strokeCount, setStrokeCount] = useState(0); // proxy for undo button state
   const [pendingVote, setPendingVote] = useState(null); // staged vote awaiting confirm
   const { isFullscreen, containerRef, toggleFullscreen } = useFullscreen();
+
+  // Per-drawing autosave key (room + player + round). Kept in a ref so the
+  // stroke callbacks can read the current key without re-creating on every round.
+  const autosaveKeyRef = useRef(null);
+  autosaveKeyRef.current = roomCode && playerId ? `${roomCode}:${playerId}:draw:${draw.round}` : null;
+
   useEffect(() => {
     if (state.phase && state.phase !== 'drawing' && state.phase !== 'drawEnd' && draw.phase === 'waiting') {
       navigate('/lobby');
     }
   }, [state.phase, draw.phase, navigate]);
 
-  // White canvas background on mount, new round, or new word (skip word)
+  // White canvas background on new round or new word (skip word). Also restores
+  // an autosaved drawing when (re)entering a round — this is what brings back a
+  // player's strokes after a refresh/reconnect mid-round, even if they never
+  // submitted. Gated on the round actually changing so a word-skip within the
+  // same round still starts on a blank canvas (never re-restores stale strokes).
+  const lastInitRoundRef = useRef(null);
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -67,8 +79,26 @@ export default function DrawingPage() {
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    if (lastInitRoundRef.current !== draw.round) {
+      lastInitRoundRef.current = draw.round;
+      const saved = loadStrokes(autosaveKeyRef.current);
+      if (saved && saved.length) {
+        strokesRef.current = saved;
+        setStrokeCount(saved.length);
+        redrawCanvas(canvas, saved);
+      }
+    }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draw.round, draw.yourWord]);
+
+  // Discard the autosave once the drawing phase is over (submitted round moved
+  // on), and wipe the whole room's autosaves when the drawing game ends.
+  useEffect(() => {
+    if (!draw.phase || draw.phase === 'drawing') return;
+    clearStrokes(autosaveKeyRef.current);
+    if (draw.phase === 'end') clearRoomStrokes(roomCode);
+  }, [draw.phase, roomCode]);
 
   // ── Drawing event handlers (all phases of pointer/touch) ─────────────────
   const startDraw = useCallback((x, y) => {
@@ -117,6 +147,7 @@ export default function DrawingPage() {
     if (curStroke.current && curStroke.current.points.length > 0) {
       strokesRef.current.push(curStroke.current);
       setStrokeCount(c => c + 1);
+      saveStrokes(autosaveKeyRef.current, strokesRef.current);
       // Auto-update submission when player keeps drawing after first submit
       if (draw.hasSubmitted && draw.phase === 'drawing') {
         socket.emit('draw:submit', { code: roomCode, strokes: strokesRef.current });
@@ -157,6 +188,7 @@ export default function DrawingPage() {
   const handleUndo = () => {
     strokesRef.current.pop();
     setStrokeCount(c => Math.max(0, c - 1));
+    saveStrokes(autosaveKeyRef.current, strokesRef.current);
     const canvas = canvasRef.current;
     if (canvas) redrawCanvas(canvas, strokesRef.current);
     if (draw.hasSubmitted && draw.phase === 'drawing') {
@@ -167,6 +199,7 @@ export default function DrawingPage() {
   const handleClear = () => {
     strokesRef.current = [];
     setStrokeCount(0);
+    saveStrokes(autosaveKeyRef.current, []);
     const canvas = canvasRef.current;
     if (canvas) {
       const ctx = canvas.getContext('2d');

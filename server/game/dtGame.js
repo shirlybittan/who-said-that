@@ -5,6 +5,7 @@ const TimerManager = require('./TimerManager');
 const VoteCollector = require('./VoteCollector');
 const { buildMiniGameSnapshot } = require('./miniGameSnapshot');
 const { shuffleAnswers } = require('./gameLogic');
+const { sanitizeStrokes } = require('./limits');
 const {
   createRoom,
   joinRoom,
@@ -285,17 +286,9 @@ function setupDtGame(io, socket, {
     if (!player || !player.isPlaying || !player.isConnected) return;
     const isUpdate = !!room.selfie.strokes[player.id];
 
-    // Sanitize strokes
+    // Sanitize strokes (shared limiter: cap count/points, validate colour/width)
     if (!Array.isArray(strokes)) return;
-    const sanitized = strokes.slice(0, 500).map(s => ({
-      color: /^#[0-9A-Fa-f]{3,6}$/.test(s.color) ? s.color : '#000000',
-      width: Math.min(Math.max(Number(s.width) || 4, 1), 40),
-      type: s.type === 'eraser' ? 'eraser' : 'pen',
-      points: Array.isArray(s.points) ? s.points.slice(0, 300).map(pt => ({
-        x: Math.round(Number(pt.x) || 0),
-        y: Math.round(Number(pt.y) || 0),
-      })) : [],
-    }));
+    const sanitized = sanitizeStrokes(strokes);
 
     room.selfie.strokes[player.id] = sanitized;
 
@@ -1305,18 +1298,8 @@ function setupDtGame(io, socket, {
   // target player (bijection, derangement preferred).  A drawing chain of all OTHER
   // players passes the canvas step-by-step.  The target then guesses the original
   // prompt from the final drawing.  All players vote correct/close/wrong.
-  // Helper: sanitize strokes (same rules as the regular drawing game)
-  const sanitizeDtStrokes = (strokes) => {
-    if (!Array.isArray(strokes)) return [];
-    return strokes.slice(0, 500).map(s => ({
-      color: /^#[0-9A-Fa-f]{3,6}$/.test(s.color) ? s.color : '#000000',
-      width: Math.min(Math.max(Number(s.width) || 4, 1), 40),
-      type: s.type === 'eraser' ? 'eraser' : 'pen',
-      points: Array.isArray(s.points)
-        ? s.points.slice(0, 300).map(pt => ({ x: Math.round(Number(pt.x) || 0), y: Math.round(Number(pt.y) || 0) }))
-        : [],
-    }));
-  };
+  // Helper: sanitize strokes (shared limiter — same rules everywhere)
+  const sanitizeDtStrokes = sanitizeStrokes;
 
   // Helper: build the combined strokes array from all completed drawing steps
   const buildCombinedStrokes = (chain) =>

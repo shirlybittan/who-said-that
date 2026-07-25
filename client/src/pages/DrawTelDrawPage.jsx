@@ -4,6 +4,7 @@ import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { useSounds } from '../hooks/useSounds';
 import { CANVAS_W, CANVAS_H, redrawCanvas, redrawOverlay, drawStroke } from '../utils/canvasUtils';
+import { saveStrokes, loadStrokes, clearRoomStrokes } from '../utils/strokeAutosave';
 import { useFullscreen } from '../hooks/useFullscreen';
 import TimerRing from '../components/game/TimerRing';
 import GamePageWrapper from '../components/GamePageWrapper.jsx';
@@ -27,8 +28,14 @@ const getPos = (canvas, clientX, clientY) => {
 
 export default function DrawTelDrawPage() {
   const { state, dispatch } = useGame();
-  const { dt, roomCode } = state;
+  const { dt, roomCode, playerId } = state;
   const turn = dt.currentTurn;
+
+  // Per-turn autosave key so a refresh/reconnect mid-turn restores the strokes
+  // the player already drew for this chain step. Held in a ref for the callbacks.
+  const autosaveKeyRef = useRef(null);
+  autosaveKeyRef.current = roomCode && playerId && turn?.promptId
+    ? `${roomCode}:${playerId}:dt:${turn.promptId}` : null;
   const selfieData = turn?.originalSelfieData || null;
   const sounds = useSounds();
   const navigate = useNavigate();
@@ -84,7 +91,20 @@ export default function DrawTelDrawPage() {
         redrawCanvas(canvas, existingStrokesRef.current);
       }
     }
-  }, [turn?.promptId, selfieData]);
+    // Restore an autosaved in-progress drawing for THIS turn (refresh recovery).
+    // A brand-new turn has no saved entry, so it stays blank as expected.
+    const saved = loadStrokes(autosaveKeyRef.current);
+    if (saved && saved.length) {
+      strokesRef.current = saved;
+      setStrokeCount(saved.length);
+      redrawAll();
+    }
+  }, [turn?.promptId, selfieData, redrawAll]);
+
+  // Wipe the room's drawing autosaves once the drawing phase is over.
+  useEffect(() => {
+    if (dt.phase && dt.phase !== 'drawing') clearRoomStrokes(roomCode);
+  }, [dt.phase, roomCode]);
 
   const handleSubmit = useCallback(() => {
     if (strokesRef.current.length === 0) return;
@@ -174,6 +194,7 @@ export default function DrawTelDrawPage() {
     if (curStroke.current && curStroke.current.points.length > 1) {
       strokesRef.current.push(curStroke.current);
       setStrokeCount(strokesRef.current.length);
+      saveStrokes(autosaveKeyRef.current, strokesRef.current);
       if (hasConfirmed) {
         socket.emit('dt:submit_strokes', {
           code: roomCode,
@@ -190,6 +211,7 @@ export default function DrawTelDrawPage() {
       sounds.undo?.();
       strokesRef.current.pop();
       setStrokeCount(strokesRef.current.length);
+      saveStrokes(autosaveKeyRef.current, strokesRef.current);
       redrawAll();
       if (hasConfirmed) {
         socket.emit('dt:submit_strokes', { code: roomCode, promptId: turn.promptId, strokes: strokesRef.current });
@@ -202,6 +224,7 @@ export default function DrawTelDrawPage() {
       sounds.clear?.();
       strokesRef.current = [];
       setStrokeCount(0);
+      saveStrokes(autosaveKeyRef.current, []);
       redrawAll();
       if (hasConfirmed) {
         socket.emit('dt:submit_strokes', { code: roomCode, promptId: turn.promptId, strokes: [] });

@@ -38,10 +38,15 @@ import DrawTelRevealPage from './pages/DrawTelRevealPage.jsx';
 import DrawTelEndPage from './pages/DrawTelEndPage.jsx';
 import DrawTelWaitPage from './pages/DrawTelWaitPage.jsx';
 import HostPage from './pages/HostPage.jsx';
+import ConnectionOverlay from './components/ConnectionOverlay.jsx';
 import { useSocket } from './hooks/useSocket';
+import { usePhaseSync } from './hooks/usePhaseSync';
+import { useScreenSync } from './hooks/useScreenSync';
 
 const SocketHandler = ({ children }) => {
   useSocket();
+  usePhaseSync();
+  useScreenSync();
   return <>{children}</>;
 };
 
@@ -243,6 +248,7 @@ function App() {
                     <RoomCodeBadge />
                     <GlobalTimerOverlay />
                     <AnimatedRoutes />
+                    <ConnectionOverlay />
                   </div>
                 </SocketHandler>
               } />

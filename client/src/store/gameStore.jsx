@@ -60,6 +60,10 @@ const initialState = {
   playerName: sessionStorage.getItem('wst_playerName') || null,
   roomCode: sessionStorage.getItem('wst_roomCode') || null,
   uploadToken: sessionStorage.getItem('wst_uploadToken') || null,
+  // Live socket connection health, driven by useSocket. Used to show a
+  // "Reconnecting…" overlay so a dropped player gets feedback instead of a
+  // frozen screen. 'online' | 'reconnecting' | 'offline'
+  connection: 'online',
   isHost: false,
   isPlaying: true,
   joinedMidRound: false,
@@ -327,6 +331,9 @@ export const gameReducer = (state, action) => {
   if (sliceHandler) return sliceHandler(state, action);
 
   switch (action.type) {
+    case 'SET_CONNECTION':
+      if (state.connection === action.payload) return state;
+      return { ...state, connection: action.payload };
     case 'SET_LANG':
       localStorage.setItem('wst_lang', action.payload);
       return { ...state, lang: action.payload };

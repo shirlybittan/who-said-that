@@ -11,9 +11,22 @@ const {
   setGameOptions,
   touchRoom,
   evictStaleRooms,
+  restoreRooms,
+  persistSoon,
+  listRoomsSummary,
 } = require('./game/roomManager');
+const { loadRooms } = require('./game/persistence');
 const { selectQuestions, selectSituationalQuestions, selectThisOrThatQuestions, selectDrawingQuestion, selectMixedQuestions, shuffleAnswers } = require('./game/gameLogic');
 const { buildMiniGameSnapshot } = require('./game/miniGameSnapshot');
+const { computeCanonicalRoute } = require('./game/canonicalRoute');
+const { tallyVotes } = require('./game/ScoreCalculator');
+const eventLog = require('./game/eventLog');
+const { sanitizeStrokes, clampText, createRateLimiter, MAX_ANSWER } = require('./game/limits');
+const { renderDashboard } = require('./admin/dashboard');
+
+// Per-socket flood guard. Generous so normal play never trips it.
+const rateLimiter = createRateLimiter({ windowMs: 1000, max: 80 });
+let lastRateLog = 0; // throttle the rate-limit warning so a flood can't spam logs
 const TimerManager = require('./game/TimerManager');
 const SubmissionTracker = require('./game/SubmissionTracker');
 const VoteCollector = require('./game/VoteCollector');
@@ -80,6 +93,62 @@ app.use(express.json());
 
 app.get('/ping', (req, res) => res.json({ status: 'awake' }));
 
+// ─── Observability / admin dashboard ─────────────────────────────────────────
+// Token-gated (set ADMIN_TOKEN env to enable; disabled by default so room data
+// is never exposed accidentally). Lets you list live rooms and read a room's
+// per-player event timeline to diagnose "what happened" after a bug report.
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '';
+
+const adminAuth = (req, res, next) => {
+  if (!ADMIN_TOKEN) {
+    return res.status(403).json({ error: 'Admin disabled. Set the ADMIN_TOKEN env var to enable observability endpoints.' });
+  }
+  // Prefer the Authorization header — query tokens leak via access logs, browser
+  // history, referrers and proxies. The ?token= query param is kept as a fallback
+  // for the embedded dashboard, whose in-page fetches use it.
+  const authHeader = req.get('authorization') || '';
+  const headerToken = authHeader.toLowerCase().startsWith('bearer ') ? authHeader.slice(7) : authHeader;
+  const queryToken = typeof req.query.token === 'string' ? req.query.token : '';
+  const token = String(headerToken || queryToken).trim();
+  if (token !== ADMIN_TOKEN) {
+    return res.status(403).json({ error: 'Forbidden: bad or missing admin token' });
+  }
+  return next();
+};
+
+// Strip heavy blobs (photos, strokes) from a room snapshot so the state endpoint
+// stays light; keep counts so you can still see the shape of the round.
+const stripHeavyBlobs = (room) => {
+  const clone = JSON.parse(JSON.stringify(TimerManager.sanitizeForClient(room)));
+  const countKeys = (o) => (o && typeof o === 'object' ? Object.keys(o).length : 0);
+  if (clone.playerPhotos) clone.playerPhotos = `<${countKeys(clone.playerPhotos)} photos>`;
+  if (clone.selfie) { clone.selfie.photos = `<${countKeys(clone.selfie.photos)} photos>`; clone.selfie.strokes = `<${countKeys(clone.selfie.strokes)} drawings>`; }
+  if (clone.draw?.submissions) clone.draw.submissions = `<${countKeys(clone.draw.submissions)} drawings>`;
+  if (clone.dt?.chains) clone.dt.chains = `<${countKeys(clone.dt.chains)} chains>`;
+  return clone;
+};
+
+app.get('/admin/rooms', adminAuth, (req, res) => {
+  res.json({ rooms: listRoomsSummary() });
+});
+
+app.get('/admin/rooms/:code/log', adminAuth, (req, res) => {
+  const code = String(req.params.code || '').toUpperCase();
+  res.json({ code, start: eventLog.getStart(code), events: eventLog.getLog(code) });
+});
+
+app.get('/admin/rooms/:code/state', adminAuth, (req, res) => {
+  const code = String(req.params.code || '').toUpperCase();
+  const room = getRoom(code);
+  if (!room) return res.status(404).json({ error: 'Room not found' });
+  return res.json({ code, state: stripHeavyBlobs(room) });
+});
+
+// Minimal self-contained dashboard (HTML lives in ./admin/dashboard.js).
+app.get('/admin', adminAuth, (req, res) => {
+  res.type('html').send(renderDashboard(encodeURIComponent(req.query.token)));
+});
+
 // ─── Presigned upload URL endpoint ───────────────────────────────────────────
 // Returns a short-lived PUT URL so clients upload photos directly to cloud
 // storage without routing binary data through the Node.js event loop.
@@ -130,7 +199,26 @@ const io = new Server(server, {
     origin: '*', // Allow all origins for dev
     methods: ['GET', 'POST'],
   },
+  // Tighter heartbeat so a silently-dropped player (phone sleep, tunnel, closed
+  // laptop) is detected in ~seconds instead of Socket.IO's ~45s default. This is
+  // what makes the "Reconnecting…" overlay and disconnect handling feel instant.
+  pingInterval: 5000,
+  pingTimeout: 5000,
+  // Transport-level cap on a single message. Headroom for a maxed-out drawing
+  // (500 strokes × 300 points ≈ 1.8MB) and a compressed photo, but bounds abuse.
+  maxHttpBufferSize: 3 * 1024 * 1024,
 });
+
+// ─── Restore persisted rooms on boot ────────────────────────────────────────
+// Reload any rooms that were active when the process last stopped, so players'
+// auto-reconnecting sockets land straight back in their game instead of finding
+// the room gone. Best-effort — a failed restore just starts empty.
+try {
+  const restored = restoreRooms(loadRooms());
+  if (restored > 0) console.log(`[persistence] restored ${restored} room(s) from disk`);
+} catch (err) {
+  console.error('[persistence] restore failed:', err.message);
+}
 
 // ─── Global scoring ───────────────────────────────────────────────────────────
 
@@ -269,10 +357,8 @@ const resolveDrawVoting = (io, room, code) => {
   if (!room.draw || room.draw.phase !== 'voting') return;
   room.draw.phase = 'results';
   const playingPlayers = room.players.filter(p => p.isPlaying);
-  // Tally votes
-  const voteCounts = {};
-  playingPlayers.forEach(p => { voteCounts[p.id] = 0; });
-  Object.values(room.draw.votes).forEach(votedFor => { if (voteCounts[votedFor] !== undefined) voteCounts[votedFor]++; });
+  // Tally votes (shared primitive: seed players, ignore votes for unknown targets)
+  const { voteCounts } = tallyVotes(room.draw.votes, { players: playingPlayers, countUnseeded: false });
   // Add to running scores
   Object.entries(voteCounts).forEach(([pid, v]) => { room.draw.scores[pid] = (room.draw.scores[pid] || 0) + v; });
   const roundScores = { ...voteCounts };
@@ -525,14 +611,11 @@ const assignTotTitles = (leaderboard) => {
 const closeSitVoting = (io, room, code) => {
   room.phase = 'sit-results';
 
-  // Tally votes per answer (answerId = authorPlayerId)
-  const voteCounts = {};
-  room.answers.forEach(a => { voteCounts[a.playerId] = 0; });
-  Object.values(room.sit.votes).forEach(authorId => {
-    if (voteCounts[authorId] !== undefined) voteCounts[authorId]++;
+  // Tally votes per answer (answerId = authorPlayerId) via the shared primitive.
+  const { voteCounts, maxVotes } = tallyVotes(room.sit.votes, {
+    players: room.answers.map(a => ({ id: a.playerId })),
+    countUnseeded: false,
   });
-
-  const maxVotes = Math.max(...Object.values(voteCounts), 0);
 
   // Award 1 point to author(s) of most-voted answer
   if (maxVotes > 0) {
@@ -604,6 +687,30 @@ function getPlayerSocket(player) {
 
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
+
+  // ─── Flood guard ────────────────────────────────────────────────────────────
+  // Drop events from a socket that exceeds the per-second rate limit. Silent
+  // (no next()) so an abusive client is throttled without disrupting others.
+  socket.use((packet, next) => {
+    if (rateLimiter.allow(socket.id)) return next();
+    const now = Date.now();
+    if (now - lastRateLog > 1000) { lastRateLog = now; console.warn(`[rate-limit] throttling socket ${socket.id}`); }
+    // drop: do not call next()
+  });
+
+  // ─── Observability: record every inbound event ─────────────────────────────
+  // One middleware captures all client→server events with player + phase
+  // context, building a per-room timeline for debugging. Best-effort and never
+  // blocks the handler. Payloads are summarised in eventLog (no blobs stored).
+  socket.use(([event, ...args], next) => {
+    try {
+      const room = getRoomBySocketId(socket.id);
+      const code = room?.code || args[0]?.code || null;
+      const player = room ? findPlayer(room, socket.id) : null;
+      eventLog.logInbound(code, event, player?.id, room?.phase, args[0]);
+    } catch (_) { /* logging must never break gameplay */ }
+    next();
+  });
 
   // ─── Auto-rejoin via handshake auth ────────────────────────────────────────
   // When a mobile player reconnects after a phone call / app switch, their
@@ -693,6 +800,54 @@ io.on('connection', (socket) => {
       }
     } catch (err) {
       socket.emit('error', { message: err.message });
+    }
+  });
+
+  // ─── Server-authoritative screen check ─────────────────────────────────────
+  // A client periodically asks "what screen should I be on?" and the server —
+  // which knows the full per-player truth (whose turn, who submitted) — answers
+  // via the ack. The client navigates only if it's on the wrong screen, so a
+  // missed navigation event self-heals within one poll interval.
+  socket.on('whats_my_screen', ({ code } = {}, ack) => {
+    if (typeof ack !== 'function') return;
+    try {
+      const room = (code && getRoom(code)) || getRoomBySocketId(socket.id);
+      if (!room) { ack(null); return; }
+      const player = findPlayer(room, socket.id);
+      if (!player) { ack(null); return; }
+      ack(computeCanonicalRoute(room, player.id));
+    } catch (_) {
+      ack(null);
+    }
+  });
+
+  // ─── On-demand resync ──────────────────────────────────────────────────────
+  // A client that suspects it may be stale (tab regained focus after phone
+  // sleep, a suspected missed event) can ask for a fresh authoritative snapshot
+  // at any time. Reuses the exact same payload as a rejoin so the client's
+  // restore path rebuilds the correct screen — no bespoke second code path.
+  socket.on('request_resync', ({ code } = {}) => {
+    try {
+      const room = (code && getRoom(code)) || getRoomBySocketId(socket.id);
+      if (!room) return;
+      const player = findPlayer(room, socket.id);
+      if (!player) return;
+      touchRoom(room.code);
+      const uploadToken = issueUploadToken(room.code, player.id);
+      socket.emit('join_success', {
+        room: sanitizeRoomForClient(room),
+        playerId: player.id,
+        isRejoin: true,
+        uploadToken,
+        miniGameState: buildMiniGameSnapshot(room, player.id, {
+          dtPromptSeconds: DT_PROMPT_SECS,
+          dtGuessSeconds: DT_GUESS_SECS,
+          dtDrawSeconds: DT_DRAW_SECS,
+          dtVoteSeconds: DT_VOTE_SECS,
+        }),
+      });
+    } catch (_) {
+      // Best-effort — a failed resync just leaves the client on its current state.
     }
   });
 
@@ -980,13 +1135,15 @@ io.on('connection', (socket) => {
     const player = findPlayer(room, socket.id);
     if (!player || !player.isConnected || !player.isPlaying) return;
 
+    const clean = clampText(text, MAX_ANSWER); // bound stored answer length
+
     const existingAnswer = room.answers.find(a => a.playerId === player.id);
     if (existingAnswer) {
-      existingAnswer.text = text;
+      existingAnswer.text = clean;
       existingAnswer.votes = [];
-      room._answerTracker?.update(player.id, (prev) => ({ ...prev, text, votes: [] }));
+      room._answerTracker?.update(player.id, (prev) => ({ ...prev, text: clean, votes: [] }));
     } else {
-      const answerData = { playerId: player.id, playerName: player.name, text, votes: [] };
+      const answerData = { playerId: player.id, playerName: player.name, text: clean, votes: [] };
       // Push to room.answers BEFORE recording in the tracker so that when
       // onComplete fires (synchronously inside record()), advanceWstAnswerPhase
       // sees all answers including this last one.
@@ -1481,17 +1638,27 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
+    rateLimiter.forget(socket.id);
     const room = getRoomBySocketId(socket.id);
     if (room) {
-      const { player, newHost } = removePlayerBySocketId(socket.id, false);
+      const { player, newHost, wentOffline } = removePlayerBySocketId(socket.id, false);
       // If an MLT timer is running and room is now empty, clean it up
       if (room.phase === 'mlt' && room._timers?.mlt && room.players.filter(p => p.isConnected).length === 0) {
         room._timers.mlt.cancel();
         room._timers.mlt = null;
       }
-      io.to(room.code).emit('player_disconnected', { playerId: player.id, playerName: player.name });
-      if (newHost) {
-        io.to(room.code).emit('host_changed', { host: newHost.id });
+      // Only announce a disconnect if the player actually went fully offline.
+      // Closing a secondary socket (e.g. the TV screen while the phone stays on)
+      // must not flag the player as disconnected to everyone else.
+      if (player && wentOffline) {
+        io.to(room.code).emit('player_disconnected', { playerId: player.id, playerName: player.name });
+        eventLog.logSystem(room.code, 'disconnect', player.id, room.phase, { name: player.name });
+        if (newHost) {
+          io.to(room.code).emit('host_changed', { host: newHost.id });
+          eventLog.logSystem(room.code, 'host_migrated', newHost.id, room.phase, { name: newHost.name });
+        }
+        // Persist the changed connection/host state.
+        persistSoon();
       }
     }
   });
@@ -1844,17 +2011,9 @@ io.on('connection', (socket) => {
     if (!player || !player.isPlaying) return;
     const isResubmit = !!room.draw.submissions[player.id];
 
-    // Sanitize: cap strokes, cap points, validate hex color, limit width
+    // Cap strokes/points, validate colour/width/type via the shared limiter.
     if (!Array.isArray(strokes)) return;
-    const sanitized = strokes.slice(0, 500).map(s => ({
-      color: /^#[0-9A-Fa-f]{3,6}$/.test(s.color) ? s.color : '#000000',
-      width: Math.min(Math.max(Number(s.width) || 4, 1), 40),
-      type: s.type === 'eraser' ? 'eraser' : 'pen',
-      points: Array.isArray(s.points) ? s.points.slice(0, 300).map(p => ({
-        x: Math.round(Number(p.x) || 0),
-        y: Math.round(Number(p.y) || 0),
-      })) : [],
-    }));
+    const sanitized = sanitizeStrokes(strokes);
 
     const data = { strokes: sanitized, submittedAt: Date.now() };
     if (room.draw._submissionTracker) {
@@ -2431,6 +2590,7 @@ const EVICTION_INTERVAL_MS = 10 * 60 * 1000; // 10 min
 setInterval(() => {
   const evicted = evictStaleRooms(ROOM_IDLE_TTL_MS);
   if (evicted.length > 0) {
+    evicted.forEach(code => eventLog.clearLog(code)); // free the room's timeline too
     console.log(`[eviction] Dropped ${evicted.length} idle room(s):`, evicted);
   }
 }, EVICTION_INTERVAL_MS).unref(); // .unref() so this timer doesn't keep the process alive during tests

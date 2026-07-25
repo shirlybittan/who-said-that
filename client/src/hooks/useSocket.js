@@ -19,11 +19,36 @@ export const useSocket = () => {
 
   useEffect(() => {
     const onConnect = () => {
+      dispatch({ type: 'SET_CONNECTION', payload: 'online' });
       const savedId = sessionStorage.getItem('wst_playerId');
       const savedCode = sessionStorage.getItem('wst_roomCode');
       const savedName = sessionStorage.getItem('wst_playerName');
       if (savedId && savedCode && savedName) {
         socket.emit('join_room', { code: savedCode, playerName: savedName, playerId: savedId });
+      }
+    };
+
+    // Socket dropped (network blip, phone sleep, app switch). Reconnection is
+    // enabled with infinite attempts, so surface a "reconnecting" state rather
+    // than freezing silently. A manual client-side disconnect (leaving the room)
+    // passes reason 'io client disconnect' — don't nag in that case.
+    const onDisconnect = (reason) => {
+      if (reason === 'io client disconnect') return;
+      dispatch({ type: 'SET_CONNECTION', payload: 'reconnecting' });
+    };
+
+    // If the browser tab is backgrounded (phone locked / app switched) the OS
+    // can suspend timers and websockets. When it comes back, proactively ask the
+    // server for a fresh snapshot so we can't be left rendering stale state.
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== 'visible') return;
+      const savedCode = sessionStorage.getItem('wst_roomCode');
+      if (!savedCode) return;
+      if (socket.connected) {
+        socket.emit('request_resync', { code: savedCode });
+      } else if (!socket.active) {
+        // Reconnection loop gave up (or never started) — kick it off again.
+        socket.connect();
       }
     };
 
@@ -453,12 +478,26 @@ export const useSocket = () => {
     // ────────────────────────────────────────────────────────────────────────
 
     socket.on('connect', onConnect);
+    socket.on('disconnect', onDisconnect);
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     // If the socket is already connected when this effect runs (e.g. page reload after
     // the socket auto-reconnected, or hot reload), trigger the rejoin immediately since
     // the 'connect' event won't fire again for an already-established connection.
     if (socket.connected) {
       onConnect();
+    } else {
+      dispatch({ type: 'SET_CONNECTION', payload: 'reconnecting' });
+      // The socket is created with autoConnect:false, so a fresh page load
+      // straight onto an in-game route (a refresh, or reopening the tab) starts
+      // DISCONNECTED. If we have saved session credentials, open the connection
+      // now — the handshake carries playerId/roomCode so the server rejoins us
+      // and replays the authoritative snapshot. Without this, a refresh strands
+      // the player offline with no reconnect. (socket.active guards against
+      // double-connecting while a reconnection attempt is already in flight.)
+      if (!socket.active && sessionStorage.getItem('wst_roomCode') && sessionStorage.getItem('wst_playerId')) {
+        socket.connect();
+      }
     }
 
     socket.on('room_created', onRoomCreated);
@@ -706,6 +745,8 @@ export const useSocket = () => {
 
     return () => {
       socket.off('connect', onConnect);
+      socket.off('disconnect', onDisconnect);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       socket.off('room_created', onRoomCreated);
       socket.off('join_success', onJoinSuccess);
       socket.off('player_joined', onPlayerJoined);
