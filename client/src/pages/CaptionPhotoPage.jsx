@@ -1,59 +1,21 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
-import { compressPhoto } from '../utils/imageUtils';
 import GamePageWrapper from '../components/GamePageWrapper.jsx';
+import SelfieCapture from '../components/game/SelfieCapture.jsx';
 
 export default function CaptionPhotoPage() {
   const { state, dispatch } = useGame();
   const caption = state.caption;
   const sounds = useSounds();
-  const fileInputRef = useRef(null);
-  const [preview, setPreview] = useState(null);
-  const [compressed, setCompressed] = useState(null);
-  const [processing, setProcessing] = useState(false);
-  const [usingSaved, setUsingSaved] = useState(false);
 
-  // Pre-fill with saved selfie if available
-  useEffect(() => {
-    if (state.savedSelfie && !caption.hasSubmittedPhoto && !compressed) {
-      setCompressed(state.savedSelfie);
-      setPreview(state.savedSelfie);
-      setUsingSaved(true);
-    }
-  }, []);
-
-  const handleFileChange = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setProcessing(true);
-    setUsingSaved(false);
-    try {
-      const dataUrl = await compressPhoto(file);
-      setCompressed(dataUrl);
-      setPreview(dataUrl);
-    } catch {
-      alert('Could not process that image. Please try another.');
-    } finally {
-      setProcessing(false);
-    }
-  };
-
-  const handleSubmit = () => {
-    if (!compressed || caption.hasSubmittedPhoto) return;
+  const handleSubmit = (photoData) => {
     sounds.answer?.();
-    socket.emit('caption:submit_photo', { code: state.roomCode, photoData: compressed });
+    socket.emit('caption:submit_photo', { code: state.roomCode, photoData });
     dispatch({ type: 'CAPTION_MARK_PHOTO_SUBMITTED' });
-    dispatch({ type: 'SAVED_SELFIE_STORED', payload: compressed });
-  };
-
-  const handleRetake = () => {
-    setPreview(null);
-    setCompressed(null);
-    setUsingSaved(false);
-    if (fileInputRef.current) fileInputRef.current.value = '';
+    dispatch({ type: 'SAVED_SELFIE_STORED', payload: photoData });
   };
 
   return (
@@ -72,64 +34,14 @@ export default function CaptionPhotoPage() {
           Take a selfie — everyone else will write a caption for it!
         </p>
 
-        {!caption.hasSubmittedPhoto ? (
-          <div className="w-full max-w-sm flex flex-col items-center gap-4">
-            {preview ? (
-              <>
-                {usingSaved && (
-                  <div className="w-full py-2 px-3 rounded-xl bg-[#FD79A8]/15 border border-[#FD79A8]/40 text-center">
-                    <span className="text-[#FD79A8] font-['Fredoka_One'] text-sm">✅ Using your saved selfie</span>
-                  </div>
-                )}
-                <img src={preview} className="w-64 h-64 object-cover rounded-2xl border-2 border-[#FD79A8]" alt="preview" />
-                <div className="flex gap-3 w-full">
-                  <button
-                    onClick={handleRetake}
-                    className="flex-1 py-3 rounded-2xl bg-gray-700 text-white font-['Fredoka_One'] text-lg"
-                  >
-                    {usingSaved ? '📷 New Photo' : 'Retake 🔄'}
-                  </button>
-                  <button
-                    onClick={handleSubmit}
-                    className="flex-1 py-3 rounded-2xl bg-[#FD79A8] text-white font-['Fredoka_One'] text-lg"
-                  >
-                    {usingSaved ? 'Use This ✓' : 'Submit! ✅'}
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <div
-                  className="w-64 h-64 rounded-2xl border-2 border-dashed border-gray-600 flex items-center justify-center cursor-pointer hover:border-[#FD79A8] transition-colors"
-                  onClick={() => fileInputRef.current?.click()}
-                >
-                  {processing ? (
-                    <span className="text-gray-400 font-['Nunito']">Processing…</span>
-                  ) : (
-                    <span className="text-gray-500 font-['Nunito'] text-center px-4">Tap to choose or take a photo 📸</span>
-                  )}
-                </div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  capture="user"
-                  className="hidden"
-                  onChange={handleFileChange}
-                />
-              </>
-            )}
-          </div>
-        ) : (
-          <div className="flex flex-col items-center gap-4">
-            <div className="text-6xl">✅</div>
-            <p className="text-[#FD79A8] font-['Fredoka_One'] text-xl">Photo submitted!</p>
-            <p className="text-gray-400 font-['Nunito'] text-sm text-center">
-              {caption.photoSubmittedCount} / {caption.totalPhotographers} photos in
-            </p>
-            <p className="text-gray-500 font-['Nunito'] text-sm mt-4">Waiting for other players to submit their photos...</p>
-          </div>
-        )}
+        <SelfieCapture
+          accent="#FD79A8"
+          savedPhoto={state.savedSelfie}
+          hasSubmitted={caption.hasSubmittedPhoto}
+          photoCount={caption.photoSubmittedCount}
+          totalPhotographers={caption.totalPhotographers}
+          onSubmit={handleSubmit}
+        />
       </motion.div>
     </GamePageWrapper>
   );
