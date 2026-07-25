@@ -4,57 +4,21 @@ import { socket } from '../socket';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
 import SelfieCapture from '../components/game/SelfieCapture.jsx';
-
-const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
-
-/**
- * Attempt a presigned PUT upload to cloud storage.
- * Returns the public URL on success, or null if the server doesn't have
- * storage configured (falls back to base64 socket path).
- */
-async function tryCloudUpload(roomCode, playerId, dataUrl, uploadToken) {
-  const mimeMatch = dataUrl.match(/^data:(image\/[a-z]+);base64,/);
-  if (!mimeMatch) return null;
-  const mimeType = mimeMatch[1];
-
-  try {
-    const res = await fetch(`${SERVER_URL}/api/upload-photo-url`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ roomCode, playerId, mimeType, uploadToken }),
-    });
-    if (!res.ok) return null; // storage not configured
-
-    const { uploadUrl, publicUrl } = await res.json();
-    const base64 = dataUrl.split(',')[1];
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    const blob = new Blob([bytes], { type: mimeType });
-
-    const putRes = await fetch(uploadUrl, { method: 'PUT', headers: { 'Content-Type': mimeType }, body: blob });
-    if (!putRes.ok) return null;
-    return publicUrl;
-  } catch {
-    return null; // network error — fall back to base64
-  }
-}
+import { uploadPhoto } from '../utils/photoUpload.js';
 
 export default function SelfiePhotoPage() {
   const { state, dispatch } = useGame();
   const selfie = state.selfie;
   const sounds = useSounds();
 
-  // Async submit: try cloud upload, fall back to base64. Throwing surfaces the
-  // shared "Upload failed" message in SelfieCapture.
+  // Async submit: upload to cloud when configured (falls back to base64). A
+  // thrown error surfaces the shared "Upload failed" message in SelfieCapture.
   const handleSubmit = async (photoData) => {
     sounds.answer?.();
-    const cloudUrl = await tryCloudUpload(state.roomCode, state.playerId, photoData, state.uploadToken);
-    const toSend = cloudUrl || photoData;
-    if (!toSend) throw new Error('no photo to send');
+    const toSend = await uploadPhoto(photoData, { roomCode: state.roomCode, playerId: state.playerId, uploadToken: state.uploadToken });
     socket.emit('selfie:submit_photo', { code: state.roomCode, photoData: toSend });
     dispatch({ type: 'SELFIE_MARK_PHOTO_SUBMITTED' });
-    dispatch({ type: 'SAVED_SELFIE_STORED', payload: photoData }); // cache the base64 locally for reuse
+    dispatch({ type: 'SAVED_SELFIE_STORED', payload: photoData }); // cache base64 locally for reuse
   };
 
   return (

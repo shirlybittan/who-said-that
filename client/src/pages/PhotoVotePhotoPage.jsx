@@ -4,6 +4,7 @@ import { socket } from '../socket';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
 import SelfieCapture from '../components/game/SelfieCapture.jsx';
+import { uploadPhoto } from '../utils/photoUpload.js';
 
 export default function PhotoVotePhotoPage() {
   const { state, dispatch } = useGame();
@@ -13,9 +14,10 @@ export default function PhotoVotePhotoPage() {
   const modeLabel = pv.subType === 'photoassoc' ? 'Prompt Match 🎯' : 'Selfie Challenge 🎭';
   const modeColor = pv.subType === 'photoassoc' ? '#A29BFE' : '#FDCB6E';
 
-  const handleSubmit = (photoData) => {
+  const handleSubmit = async (photoData) => {
     sounds.answer?.();
-    socket.emit('photovote:submit_photo', { code: state.roomCode, photoData });
+    const toSend = await uploadPhoto(photoData, { roomCode: state.roomCode, playerId: state.playerId, uploadToken: state.uploadToken });
+    socket.emit('photovote:submit_photo', { code: state.roomCode, photoData: toSend });
     dispatch({ type: 'PHOTOVOTE_MARK_PHOTO_SUBMITTED' });
     dispatch({ type: 'SAVED_SELFIE_STORED', payload: photoData });
   };
