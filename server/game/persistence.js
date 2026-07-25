@@ -19,6 +19,13 @@
 // Timers are not auto-restarted: a restored round's countdown is frozen until it
 // advances by everyone submitting (handlers count from persisted state) or the
 // host pressing next/skip. This keeps restart-recovery simple and safe.
+//
+// SCALE: all live rooms are serialized into ONE file, rewritten (debounced) on
+// each change. That's intentional for the expected ceiling — a single instance
+// hosting tens of concurrent party rooms; the whole file is small once photos
+// live in cloud storage (see photoUpload/photoStorage). For a large multi-tenant
+// deployment (hundreds+ of rooms) this should move to per-room files or an
+// external store (Redis) so a single busy room doesn't rewrite everyone's state.
 
 const fs = require('fs');
 const path = require('path');

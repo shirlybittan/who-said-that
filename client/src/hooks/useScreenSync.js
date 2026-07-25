@@ -30,6 +30,9 @@ export const useScreenSync = () => {
   // Latest pathname without retriggering the effect on every navigation.
   const pathRef = useRef(location.pathname);
   pathRef.current = location.pathname;
+  // Latest connection health, read inside the poll without restarting the timer.
+  const connRef = useRef(state.connection);
+  connRef.current = state.connection;
 
   useEffect(() => {
     if (!roomCode || !phase || phase === 'home') return;
@@ -38,7 +41,9 @@ export const useScreenSync = () => {
     let cancelled = false;
 
     const check = () => {
-      if (cancelled || !socket.connected) return;
+      // Skip while reconnecting/offline — the socket reconnect + resync path
+      // already restores the correct screen, so a poll here is wasted traffic.
+      if (cancelled || connRef.current !== 'online' || !socket.connected) return;
       socket.emit('whats_my_screen', { code: roomCode }, (serverRoute) => {
         if (cancelled || !serverRoute) return;
         const path = pathRef.current;

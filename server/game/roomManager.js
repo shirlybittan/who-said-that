@@ -3,6 +3,11 @@ const persistence = require('./persistence');
 
 const rooms = new Map();
 
+// When set, disables the reconnect-by-name fallback (see joinRoom) — a returning
+// player who lost their stored id always becomes a fresh player. Opt-in for
+// deployments that want strict identity over the party-game convenience default.
+const STRICT_IDENTITY = process.env.STRICT_IDENTITY === '1' || process.env.STRICT_IDENTITY === 'true';
+
 const generateRoomCode = () => {
   let code;
   do {
@@ -279,11 +284,20 @@ const joinRoom = (code, socketId, playerName, playerId) => {
   }
 
   // Reconnect-by-name — a player who lost their stored id (closed the browser,
-  // cleared/expired session, switched device) re-enters the same name. Rather
-  // than mint a fresh UUID and leave a ghost "disconnected" duplicate behind,
-  // re-attach them to their existing offline slot so score + progress survive.
-  // Guarded to a single unambiguous match to avoid hijacking someone else.
-  if (playerName) {
+  // cleared/expired session, switched device) re-enters the same name and is
+  // re-attached to their existing OFFLINE slot so score + progress survive
+  // instead of leaving a ghost "disconnected" duplicate behind.
+  //
+  // SECURITY TRADE-OFF (intentional): this trusts the display name. Anyone
+  // already in the room (they must know the room code to be here) could claim a
+  // *disconnected* player's slot by entering that name — i.e. impersonate them
+  // to grab their score/turn. This is accepted for a casual party game where the
+  // room is a group of friends. A durable token can't secure this path because
+  // it exists precisely for when the client LOST its stored id/token. Guarded to
+  // a single unambiguous offline match. Set STRICT_IDENTITY=1 to disable it (a
+  // returning player then always becomes a fresh player — no impersonation, but
+  // losing your id means losing your score).
+  if (!STRICT_IDENTITY && playerName) {
     const norm = (s) => (s || '').trim().toLowerCase();
     const target = norm(playerName);
     const offlineMatches = room.players.filter(p => !p.isConnected && norm(p.name) === target);
