@@ -206,8 +206,13 @@ const persistSoon = () => persistence.scheduleSave(rooms);
 const restoreRooms = (snapshot) => {
   if (!snapshot || typeof snapshot !== 'object') return 0;
   let count = 0;
-  for (const [code, room] of Object.entries(snapshot)) {
-    if (!room || !room.code) continue;
+  for (const [rawCode, room] of Object.entries(snapshot)) {
+    if (!room) continue;
+    // Normalize the key + room.code to uppercase so getRoom(code) (which callers
+    // uppercase) always matches, even if a snapshot ever held a mismatched key.
+    const code = String(room.code || rawCode || '').toUpperCase();
+    if (!code) continue;
+    room.code = code;
     room.players = (room.players || []).map((p) => ({
       ...p,
       socketId: null,

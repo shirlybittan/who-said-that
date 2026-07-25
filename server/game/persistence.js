@@ -97,6 +97,8 @@ const writeNow = async (roomsMap) => {
 const scheduleSave = (roomsMap, delay = 1500) => {
   if (saveTimer) clearTimeout(saveTimer);
   saveTimer = setTimeout(() => { saveTimer = null; writeNow(roomsMap); }, delay);
+  // Don't let a pending save keep the process (or a test runner) alive.
+  if (saveTimer && typeof saveTimer.unref === 'function') saveTimer.unref();
 };
 
 // Synchronous one-shot read at boot. Fail-safe: any problem → start fresh.

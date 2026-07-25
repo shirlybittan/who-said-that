@@ -428,9 +428,9 @@ async function recoveryDrill(host, players, code) {
 // ─── Playlist ────────────────────────────────────────────────────────────────
 const PLAYLIST = [
   ['most-likely-to', (h, p, c) => playMlt(h, p, c, 2)],
-  ['this-or-that', (h, p, c) => playTot(h, p, c, 1)],
-  ['who-said-that', (h, p, c) => playWst(h, p, c, 1)],
-  ['situational', (h, p, c) => playSituational(h, p, c, 1)],
+  ['this-or-that', (h, p, c) => playTot(h, p, c)],
+  ['who-said-that', (h, p, c) => playWst(h, p, c)],
+  ['situational', (h, p, c) => playSituational(h, p, c)],
   ['fill-in-the-blank', (h, p, c) => playFitb(h, p, c, 1)],
   ['drawing', (h, p, c) => playDrawing(h, p, c, 1)],
   ['selfie-roast', (h, p, c) => playSelfie(h, p, c, 1)],

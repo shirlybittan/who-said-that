@@ -103,8 +103,15 @@ const adminAuth = (req, res, next) => {
   if (!ADMIN_TOKEN) {
     return res.status(403).json({ error: 'Admin disabled. Set the ADMIN_TOKEN env var to enable observability endpoints.' });
   }
-  if (req.query.token !== ADMIN_TOKEN) {
-    return res.status(403).json({ error: 'Forbidden: bad or missing ?token=' });
+  // Prefer the Authorization header — query tokens leak via access logs, browser
+  // history, referrers and proxies. The ?token= query param is kept as a fallback
+  // for the embedded dashboard, whose in-page fetches use it.
+  const authHeader = req.get('authorization') || '';
+  const headerToken = authHeader.toLowerCase().startsWith('bearer ') ? authHeader.slice(7) : authHeader;
+  const queryToken = typeof req.query.token === 'string' ? req.query.token : '';
+  const token = String(headerToken || queryToken).trim();
+  if (token !== ADMIN_TOKEN) {
+    return res.status(403).json({ error: 'Forbidden: bad or missing admin token' });
   }
   return next();
 };
