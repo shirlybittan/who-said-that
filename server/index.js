@@ -21,6 +21,11 @@ const { buildMiniGameSnapshot } = require('./game/miniGameSnapshot');
 const { computeCanonicalRoute } = require('./game/canonicalRoute');
 const { tallyVotes } = require('./game/ScoreCalculator');
 const eventLog = require('./game/eventLog');
+const { sanitizeStrokes, clampText, createRateLimiter, MAX_ANSWER } = require('./game/limits');
+
+// Per-socket flood guard. Generous so normal play never trips it.
+const rateLimiter = createRateLimiter({ windowMs: 1000, max: 80 });
+let lastRateLog = 0; // throttle the rate-limit warning so a flood can't spam logs
 const TimerManager = require('./game/TimerManager');
 const SubmissionTracker = require('./game/SubmissionTracker');
 const VoteCollector = require('./game/VoteCollector');
@@ -226,6 +231,9 @@ const io = new Server(server, {
   // what makes the "Reconnecting…" overlay and disconnect handling feel instant.
   pingInterval: 5000,
   pingTimeout: 5000,
+  // Transport-level cap on a single message. Headroom for a maxed-out drawing
+  // (500 strokes × 300 points ≈ 1.8MB) and a compressed photo, but bounds abuse.
+  maxHttpBufferSize: 3 * 1024 * 1024,
 });
 
 // ─── Restore persisted rooms on boot ────────────────────────────────────────
@@ -707,6 +715,16 @@ function getPlayerSocket(player) {
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
+  // ─── Flood guard ────────────────────────────────────────────────────────────
+  // Drop events from a socket that exceeds the per-second rate limit. Silent
+  // (no next()) so an abusive client is throttled without disrupting others.
+  socket.use((packet, next) => {
+    if (rateLimiter.allow(socket.id)) return next();
+    const now = Date.now();
+    if (now - lastRateLog > 1000) { lastRateLog = now; console.warn(`[rate-limit] throttling socket ${socket.id}`); }
+    // drop: do not call next()
+  });
+
   // ─── Observability: record every inbound event ─────────────────────────────
   // One middleware captures all client→server events with player + phase
   // context, building a per-room timeline for debugging. Best-effort and never
@@ -1144,13 +1162,15 @@ io.on('connection', (socket) => {
     const player = findPlayer(room, socket.id);
     if (!player || !player.isConnected || !player.isPlaying) return;
 
+    const clean = clampText(text, MAX_ANSWER); // bound stored answer length
+
     const existingAnswer = room.answers.find(a => a.playerId === player.id);
     if (existingAnswer) {
-      existingAnswer.text = text;
+      existingAnswer.text = clean;
       existingAnswer.votes = [];
-      room._answerTracker?.update(player.id, (prev) => ({ ...prev, text, votes: [] }));
+      room._answerTracker?.update(player.id, (prev) => ({ ...prev, text: clean, votes: [] }));
     } else {
-      const answerData = { playerId: player.id, playerName: player.name, text, votes: [] };
+      const answerData = { playerId: player.id, playerName: player.name, text: clean, votes: [] };
       // Push to room.answers BEFORE recording in the tracker so that when
       // onComplete fires (synchronously inside record()), advanceWstAnswerPhase
       // sees all answers including this last one.
@@ -1645,6 +1665,7 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
+    rateLimiter.forget(socket.id);
     const room = getRoomBySocketId(socket.id);
     if (room) {
       const { player, newHost, wentOffline } = removePlayerBySocketId(socket.id, false);
@@ -2017,17 +2038,9 @@ io.on('connection', (socket) => {
     if (!player || !player.isPlaying) return;
     const isResubmit = !!room.draw.submissions[player.id];
 
-    // Sanitize: cap strokes, cap points, validate hex color, limit width
+    // Cap strokes/points, validate colour/width/type via the shared limiter.
     if (!Array.isArray(strokes)) return;
-    const sanitized = strokes.slice(0, 500).map(s => ({
-      color: /^#[0-9A-Fa-f]{3,6}$/.test(s.color) ? s.color : '#000000',
-      width: Math.min(Math.max(Number(s.width) || 4, 1), 40),
-      type: s.type === 'eraser' ? 'eraser' : 'pen',
-      points: Array.isArray(s.points) ? s.points.slice(0, 300).map(p => ({
-        x: Math.round(Number(p.x) || 0),
-        y: Math.round(Number(p.y) || 0),
-      })) : [],
-    }));
+    const sanitized = sanitizeStrokes(strokes);
 
     const data = { strokes: sanitized, submittedAt: Date.now() };
     if (room.draw._submissionTracker) {
