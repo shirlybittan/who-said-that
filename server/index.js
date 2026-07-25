@@ -11,9 +11,13 @@ const {
   setGameOptions,
   touchRoom,
   evictStaleRooms,
+  restoreRooms,
+  persistSoon,
 } = require('./game/roomManager');
+const { loadRooms } = require('./game/persistence');
 const { selectQuestions, selectSituationalQuestions, selectThisOrThatQuestions, selectDrawingQuestion, selectMixedQuestions, shuffleAnswers } = require('./game/gameLogic');
 const { buildMiniGameSnapshot } = require('./game/miniGameSnapshot');
+const { computeCanonicalRoute } = require('./game/canonicalRoute');
 const TimerManager = require('./game/TimerManager');
 const SubmissionTracker = require('./game/SubmissionTracker');
 const VoteCollector = require('./game/VoteCollector');
@@ -130,7 +134,23 @@ const io = new Server(server, {
     origin: '*', // Allow all origins for dev
     methods: ['GET', 'POST'],
   },
+  // Tighter heartbeat so a silently-dropped player (phone sleep, tunnel, closed
+  // laptop) is detected in ~seconds instead of Socket.IO's ~45s default. This is
+  // what makes the "Reconnecting…" overlay and disconnect handling feel instant.
+  pingInterval: 5000,
+  pingTimeout: 5000,
 });
+
+// ─── Restore persisted rooms on boot ────────────────────────────────────────
+// Reload any rooms that were active when the process last stopped, so players'
+// auto-reconnecting sockets land straight back in their game instead of finding
+// the room gone. Best-effort — a failed restore just starts empty.
+try {
+  const restored = restoreRooms(loadRooms());
+  if (restored > 0) console.log(`[persistence] restored ${restored} room(s) from disk`);
+} catch (err) {
+  console.error('[persistence] restore failed:', err.message);
+}
 
 // ─── Global scoring ───────────────────────────────────────────────────────────
 
@@ -693,6 +713,54 @@ io.on('connection', (socket) => {
       }
     } catch (err) {
       socket.emit('error', { message: err.message });
+    }
+  });
+
+  // ─── Server-authoritative screen check ─────────────────────────────────────
+  // A client periodically asks "what screen should I be on?" and the server —
+  // which knows the full per-player truth (whose turn, who submitted) — answers
+  // via the ack. The client navigates only if it's on the wrong screen, so a
+  // missed navigation event self-heals within one poll interval.
+  socket.on('whats_my_screen', ({ code } = {}, ack) => {
+    if (typeof ack !== 'function') return;
+    try {
+      const room = (code && getRoom(code)) || getRoomBySocketId(socket.id);
+      if (!room) { ack(null); return; }
+      const player = findPlayer(room, socket.id);
+      if (!player) { ack(null); return; }
+      ack(computeCanonicalRoute(room, player.id));
+    } catch (_) {
+      ack(null);
+    }
+  });
+
+  // ─── On-demand resync ──────────────────────────────────────────────────────
+  // A client that suspects it may be stale (tab regained focus after phone
+  // sleep, a suspected missed event) can ask for a fresh authoritative snapshot
+  // at any time. Reuses the exact same payload as a rejoin so the client's
+  // restore path rebuilds the correct screen — no bespoke second code path.
+  socket.on('request_resync', ({ code } = {}) => {
+    try {
+      const room = (code && getRoom(code)) || getRoomBySocketId(socket.id);
+      if (!room) return;
+      const player = findPlayer(room, socket.id);
+      if (!player) return;
+      touchRoom(room.code);
+      const uploadToken = issueUploadToken(room.code, player.id);
+      socket.emit('join_success', {
+        room: sanitizeRoomForClient(room),
+        playerId: player.id,
+        isRejoin: true,
+        uploadToken,
+        miniGameState: buildMiniGameSnapshot(room, player.id, {
+          dtPromptSeconds: DT_PROMPT_SECS,
+          dtGuessSeconds: DT_GUESS_SECS,
+          dtDrawSeconds: DT_DRAW_SECS,
+          dtVoteSeconds: DT_VOTE_SECS,
+        }),
+      });
+    } catch (_) {
+      // Best-effort — a failed resync just leaves the client on its current state.
     }
   });
 
@@ -1483,15 +1551,22 @@ io.on('connection', (socket) => {
     console.log('User disconnected:', socket.id);
     const room = getRoomBySocketId(socket.id);
     if (room) {
-      const { player, newHost } = removePlayerBySocketId(socket.id, false);
+      const { player, newHost, wentOffline } = removePlayerBySocketId(socket.id, false);
       // If an MLT timer is running and room is now empty, clean it up
       if (room.phase === 'mlt' && room._timers?.mlt && room.players.filter(p => p.isConnected).length === 0) {
         room._timers.mlt.cancel();
         room._timers.mlt = null;
       }
-      io.to(room.code).emit('player_disconnected', { playerId: player.id, playerName: player.name });
-      if (newHost) {
-        io.to(room.code).emit('host_changed', { host: newHost.id });
+      // Only announce a disconnect if the player actually went fully offline.
+      // Closing a secondary socket (e.g. the TV screen while the phone stays on)
+      // must not flag the player as disconnected to everyone else.
+      if (player && wentOffline) {
+        io.to(room.code).emit('player_disconnected', { playerId: player.id, playerName: player.name });
+        if (newHost) {
+          io.to(room.code).emit('host_changed', { host: newHost.id });
+        }
+        // Persist the changed connection/host state.
+        persistSoon();
       }
     }
   });

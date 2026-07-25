@@ -1,4 +1,5 @@
 const { randomUUID: uuidv4 } = require('crypto');
+const persistence = require('./persistence');
 
 const rooms = new Map();
 
@@ -182,7 +183,38 @@ const createRoom = (socketId, playerName = 'Host', gameType = 'most-likely-to', 
  */
 const touchRoom = (code) => {
   const room = rooms.get(code);
-  if (room) room.lastActivityAt = Date.now();
+  if (room) {
+    room.lastActivityAt = Date.now();
+    // Any meaningful game event is a good moment to checkpoint to disk.
+    persistence.scheduleSave(rooms);
+  }
+};
+
+// Explicit debounced save trigger for events that don't go through touchRoom
+// (e.g. a disconnect changing a player's connection state).
+const persistSoon = () => persistence.scheduleSave(rooms);
+
+// Rehydrate the in-memory Map from a persisted snapshot on server boot. Marks
+// every player disconnected (their sockets died with the old process) and
+// refreshes activity so restored rooms aren't immediately evicted. Returns the
+// number of rooms restored.
+const restoreRooms = (snapshot) => {
+  if (!snapshot || typeof snapshot !== 'object') return 0;
+  let count = 0;
+  for (const [code, room] of Object.entries(snapshot)) {
+    if (!room || !room.code) continue;
+    room.players = (room.players || []).map((p) => ({
+      ...p,
+      socketId: null,
+      phoneSocketId: null,
+      tvSocketId: null,
+      isConnected: false,
+    }));
+    room.lastActivityAt = Date.now();
+    rooms.set(code, room);
+    count += 1;
+  }
+  return count;
 };
 
 /**
@@ -245,7 +277,26 @@ const joinRoom = (code, socketId, playerName, playerId) => {
       return { room, player: existingPlayer, isRejoin: true };
     }
   }
-  
+
+  // Reconnect-by-name — a player who lost their stored id (closed the browser,
+  // cleared/expired session, switched device) re-enters the same name. Rather
+  // than mint a fresh UUID and leave a ghost "disconnected" duplicate behind,
+  // re-attach them to their existing offline slot so score + progress survive.
+  // Guarded to a single unambiguous match to avoid hijacking someone else.
+  if (playerName) {
+    const norm = (s) => (s || '').trim().toLowerCase();
+    const target = norm(playerName);
+    const offlineMatches = room.players.filter(p => !p.isConnected && norm(p.name) === target);
+    if (offlineMatches.length === 1) {
+      const existingPlayer = offlineMatches[0];
+      existingPlayer.socketId = socketId;
+      existingPlayer.phoneSocketId = null;
+      existingPlayer.tvSocketId = null;
+      existingPlayer.isConnected = true;
+      return { room, player: existingPlayer, isRejoin: true };
+    }
+  }
+
   // New player — allowed any time; flagged if joining mid-game
   const existingColors = room.players.map(p => p.color);
   const player = {
@@ -281,9 +332,17 @@ const getRoom = (code) => {
   return rooms.get(code) || null;
 };
 
+// A player can hold up to three live sockets simultaneously: their controller
+// (socketId), a phone socket promoted when they open the TV screen
+// (phoneSocketId), and a TV/spectator socket (tvSocketId). Any of them must be
+// able to locate the player — matching only socketId meant a host who opened
+// the TV could disconnect without ever being marked offline.
+const socketMatches = (p, socketId) =>
+  p.socketId === socketId || p.phoneSocketId === socketId || p.tvSocketId === socketId;
+
 const getRoomBySocketId = (socketId) => {
   for (const room of rooms.values()) {
-    if (room.players.some(p => p.socketId === socketId)) {
+    if (room.players.some(p => socketMatches(p, socketId))) {
       return room;
     }
   }
@@ -293,33 +352,41 @@ const getRoomBySocketId = (socketId) => {
 const removePlayerBySocketId = (socketId, permanent) => {
   const room = getRoomBySocketId(socketId);
   if (!room) return null;
-  
+
   let player = null;
   let newHost = null;
-  
+  let wentOffline = false;
+
   if (permanent) {
     room.players = room.players.filter(p => !p.isConnected); // Need logic here
   } else {
-    player = room.players.find(p => p.socketId === socketId);
+    player = room.players.find(p => socketMatches(p, socketId));
     if (player) {
-      player.isConnected = false;
-      if (player.isHost) {
-        player.isHost = false;
-        const nextConnected = room.players.find(p => p.isConnected);
-        if (nextConnected) {
-          nextConnected.isHost = true;
-          room.host = nextConnected.id;
-          newHost = nextConnected;
+      // Clear only the socket slot that actually dropped. A player keeps their
+      // identity + "connected" status as long as ANY of their sockets is alive
+      // (e.g. the TV tab closing must not knock the host off their phone).
+      if (player.socketId === socketId) player.socketId = null;
+      if (player.phoneSocketId === socketId) player.phoneSocketId = null;
+      if (player.tvSocketId === socketId) player.tvSocketId = null;
+
+      const stillConnected = !!(player.socketId || player.phoneSocketId || player.tvSocketId);
+      if (!stillConnected) {
+        player.isConnected = false;
+        wentOffline = true;
+        if (player.isHost) {
+          player.isHost = false;
+          const nextConnected = room.players.find(p => p.isConnected);
+          if (nextConnected) {
+            nextConnected.isHost = true;
+            room.host = nextConnected.id;
+            newHost = nextConnected;
+          }
         }
       }
     }
   }
-  
-  if (room.players.filter(p => p.isConnected).length === 0) {
-    // maybe clear room later
-  }
-  
-  return { player, newHost };
+
+  return { player, newHost, wentOffline };
 };
 
 const setGameOptions = (code, socketId, mode, totalRounds, gameType, mltRounds, allowSelfVote) => {
@@ -365,4 +432,6 @@ module.exports = {
   setGameOptions,
   touchRoom,
   evictStaleRooms,
+  restoreRooms,
+  persistSoon,
 };
