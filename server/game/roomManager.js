@@ -332,6 +332,18 @@ const getRoom = (code) => {
   return rooms.get(code) || null;
 };
 
+// Compact overview of every live room — for the admin/observability dashboard.
+const listRoomsSummary = () =>
+  [...rooms.values()].map((room) => ({
+    code: room.code,
+    gameType: room.gameType,
+    gameName: room.gameName || '',
+    phase: room.phase,
+    players: (room.players || []).length,
+    connected: (room.players || []).filter((p) => p.isConnected).length,
+    lastActivityAt: room.lastActivityAt || null,
+  }));
+
 // A player can hold up to three live sockets simultaneously: their controller
 // (socketId), a phone socket promoted when they open the TV screen
 // (phoneSocketId), and a TV/spectator socket (tvSocketId). Any of them must be
@@ -434,4 +446,5 @@ module.exports = {
   evictStaleRooms,
   restoreRooms,
   persistSoon,
+  listRoomsSummary,
 };

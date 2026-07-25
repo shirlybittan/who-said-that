@@ -13,11 +13,13 @@ const {
   evictStaleRooms,
   restoreRooms,
   persistSoon,
+  listRoomsSummary,
 } = require('./game/roomManager');
 const { loadRooms } = require('./game/persistence');
 const { selectQuestions, selectSituationalQuestions, selectThisOrThatQuestions, selectDrawingQuestion, selectMixedQuestions, shuffleAnswers } = require('./game/gameLogic');
 const { buildMiniGameSnapshot } = require('./game/miniGameSnapshot');
 const { computeCanonicalRoute } = require('./game/canonicalRoute');
+const eventLog = require('./game/eventLog');
 const TimerManager = require('./game/TimerManager');
 const SubmissionTracker = require('./game/SubmissionTracker');
 const VoteCollector = require('./game/VoteCollector');
@@ -83,6 +85,90 @@ app.use(cors());
 app.use(express.json());
 
 app.get('/ping', (req, res) => res.json({ status: 'awake' }));
+
+// ─── Observability / admin dashboard ─────────────────────────────────────────
+// Token-gated (set ADMIN_TOKEN env to enable; disabled by default so room data
+// is never exposed accidentally). Lets you list live rooms and read a room's
+// per-player event timeline to diagnose "what happened" after a bug report.
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '';
+
+const adminAuth = (req, res, next) => {
+  if (!ADMIN_TOKEN) {
+    return res.status(403).json({ error: 'Admin disabled. Set the ADMIN_TOKEN env var to enable observability endpoints.' });
+  }
+  if (req.query.token !== ADMIN_TOKEN) {
+    return res.status(403).json({ error: 'Forbidden: bad or missing ?token=' });
+  }
+  return next();
+};
+
+// Strip heavy blobs (photos, strokes) from a room snapshot so the state endpoint
+// stays light; keep counts so you can still see the shape of the round.
+const stripHeavyBlobs = (room) => {
+  const clone = JSON.parse(JSON.stringify(TimerManager.sanitizeForClient(room)));
+  const countKeys = (o) => (o && typeof o === 'object' ? Object.keys(o).length : 0);
+  if (clone.playerPhotos) clone.playerPhotos = `<${countKeys(clone.playerPhotos)} photos>`;
+  if (clone.selfie) { clone.selfie.photos = `<${countKeys(clone.selfie.photos)} photos>`; clone.selfie.strokes = `<${countKeys(clone.selfie.strokes)} drawings>`; }
+  if (clone.draw?.submissions) clone.draw.submissions = `<${countKeys(clone.draw.submissions)} drawings>`;
+  if (clone.dt?.chains) clone.dt.chains = `<${countKeys(clone.dt.chains)} chains>`;
+  return clone;
+};
+
+app.get('/admin/rooms', adminAuth, (req, res) => {
+  res.json({ rooms: listRoomsSummary() });
+});
+
+app.get('/admin/rooms/:code/log', adminAuth, (req, res) => {
+  const code = String(req.params.code || '').toUpperCase();
+  res.json({ code, start: eventLog.getStart(code), events: eventLog.getLog(code) });
+});
+
+app.get('/admin/rooms/:code/state', adminAuth, (req, res) => {
+  const code = String(req.params.code || '').toUpperCase();
+  const room = getRoom(code);
+  if (!room) return res.status(404).json({ error: 'Room not found' });
+  return res.json({ code, state: stripHeavyBlobs(room) });
+});
+
+// Minimal self-contained dashboard: room list + click-through per-player timeline.
+app.get('/admin', adminAuth, (req, res) => {
+  const token = encodeURIComponent(req.query.token);
+  res.type('html').send(`<!doctype html><html><head><meta charset="utf-8"><title>WST Observability</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  body{font-family:ui-monospace,Menlo,Consolas,monospace;background:#0d0d1a;color:#e6e6e6;margin:0;padding:16px}
+  h1{color:#ffe66d;font-size:18px;margin:0 0 12px} h2{color:#4ecdc4;font-size:14px;margin:16px 0 8px}
+  table{border-collapse:collapse;width:100%;font-size:12px} th,td{border-bottom:1px solid #2d2d44;padding:4px 8px;text-align:left;vertical-align:top}
+  th{color:#888;font-weight:600} tr:hover{background:#161629}
+  .room{cursor:pointer;color:#4ecdc4;text-decoration:underline} .in{color:#a8e6cf} .sys{color:#ff8b94}
+  .muted{color:#666} .info{color:#c39bd3;white-space:pre-wrap;word-break:break-word;max-width:420px}
+  button{background:#2d2d44;color:#fff;border:1px solid #444;border-radius:6px;padding:4px 10px;cursor:pointer;font-family:inherit}
+</style></head><body>
+<h1>🎲 Who Said That — Observability</h1>
+<button onclick="loadRooms()">↻ Refresh rooms</button>
+<div id="rooms"></div>
+<div id="timeline"></div>
+<script>
+const T="${token}";
+const j=(u)=>fetch(u+(u.includes('?')?'&':'?')+'token='+T).then(r=>r.json());
+async function loadRooms(){
+  const {rooms}=await j('/admin/rooms');
+  const el=document.getElementById('rooms');
+  if(!rooms||!rooms.length){el.innerHTML='<p class=muted>No live rooms.</p>';return;}
+  el.innerHTML='<h2>Live rooms ('+rooms.length+')</h2><table><tr><th>Code</th><th>Game</th><th>Phase</th><th>Players</th><th>Connected</th></tr>'+
+    rooms.map(r=>'<tr><td class=room onclick="loadLog(\\''+r.code+'\\')">'+r.code+'</td><td>'+r.gameType+'</td><td>'+r.phase+'</td><td>'+r.players+'</td><td>'+r.connected+'</td></tr>').join('')+'</table>';
+}
+async function loadLog(code){
+  const {events}=await j('/admin/rooms/'+code+'/log');
+  const el=document.getElementById('timeline');
+  const fmt=(t)=>(t/1000).toFixed(1)+'s';
+  el.innerHTML='<h2>Timeline — '+code+' ('+events.length+' events)</h2><table><tr><th>t</th><th>dir</th><th>event</th><th>player</th><th>phase</th><th>info</th></tr>'+
+    events.map(e=>'<tr><td class=muted>'+fmt(e.t)+'</td><td class='+e.dir+'>'+e.dir+'</td><td>'+e.event+'</td><td class=muted>'+(e.pid?e.pid.slice(0,8):'-')+'</td><td>'+(e.phase||'-')+'</td><td class=info>'+(e.info!=null?JSON.stringify(e.info):'')+'</td></tr>').join('')+'</table>';
+  window.scrollTo(0,document.body.scrollHeight);
+}
+loadRooms();
+</script></body></html>`);
+});
 
 // ─── Presigned upload URL endpoint ───────────────────────────────────────────
 // Returns a short-lived PUT URL so clients upload photos directly to cloud
@@ -624,6 +710,20 @@ function getPlayerSocket(player) {
 
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
+
+  // ─── Observability: record every inbound event ─────────────────────────────
+  // One middleware captures all client→server events with player + phase
+  // context, building a per-room timeline for debugging. Best-effort and never
+  // blocks the handler. Payloads are summarised in eventLog (no blobs stored).
+  socket.use(([event, ...args], next) => {
+    try {
+      const room = getRoomBySocketId(socket.id);
+      const code = room?.code || args[0]?.code || null;
+      const player = room ? findPlayer(room, socket.id) : null;
+      eventLog.logInbound(code, event, player?.id, room?.phase, args[0]);
+    } catch (_) { /* logging must never break gameplay */ }
+    next();
+  });
 
   // ─── Auto-rejoin via handshake auth ────────────────────────────────────────
   // When a mobile player reconnects after a phone call / app switch, their
@@ -1562,8 +1662,10 @@ io.on('connection', (socket) => {
       // must not flag the player as disconnected to everyone else.
       if (player && wentOffline) {
         io.to(room.code).emit('player_disconnected', { playerId: player.id, playerName: player.name });
+        eventLog.logSystem(room.code, 'disconnect', player.id, room.phase, { name: player.name });
         if (newHost) {
           io.to(room.code).emit('host_changed', { host: newHost.id });
+          eventLog.logSystem(room.code, 'host_migrated', newHost.id, room.phase, { name: newHost.name });
         }
         // Persist the changed connection/host state.
         persistSoon();
@@ -2506,6 +2608,7 @@ const EVICTION_INTERVAL_MS = 10 * 60 * 1000; // 10 min
 setInterval(() => {
   const evicted = evictStaleRooms(ROOM_IDLE_TTL_MS);
   if (evicted.length > 0) {
+    evicted.forEach(code => eventLog.clearLog(code)); // free the room's timeline too
     console.log(`[eviction] Dropped ${evicted.length} idle room(s):`, evicted);
   }
 }, EVICTION_INTERVAL_MS).unref(); // .unref() so this timer doesn't keep the process alive during tests
