@@ -1,9 +1,7 @@
 const { tallyVotes } = require('./ScoreCalculator');
+const { getActivePlayers } = require('./players');
 
 const mapPlayer = (player) => ({ id: player.id, name: player.name, color: player.color });
-
-const getActivePlayers = (room) =>
-  (room.players || []).filter((player) => player.isConnected && player.isPlaying);
 
 const buildLeaderboard = (players, scores = {}) =>
   players

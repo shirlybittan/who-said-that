@@ -21,6 +21,7 @@ const { selectQuestions, selectSituationalQuestions, selectThisOrThatQuestions, 
 const { buildMiniGameSnapshot } = require('./game/miniGameSnapshot');
 const { computeCanonicalRoute } = require('./game/canonicalRoute');
 const { tallyVotes } = require('./game/ScoreCalculator');
+const { getActivePlayers } = require('./game/players');
 const eventLog = require('./game/eventLog');
 const { sanitizeStrokes, clampText, createRateLimiter, MAX_ANSWER } = require('./game/limits');
 const { renderDashboard } = require('./admin/dashboard');
@@ -320,7 +321,7 @@ const startDrawTimer = (io, room, code, seconds) => {
   room.draw.secondsLeft = seconds;
   room.draw.submissions = {};
   room.draw._submissionTracker = SubmissionTracker.create({
-    getExpectedCount: () => room.players.filter(p => p.isConnected && p.isPlaying).length,
+    getExpectedCount: () => getActivePlayers(room).length,
     onRecord: (playerId, data) => { room.draw.submissions[playerId] = data; },
     onComplete: () => { room._timers?.draw?.cancel(); startDrawVoting(io, room, code); },
   });
@@ -340,12 +341,12 @@ const startDrawVoting = (io, room, code) => {
   room.draw.phase = 'voting';
   room.draw.votes = {};
   room.draw._voteCollector = VoteCollector.create({
-    getExpectedCount: () => room.players.filter(p => p.isConnected && p.isPlaying).length,
+    getExpectedCount: () => getActivePlayers(room).length,
     allowSelfVote: false,
     onVote: (voterId, targetId) => { room.draw.votes[voterId] = targetId; },
     onComplete: () => resolveDrawVoting(io, room, code),
   });
-  const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+  const playingPlayers = getActivePlayers(room);
   const submissions = Object.entries(room.draw.submissions).map(([playerId, sub]) => {
     const player = room.players.find(p => p.id === playerId);
     const word = room.draw.mode === 'secret' ? (room.draw.playerWords?.[playerId] || '?') : room.draw.word;
@@ -402,7 +403,7 @@ const resolveDrawVoting = (io, room, code) => {
 
 // Pick the next non-host connected player to be the situational target (round-robin)
 const pickSituationalTarget = (room) => {
-  const eligible = room.players.filter(p => p.isConnected && p.isPlaying);
+  const eligible = getActivePlayers(room);
   if (eligible.length === 0) return null;
   const idx = room.sit.targetPlayerIndex % eligible.length;
   room.sit.targetPlayerIndex = (idx + 1) % eligible.length;
@@ -572,7 +573,7 @@ const emitNextQuestion = (io, room, code) => {
 
   if (q.type === 'drawing') {
     room.phase = 'drawing';
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
     const drawScores = room.draw?.scores || {};
     playingPlayers.forEach(p => { if (drawScores[p.id] === undefined) drawScores[p.id] = 0; });
     room.draw = {
@@ -946,7 +947,7 @@ io.on('connection', (socket) => {
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
-    if (room.players.filter(p => p.isConnected && p.isPlaying).length < 3) return;
+    if (getActivePlayers(room).length < 3) return;
 
     // MLT is started separately via mlt:start
     if (room.gameType === 'most-likely-to') return;
@@ -1529,7 +1530,7 @@ io.on('connection', (socket) => {
       hostPlayer.isConnected = true;
     }
 
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
 
     socket.emit('spectator_joined', {
       room: {
@@ -1732,7 +1733,7 @@ io.on('connection', (socket) => {
 
     cancelAllTimers(room);
 
-    const connectedPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const connectedPlayers = getActivePlayers(room);
     if (connectedPlayers.length < 2) return; // need at least 2 votable players
 
     // Build prompt pool (custom questions take priority, padded with bank)
@@ -1860,7 +1861,7 @@ io.on('connection', (socket) => {
       onComplete:       () => mltGame.showResults(io, room, code),
     });
 
-    const players = room.players.filter(p => p.isConnected && p.isPlaying);
+    const players = getActivePlayers(room);
     io.to(code).emit('mlt:prompt', {
       prompt:      room.mlt.prompt,
       round:       room.mlt.round,
@@ -1954,7 +1955,7 @@ io.on('connection', (socket) => {
 
     cancelAllTimers(room);
     room.players.forEach(p => { p.joinedMidRound = false; });
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
     if (playingPlayers.length < 2) return;
 
     const totalRounds = Math.min(Math.max(parseInt(rounds) || room.totalRounds || 3, 1), 10);
@@ -2020,7 +2021,7 @@ io.on('connection', (socket) => {
       room.draw.skipCount++;
     }
 
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
 
     if (room.draw.mode === 'secret') {
       if (isHostAction) {
@@ -2078,7 +2079,7 @@ io.on('connection', (socket) => {
     } else {
       room.draw.submissions[player.id] = data;
     }
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
     const submittedCount = room.draw._submissionTracker
       ? room.draw._submissionTracker.count()
       : Object.keys(room.draw.submissions).length;
@@ -2124,7 +2125,7 @@ io.on('connection', (socket) => {
     if (!accepted) return;
 
     room.draw.votes[player.id] = votedForPlayerId; // keep legacy map in sync
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
     const voteCount = room.draw._voteCollector?.count() ?? Object.keys(room.draw.votes).length;
     io.to(code).emit('draw:vote_received', { voteCount, totalVoters: playingPlayers.length, votedPlayerIds: room.draw._voteCollector?.getVoterIds() ?? Object.keys(room.draw.votes) });
     log.debug('draw vote', { count: voteCount, of: playingPlayers.length, code });
@@ -2182,7 +2183,7 @@ io.on('connection', (socket) => {
     room.draw.secondsLeft = room.draw.timeLimit;
     room.draw.skipCount = 0;
 
-    const nextPlayingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const nextPlayingPlayers = getActivePlayers(room);
     const players = nextPlayingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
 
     if (room.draw.mode === 'secret') {
@@ -2259,7 +2260,7 @@ io.on('connection', (socket) => {
       onResume: () => { room.fitb.paused = false; },
       onExpire: () => {
         // Auto-submit: use player's typed draft if available, otherwise default
-        const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+        const playingPlayers = getActivePlayers(room);
         playingPlayers.forEach(p => {
           if (!room.fitb.answers.find(a => a.playerId === p.id)) {
             const draftText = (room.fitb.drafts || {})[p.id] || '';
@@ -2282,7 +2283,7 @@ io.on('connection', (socket) => {
     if (!player || !player.isHost) return;
 
     cancelAllTimers(room);
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
     if (playingPlayers.length < 2) return;
 
     room.players.forEach(p => { p.joinedMidRound = false; });
@@ -2307,7 +2308,7 @@ io.on('connection', (socket) => {
       paused: false,
     };
     room.fitb._submissionTracker = SubmissionTracker.create({
-      getExpectedCount: () => room.players.filter(p => p.isConnected && p.isPlaying).length,
+      getExpectedCount: () => getActivePlayers(room).length,
       onComplete: () => startFitbVoting(io, room, code),
     });
     room.fitb.question = pickFitbQuestion(room, room.players);
@@ -2353,7 +2354,7 @@ io.on('connection', (socket) => {
       room.fitb._submissionTracker?.record(player.id, entry);
     }
 
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
     const answeredCount = room.fitb._submissionTracker?.count() ?? room.fitb.answers.length;
     const answeredPlayerIds = room.fitb._submissionTracker?.getPlayerIds() ?? room.fitb.answers.map(a => a.playerId);
     io.to(code).emit('fitb:answer_received', { answeredCount, totalPlayers: playingPlayers.length, answeredPlayerIds });
@@ -2370,7 +2371,7 @@ io.on('connection', (socket) => {
     room.fitb.phase = 'voting';
     room.fitb._votes = {};
     room.fitb._voteCollector = VoteCollector.create({
-      getExpectedCount: () => room.players.filter(p => p.isConnected && p.isPlaying).length,
+      getExpectedCount: () => getActivePlayers(room).length,
       allowSelfVote: false,
       onVote: (voterId, idxStr) => {
         if (!room.fitb._votes) room.fitb._votes = {};
@@ -2383,7 +2384,7 @@ io.on('connection', (socket) => {
     // Shuffle answers so order doesn't reveal authorship
     const shuffled = [...room.fitb.answers].sort(() => Math.random() - 0.5);
     room.fitb.answers = shuffled;
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
     // Send anonymous answers (no author info) + tell each player which index is theirs
     const anonAnswers = shuffled.map((a, i) => ({ id: i, text: a.text }));
     playingPlayers.forEach(p => {
@@ -2441,7 +2442,7 @@ io.on('connection', (socket) => {
     room.fitb._submissionTracker?.reset();
     room.fitb._votes = {};
     room.fitb.question = pickFitbQuestion(room, room.players);
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
     const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
     io.to(code).emit('fitb:round_start', {
       question: room.fitb.question,
@@ -2475,7 +2476,7 @@ io.on('connection', (socket) => {
       room.fitb.answers[idx].votes++;
     }
 
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
     const voteCount = room.fitb._voteCollector?.count() ?? Object.keys(room.fitb._votes).length;
     io.to(code).emit('fitb:vote_received', { voteCount, totalVoters: playingPlayers.length, votedPlayerIds: room.fitb._voteCollector?.getVoterIds() ?? Object.keys(room.fitb._votes) });
 
@@ -2539,7 +2540,7 @@ io.on('connection', (socket) => {
     room.fitb.question = pickFitbQuestion(room, room.players);
     const timeLimit = room.roomConfig?.roundDurationSecs || 30;
 
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
     const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
     io.to(code).emit('fitb:round_start', {
       question: room.fitb.question,
