@@ -14,6 +14,7 @@ const {
   restoreRooms,
   persistSoon,
   listRoomsSummary,
+  getAllRooms,
 } = require('./game/roomManager');
 const { loadRooms } = require('./game/persistence');
 const { selectQuestions, selectSituationalQuestions, selectThisOrThatQuestions, selectDrawingQuestion, selectMixedQuestions, shuffleAnswers } = require('./game/gameLogic');
@@ -671,6 +672,49 @@ const activePlayers = (room) => room.players.filter(p => p.isConnected && p.isPl
 // mergeToGlobalScores which was defined earlier).
 mltGame = createMltGame({ mergeToGlobalScores });
 totGame = createTotGame({ mergeToGlobalScores });
+
+// ─── Resume timers for restored rooms (after a server restart) ──────────────
+// Persistence brings back round state but not live timers. Re-create ONLY the
+// countdown for the current timed phase from the persisted remaining seconds so
+// the round keeps ticking and auto-advances on expiry — no game state is reset
+// (each onExpire is the same phase-guarded advance the live timer used). Phases
+// not covered (WST answering, fill-in-the-blank, draw-telephone) still advance
+// via the all-submit threshold or host controls, exactly as before.
+const resumeRoomTimers = (io, room) => {
+  if (!room || !room.phase) return;
+  const code = room.code;
+  room._timers = room._timers || {};
+  try {
+    if (room.phase === 'drawing' && room.draw?.phase === 'drawing') {
+      room._timers.draw = TimerManager.create({
+        io, code, seconds: room.draw.secondsLeft ?? room.draw.timeLimit ?? 90,
+        tickEvent: 'draw:timer',
+        isActive: () => room.draw?.phase === 'drawing',
+        onTick: (s) => { room.draw.secondsLeft = s; },
+        onExpire: () => startDrawVoting(io, room, code),
+      });
+    } else if (room.phase === 'tot' && room.tot?.roundState === 'voting') {
+      // totGame.startTimer only (re)sets the countdown + timer — no vote reset.
+      totGame.startTimer(io, room, code, room.tot.secondsLeft ?? (room.roomConfig?.roundDurationSecs || 30));
+    } else if (room.phase === 'sit-voting') {
+      // Remaining not persisted for sit voting → resume with a fresh window.
+      room._timers.sitVoting = TimerManager.create({
+        io, code, seconds: 45,
+        tickEvent: 'phase_timer', extraData: { phase: 'sit-voting' },
+        isActive: () => room.phase === 'sit-voting',
+        onExpire: () => closeSitVoting(io, room, code),
+      });
+    } else if (room.phase === 'voting') {
+      // WST per-answer voting window (remaining not persisted → fresh 30s).
+      startWstVotingTimer(io, room, code);
+    }
+  } catch (err) {
+    log.warn('timer resume failed', { code, phase: room.phase, err: err.message });
+  }
+};
+
+// Now that all helpers + controllers exist, restart restored rooms' timers.
+getAllRooms().forEach(room => resumeRoomTimers(io, room));
 
 // Cancel all active game timers for a room (called before starting a new game)
 function cancelAllTimers(room) {
