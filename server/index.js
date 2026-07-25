@@ -23,6 +23,7 @@ const { tallyVotes } = require('./game/ScoreCalculator');
 const eventLog = require('./game/eventLog');
 const { sanitizeStrokes, clampText, createRateLimiter, MAX_ANSWER } = require('./game/limits');
 const { renderDashboard } = require('./admin/dashboard');
+const log = require('./logger');
 
 // Per-socket flood guard. Generous so normal play never trips it.
 const rateLimiter = createRateLimiter({ windowMs: 1000, max: 80 });
@@ -92,7 +93,7 @@ setInterval(() => {
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '').split(',').map(o => o.trim()).filter(Boolean);
 const corsOrigin = ALLOWED_ORIGINS.length ? ALLOWED_ORIGINS : '*';
 if (corsOrigin === '*' && process.env.NODE_ENV === 'production') {
-  console.warn('[cors] ALLOWED_ORIGINS is not set — allowing ALL origins. Set it to lock down production.');
+  log.warn('CORS: ALLOWED_ORIGINS not set — allowing ALL origins; set it to lock down production.');
 }
 
 const app = express();
@@ -195,7 +196,7 @@ app.post('/api/upload-photo-url', async (req, res) => {
     const { uploadUrl, publicUrl, objectKey } = await createPresignedUpload(roomCode, playerId, safeMime);
     res.json({ uploadUrl, publicUrl, objectKey });
   } catch (err) {
-    console.error('[upload-photo-url]', err);
+    log.error('upload-photo-url failed', err.message);
     res.status(500).json({ error: 'Failed to generate upload URL' });
   }
 });
@@ -223,9 +224,9 @@ const io = new Server(server, {
 // the room gone. Best-effort — a failed restore just starts empty.
 try {
   const restored = restoreRooms(loadRooms());
-  if (restored > 0) console.log(`[persistence] restored ${restored} room(s) from disk`);
+  if (restored > 0) log.info('persistence: restored rooms from disk', { rooms: restored });
 } catch (err) {
-  console.error('[persistence] restore failed:', err.message);
+  log.error('persistence: restore failed', err.message);
 }
 
 // ─── Global scoring ───────────────────────────────────────────────────────────
@@ -698,7 +699,7 @@ function getPlayerSocket(player) {
 // ────────────────────────────────────────────────────────────────────────────
 
 io.on('connection', (socket) => {
-  console.log('User connected:', socket.id);
+  log.debug('socket connected', { id: socket.id });
 
   // ─── Flood guard ────────────────────────────────────────────────────────────
   // Drop events from a socket that exceeds the per-second rate limit. Silent
@@ -706,7 +707,7 @@ io.on('connection', (socket) => {
   socket.use((packet, next) => {
     if (rateLimiter.allow(socket.id)) return next();
     const now = Date.now();
-    if (now - lastRateLog > 1000) { lastRateLog = now; console.warn(`[rate-limit] throttling socket ${socket.id}`); }
+    if (now - lastRateLog > 1000) { lastRateLog = now; log.warn('rate-limit: throttling socket', { id: socket.id }); }
     // drop: do not call next()
   });
 
@@ -1259,7 +1260,7 @@ io.on('connection', (socket) => {
     }
 
     io.to(code).emit('vote_received', { votedCount: currentAnswer.votes.length, totalPlayers: expectedVotes, votedPlayerIds: currentAnswer.votes.map(v => v.voterId) });
-    console.log(`[Server] WST vote: ${currentAnswer.votes.length}/${expectedVotes} room=${code}`);
+    log.debug('WST vote', { votes: currentAnswer.votes.length, expected: expectedVotes, code });
 
     if (currentAnswer.votes.length >= expectedVotes) {
       if (room._timers?.wstVoting) room._timers.wstVoting.cancel();
@@ -1649,7 +1650,7 @@ io.on('connection', (socket) => {
   // ─────────────────────────────────────────────────────────────────────────────
 
   socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
+    log.debug('socket disconnected', { id: socket.id });
     rateLimiter.forget(socket.id);
     const room = getRoomBySocketId(socket.id);
     if (room) {
@@ -2041,7 +2042,7 @@ io.on('connection', (socket) => {
       ? room.draw._submissionTracker.getPlayerIds()
       : Object.keys(room.draw.submissions);
     io.to(code).emit('draw:submission_received', { submittedCount, totalDrawers: playingPlayers.length, submittedPlayerIds });
-    console.log(`[Server] Draw submission: ${submittedCount}/${playingPlayers.length} room=${code}`);
+    log.debug('draw submission', { count: submittedCount, of: playingPlayers.length, code });
 
     if (!room.draw._submissionTracker && submittedCount >= playingPlayers.length) {
       room._timers?.draw?.cancel();
@@ -2082,7 +2083,7 @@ io.on('connection', (socket) => {
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
     const voteCount = room.draw._voteCollector?.count() ?? Object.keys(room.draw.votes).length;
     io.to(code).emit('draw:vote_received', { voteCount, totalVoters: playingPlayers.length, votedPlayerIds: room.draw._voteCollector?.getVoterIds() ?? Object.keys(room.draw.votes) });
-    console.log(`[Server] Draw vote: ${voteCount}/${playingPlayers.length} room=${code}`);
+    log.debug('draw vote', { count: voteCount, of: playingPlayers.length, code });
 
     if (!room.draw._voteCollector && voteCount >= playingPlayers.length) {
       resolveDrawVoting(io, room, code);
@@ -2593,7 +2594,7 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  log.info('server running', { port: PORT });
 });
 
 // ─── Room eviction: drop rooms idle for >60 minutes every 10 minutes ─────────
@@ -2603,6 +2604,6 @@ setInterval(() => {
   const evicted = evictStaleRooms(ROOM_IDLE_TTL_MS);
   if (evicted.length > 0) {
     evicted.forEach(code => eventLog.clearLog(code)); // free the room's timeline too
-    console.log(`[eviction] Dropped ${evicted.length} idle room(s):`, evicted);
+    log.info('eviction: dropped idle rooms', { count: evicted.length, codes: evicted });
   }
 }, EVICTION_INTERVAL_MS).unref(); // .unref() so this timer doesn't keep the process alive during tests

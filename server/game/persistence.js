@@ -30,6 +30,7 @@
 const fs = require('fs');
 const path = require('path');
 const TimerManager = require('./TimerManager');
+const log = require('../logger');
 
 const DATA_DIR = path.join(__dirname, '..', '.data');
 const FILE = path.join(DATA_DIR, 'rooms.json');
@@ -86,7 +87,7 @@ const writeNow = async (roomsMap) => {
     await fs.promises.writeFile(TMP, data);
     await fs.promises.rename(TMP, FILE); // atomic swap — never leaves a torn file
   } catch (err) {
-    console.error('[persistence] save failed:', err.message);
+    log.error('persistence: save failed', err.message);
   } finally {
     saving = false;
     if (pending) { pending = false; writeNow(roomsMap); }
@@ -108,7 +109,7 @@ const loadRooms = () => {
     const parsed = JSON.parse(fs.readFileSync(FILE, 'utf8'));
     return parsed && typeof parsed === 'object' ? parsed : {};
   } catch (err) {
-    console.error('[persistence] load failed, starting fresh:', err.message);
+    log.error('persistence: load failed, starting fresh', err.message);
     return {};
   }
 };

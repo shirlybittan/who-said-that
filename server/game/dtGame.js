@@ -6,6 +6,7 @@ const VoteCollector = require('./VoteCollector');
 const { buildMiniGameSnapshot } = require('./miniGameSnapshot');
 const { shuffleAnswers } = require('./gameLogic');
 const { sanitizeStrokes } = require('./limits');
+const log = require('../logger');
 const {
   createRoom,
   joinRoom,
@@ -514,7 +515,7 @@ function setupDtGame(io, socket, {
       room.selfie.promptTemplate = promptObj.prompt;
       if (!room.selfie.usedPrompts) room.selfie.usedPrompts = [];
       room.selfie.usedPrompts.push(promptObj.prompt);
-      console.log(`[selfie_skip_question] Skipped question for room ${code}. New prompt assigned.`);
+      log.debug('selfie: skipped question, new prompt assigned', { code });
       // Clear strokes so drawers start fresh with the new prompt
       room.selfie.strokes = {};
       // Send each drawer the new prompt (keeping their existing photo assignment)
@@ -1515,7 +1516,7 @@ function setupDtGame(io, socket, {
 
     // Broadcast guessing phase to room (includes ALL payloads so each client can pick theirs)
     // This acts as a fallback: even if the direct socket send fails, the room broadcast carries the data.
-    console.log(`[DT] Emitting dt:guessing_phase to room ${code}. Total guessers: ${totalGuessers}. Payloads:`, Object.keys(guessPayloads));
+    log.debug('dt: guessing_phase', { code, totalGuessers, payloads: Object.keys(guessPayloads) });
     io.to(code).emit('dt:guessing_phase', {
       totalGuessers,
       secondsLeft: DT_GUESS_SECS,
@@ -1738,16 +1739,16 @@ function setupDtGame(io, socket, {
     }
 
     // Create chains (without participant lists — built separately below)
-    console.log(`[DT] Creating chains for room ${code}. playingPlayers=${playingPlayers.length}, prompts=${room.dt.prompts.length}, shuffled=${shuffled.length}`);
+    log.debug('dt: creating chains', { code, playingPlayers: playingPlayers.length, prompts: room.dt.prompts.length, shuffled: shuffled.length });
     for (let i = 0; i < room.dt.prompts.length; i++) {
       const prompt = room.dt.prompts[i];
       const targetPlayerId = shuffled[i % shuffled.length];
       if (!targetPlayerId) {
-        console.error(`[DT ERROR] targetPlayerId is undefined! i=${i}, shuffled=${JSON.stringify(shuffled)}`);
+        log.error('dt: targetPlayerId undefined while creating chain', { i, shuffled });
       }
       const targetPlayer = playingPlayers.find(p => p.id === targetPlayerId);
       const finalText = prompt.templateText.replace(/\[name\]/gi, targetPlayer?.name || '?');
-      console.log(`[DT] Created chain ${prompt.id} with targetPlayerId=${targetPlayerId}`);
+      log.debug('dt: created chain', { promptId: prompt.id, targetPlayerId });
       room.dt.chains[prompt.id] = {
         id: prompt.id,
         authorId: prompt.authorId,
