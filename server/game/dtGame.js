@@ -1745,7 +1745,7 @@ function setupDtGame(io, socket, {
       const prompt = room.dt.prompts[i];
       const targetPlayerId = shuffled[i % shuffled.length];
       if (!targetPlayerId) {
-        log.error('dt: targetPlayerId undefined while creating chain', { i, shuffled });
+        log.error('dt: targetPlayerId undefined while creating chain', { code, i, shuffled });
       }
       const targetPlayer = playingPlayers.find(p => p.id === targetPlayerId);
       const finalText = prompt.templateText.replace(/\[name\]/gi, targetPlayer?.name || '?');

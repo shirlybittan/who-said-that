@@ -198,7 +198,7 @@ app.post('/api/upload-photo-url', async (req, res) => {
     const { uploadUrl, publicUrl, objectKey } = await createPresignedUpload(roomCode, playerId, safeMime);
     res.json({ uploadUrl, publicUrl, objectKey });
   } catch (err) {
-    log.error('upload-photo-url failed', err.message);
+    log.error('upload-photo-url failed', { message: err.message, stack: err.stack });
     res.status(500).json({ error: 'Failed to generate upload URL' });
   }
 });
@@ -228,7 +228,7 @@ try {
   const restored = restoreRooms(loadRooms());
   if (restored > 0) log.info('persistence: restored rooms from disk', { rooms: restored });
 } catch (err) {
-  log.error('persistence: restore failed', err.message);
+  log.error('persistence: restore failed', { message: err.message, stack: err.stack });
 }
 
 // ─── Global scoring ───────────────────────────────────────────────────────────
@@ -648,8 +648,7 @@ const closeSitVoting = (io, room, code) => {
     votes: voteCounts[a.playerId] || 0,
   }));
 
-  const scorePlayers = room.players
-    .filter(p => p.isConnected && p.isPlaying)
+  const scorePlayers = getActivePlayers(room)
     .map(p => ({ id: p.id, name: p.name, color: p.color }));
 
   const payload = {
@@ -726,7 +725,12 @@ const resumeRoomTimers = (io, room) => {
   }
 };
 
-// Now that all helpers + controllers exist, restart restored rooms' timers.
+// Restart restored rooms' timers. ORDERING (all at module load, intentional):
+//   1. restoreRooms(loadRooms()) earlier populated the rooms Map from disk.
+//   2. `io` is already created; mltGame/totGame + all timer helpers/advance
+//      functions above are now defined.
+//   3. So this must run HERE — after those definitions and after restore, but
+//      it's fine that it's before io.on('connection') (timers only need `io`).
 getAllRooms().forEach(room => resumeRoomTimers(io, room));
 
 // Cancel all active game timers for a room (called before starting a new game)

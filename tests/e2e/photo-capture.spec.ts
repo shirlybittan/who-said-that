@@ -14,6 +14,10 @@ const SAVED_SELFIE = 'data:image/png;base64,' + PNG.toString('base64');
  * the real capture path in a browser and guard SelfieCapture + photoUpload
  * against render regressions. Runs against live dev servers.
  */
+// Note: GameActions.createGame() was tried here for consistency (review nit #4)
+// but it interacts badly when two photo games run back-to-back in one suite
+// (the 2nd game's photo phase gets skipped), so this game keeps its own create
+// helper. Both still hardcode the dev URL like the rest of the e2e suite.
 async function createPhotoGame(hostPage) {
   await hostPage.goto('http://localhost:5173/host');
   await hostPage.getByTestId('host-btn-create-room').click();
