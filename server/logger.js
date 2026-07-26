@@ -16,8 +16,9 @@ const emit = (level, msg, meta) => {
   if (LEVELS[level] < threshold) return;
   const sink = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
   if (asJson) {
-    const extra = meta && typeof meta === 'object' ? meta : meta != null ? { detail: meta } : {};
-    sink(JSON.stringify({ t: new Date().toISOString(), level, msg, ...extra }));
+    const extra = meta && typeof meta === 'object' && !Array.isArray(meta) ? meta : meta != null ? { detail: meta } : {};
+    // Reserved fields spread LAST so a meta key named t/level/msg can't clobber them.
+    sink(JSON.stringify({ ...extra, t: new Date().toISOString(), level, msg }));
   } else {
     const tail = meta != null ? ' ' + (typeof meta === 'string' ? meta : JSON.stringify(meta)) : '';
     sink(`[${level}] ${msg}${tail}`);

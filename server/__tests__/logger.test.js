@@ -38,6 +38,16 @@ describe('logger', () => {
     spy.mockRestore();
   });
 
+  test('reserved fields (t/level/msg) are not clobbered by meta keys', () => {
+    const spy = jest.spyOn(console, 'log').mockImplementation(() => {});
+    withEnv({ LOG_LEVEL: 'debug', LOG_FORMAT: 'json' }, (log) => { log.info('real', { level: 'FAKE', msg: 'FAKE', keep: 1 }); });
+    const parsed = JSON.parse(spy.mock.calls[0][0]);
+    expect(parsed.level).toBe('info'); // not 'FAKE'
+    expect(parsed.msg).toBe('real');   // not 'FAKE'
+    expect(parsed.keep).toBe(1);
+    spy.mockRestore();
+  });
+
   test('warn/error route to console.warn/error and are never suppressed at info', () => {
     const w = jest.spyOn(console, 'warn').mockImplementation(() => {});
     const e = jest.spyOn(console, 'error').mockImplementation(() => {});

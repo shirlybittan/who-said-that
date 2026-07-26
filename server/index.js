@@ -438,6 +438,7 @@ const advanceWstAnswerPhase = (io, room, code) => {
 
     room._timers = room._timers || {};
     if (room._timers.sitVoting) room._timers.sitVoting.cancel();
+    room.sit.secondsLeft = 45;
     room._timers.sitVoting = TimerManager.create({
       io,
       code,
@@ -445,6 +446,7 @@ const advanceWstAnswerPhase = (io, room, code) => {
       tickEvent: 'phase_timer',
       extraData: { phase: 'sit-voting' },
       isActive: () => room.phase === 'sit-voting',
+      onTick: (s) => { room.sit.secondsLeft = s; }, // track remaining for reconnect/restart resume
       onExpire: () => closeSitVoting(io, room, code),
     });
   } else {
@@ -698,16 +700,26 @@ const resumeRoomTimers = (io, room) => {
       // totGame.startTimer only (re)sets the countdown + timer — no vote reset.
       totGame.startTimer(io, room, code, room.tot.secondsLeft ?? (room.roomConfig?.roundDurationSecs || 30));
     } else if (room.phase === 'sit-voting') {
-      // Remaining not persisted for sit voting → resume with a fresh window.
+      const secs = room.sit?.secondsLeft ?? 45;
+      if (room.sit) room.sit.secondsLeft = secs;
       room._timers.sitVoting = TimerManager.create({
-        io, code, seconds: 45,
+        io, code, seconds: secs,
         tickEvent: 'phase_timer', extraData: { phase: 'sit-voting' },
         isActive: () => room.phase === 'sit-voting',
+        onTick: (s) => { if (room.sit) room.sit.secondsLeft = s; },
         onExpire: () => closeSitVoting(io, room, code),
       });
     } else if (room.phase === 'voting') {
-      // WST per-answer voting window (remaining not persisted → fresh 30s).
-      startWstVotingTimer(io, room, code);
+      // WST per-answer voting — resume from the persisted remaining seconds.
+      const secs = room.wstVotingSecondsLeft ?? 30;
+      room.wstVotingSecondsLeft = secs;
+      room._timers.wstVoting = TimerManager.create({
+        io, code, seconds: secs,
+        tickEvent: 'phase_timer', extraData: { phase: 'wst-voting' },
+        isActive: () => room.phase === 'voting',
+        onTick: (s) => { room.wstVotingSecondsLeft = s; },
+        onExpire: () => io.to(code).emit('all_votes_in', { currentIndex: room.currentAnswerIndex }),
+      });
     }
   } catch (err) {
     log.warn('timer resume failed', { code, phase: room.phase, err: err.message });
