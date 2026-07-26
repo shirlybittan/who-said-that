@@ -128,30 +128,36 @@ const buildClassicRestore = (room, playerId) => {
     }];
 
     if (phase === 'sit-results') {
-      const voteCounts = {};
-      (room.answers || []).forEach((answer) => { voteCounts[answer.playerId] = 0; });
-      Object.values(room.sit?.votes || {}).forEach((authorId) => {
-        if (voteCounts[authorId] !== undefined) voteCounts[authorId] += 1;
-      });
-      const maxVotes = Math.max(...Object.values(voteCounts), 0);
-      const detailedAnswers = (room.answers || []).map((answer) => ({
-        id: answer.playerId,
-        text: answer.text,
-        authorId: answer.playerId,
-        authorName: answer.playerName,
-        authorColor: room.players.find((player) => player.id === answer.playerId)?.color || '#888',
-        votes: voteCounts[answer.playerId] || 0,
-      }));
-      const winners = maxVotes > 0 ? detailedAnswers.filter((answer) => answer.votes === maxVotes).map((answer) => answer.id) : [];
-      actions.push({
-        type: 'SIT_SET_RESULTS',
-        payload: {
-          answers: detailedAnswers,
-          scores: room.scores || {},
-          players: getPlayers(room).filter((player) => player.isConnected && player.isPlaying).map((player) => ({ id: player.id, name: player.name, color: player.color })),
-          winners,
-        },
-      });
+      if (room.sit?.lastResults) {
+        // Prefer the server's authoritative results (no client-side recompute → no drift).
+        actions.push({ type: 'SIT_SET_RESULTS', payload: room.sit.lastResults });
+      } else {
+        // Fallback (older rooms): recompute the tally from raw votes.
+        const voteCounts = {};
+        (room.answers || []).forEach((answer) => { voteCounts[answer.playerId] = 0; });
+        Object.values(room.sit?.votes || {}).forEach((authorId) => {
+          if (voteCounts[authorId] !== undefined) voteCounts[authorId] += 1;
+        });
+        const maxVotes = Math.max(...Object.values(voteCounts), 0);
+        const detailedAnswers = (room.answers || []).map((answer) => ({
+          id: answer.playerId,
+          text: answer.text,
+          authorId: answer.playerId,
+          authorName: answer.playerName,
+          authorColor: room.players.find((player) => player.id === answer.playerId)?.color || '#888',
+          votes: voteCounts[answer.playerId] || 0,
+        }));
+        const winners = maxVotes > 0 ? detailedAnswers.filter((answer) => answer.votes === maxVotes).map((answer) => answer.id) : [];
+        actions.push({
+          type: 'SIT_SET_RESULTS',
+          payload: {
+            answers: detailedAnswers,
+            scores: room.scores || {},
+            players: getPlayers(room).filter((player) => player.isConnected && player.isPlaying).map((player) => ({ id: player.id, name: player.name, color: player.color })),
+            winners,
+          },
+        });
+      }
     } else if (room.sit?.votes?.[playerId]) {
       actions.push({ type: 'SIT_MARK_VOTED', payload: { answerId: room.sit.votes[playerId] } });
     }
@@ -235,35 +241,40 @@ const buildClassicRestore = (room, playerId) => {
     else actions.push({ type: 'MLT_SET_TIMER', payload: { secondsLeft: room.mlt?.secondsLeft ?? 0 } });
 
     if (room.mlt?.roundState === 'results') {
-      // Recompute per-round results from stored votes
-      const voteCounts = {};
-      activePlayers.forEach((player) => { voteCounts[player.id] = 0; });
-      Object.values(room.mlt?.votes || {}).forEach((targetId) => {
-        if (voteCounts[targetId] !== undefined) voteCounts[targetId]++;
-      });
-      const totalVotesCount = Object.keys(room.mlt?.votes || {}).length;
-      const results = activePlayers
-        .map((player) => ({
-          playerId: player.id,
-          name: player.name,
-          color: player.color,
-          count: voteCounts[player.id] || 0,
-          pct: totalVotesCount > 0 ? Math.round((voteCounts[player.id] || 0) / totalVotesCount * 100) : 0,
-        }))
-        .sort((a, b) => b.count - a.count);
-      const maxVotes = results[0]?.count || 0;
-      const majorityPlayerIds = maxVotes > 0 ? results.filter((r) => r.count === maxVotes).map((r) => r.playerId) : [];
+      if (room.mlt.lastResults) {
+        // Prefer the server's authoritative results (no client-side recompute → no drift).
+        actions.push({ type: 'MLT_SET_RESULTS', payload: room.mlt.lastResults });
+      } else {
+        // Fallback (older rooms / pre-computed-results): recompute from stored votes.
+        const voteCounts = {};
+        activePlayers.forEach((player) => { voteCounts[player.id] = 0; });
+        Object.values(room.mlt?.votes || {}).forEach((targetId) => {
+          if (voteCounts[targetId] !== undefined) voteCounts[targetId]++;
+        });
+        const totalVotesCount = Object.keys(room.mlt?.votes || {}).length;
+        const results = activePlayers
+          .map((player) => ({
+            playerId: player.id,
+            name: player.name,
+            color: player.color,
+            count: voteCounts[player.id] || 0,
+            pct: totalVotesCount > 0 ? Math.round((voteCounts[player.id] || 0) / totalVotesCount * 100) : 0,
+          }))
+          .sort((a, b) => b.count - a.count);
+        const maxVotes = results[0]?.count || 0;
+        const majorityPlayerIds = maxVotes > 0 ? results.filter((r) => r.count === maxVotes).map((r) => r.playerId) : [];
 
-      actions.push({
-        type: 'MLT_SET_RESULTS',
-        payload: {
-          results,
-          majorityPlayerIds,
-          jokersUsed: Object.keys(room.mlt?.jokersThisRound || {}),
-          scores: room.mlt?.scores || {},
-          players: activePlayers.map((player) => ({ id: player.id, name: player.name, color: player.color })),
-        },
-      });
+        actions.push({
+          type: 'MLT_SET_RESULTS',
+          payload: {
+            results,
+            majorityPlayerIds,
+            jokersUsed: Object.keys(room.mlt?.jokersThisRound || {}),
+            scores: room.mlt?.scores || {},
+            players: activePlayers.map((player) => ({ id: player.id, name: player.name, color: player.color })),
+          },
+        });
+      }
     }
 
     return actions;

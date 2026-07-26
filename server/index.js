@@ -14,15 +14,18 @@ const {
   restoreRooms,
   persistSoon,
   listRoomsSummary,
+  getAllRooms,
 } = require('./game/roomManager');
 const { loadRooms } = require('./game/persistence');
 const { selectQuestions, selectSituationalQuestions, selectThisOrThatQuestions, selectDrawingQuestion, selectMixedQuestions, shuffleAnswers } = require('./game/gameLogic');
 const { buildMiniGameSnapshot } = require('./game/miniGameSnapshot');
 const { computeCanonicalRoute } = require('./game/canonicalRoute');
 const { tallyVotes } = require('./game/ScoreCalculator');
+const { getActivePlayers } = require('./game/players');
 const eventLog = require('./game/eventLog');
 const { sanitizeStrokes, clampText, createRateLimiter, MAX_ANSWER } = require('./game/limits');
 const { renderDashboard } = require('./admin/dashboard');
+const log = require('./logger');
 
 // Per-socket flood guard. Generous so normal play never trips it.
 const rateLimiter = createRateLimiter({ windowMs: 1000, max: 80 });
@@ -87,8 +90,16 @@ setInterval(() => {
   }
 }, 60 * 60 * 1000);
 
+// CORS origin: lock to an allowlist in production via ALLOWED_ORIGINS
+// (comma-separated). Unset → '*' (open) for local dev; warn if left open in prod.
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || '').split(',').map(o => o.trim()).filter(Boolean);
+const corsOrigin = ALLOWED_ORIGINS.length ? ALLOWED_ORIGINS : '*';
+if (corsOrigin === '*' && process.env.NODE_ENV === 'production') {
+  log.warn('CORS: ALLOWED_ORIGINS not set — allowing ALL origins; set it to lock down production.');
+}
+
 const app = express();
-app.use(cors());
+app.use(cors({ origin: corsOrigin }));
 app.use(express.json());
 
 app.get('/ping', (req, res) => res.json({ status: 'awake' }));
@@ -187,7 +198,7 @@ app.post('/api/upload-photo-url', async (req, res) => {
     const { uploadUrl, publicUrl, objectKey } = await createPresignedUpload(roomCode, playerId, safeMime);
     res.json({ uploadUrl, publicUrl, objectKey });
   } catch (err) {
-    console.error('[upload-photo-url]', err);
+    log.error('upload-photo-url failed', { message: err.message, stack: err.stack });
     res.status(500).json({ error: 'Failed to generate upload URL' });
   }
 });
@@ -196,7 +207,7 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    origin: '*', // Allow all origins for dev
+    origin: corsOrigin, // '*' for dev; ALLOWED_ORIGINS allowlist in prod
     methods: ['GET', 'POST'],
   },
   // Tighter heartbeat so a silently-dropped player (phone sleep, tunnel, closed
@@ -215,9 +226,9 @@ const io = new Server(server, {
 // the room gone. Best-effort — a failed restore just starts empty.
 try {
   const restored = restoreRooms(loadRooms());
-  if (restored > 0) console.log(`[persistence] restored ${restored} room(s) from disk`);
+  if (restored > 0) log.info('persistence: restored rooms from disk', { rooms: restored });
 } catch (err) {
-  console.error('[persistence] restore failed:', err.message);
+  log.error('persistence: restore failed', { message: err.message, stack: err.stack });
 }
 
 // ─── Global scoring ───────────────────────────────────────────────────────────
@@ -310,7 +321,7 @@ const startDrawTimer = (io, room, code, seconds) => {
   room.draw.secondsLeft = seconds;
   room.draw.submissions = {};
   room.draw._submissionTracker = SubmissionTracker.create({
-    getExpectedCount: () => room.players.filter(p => p.isConnected && p.isPlaying).length,
+    getExpectedCount: () => getActivePlayers(room).length,
     onRecord: (playerId, data) => { room.draw.submissions[playerId] = data; },
     onComplete: () => { room._timers?.draw?.cancel(); startDrawVoting(io, room, code); },
   });
@@ -330,12 +341,12 @@ const startDrawVoting = (io, room, code) => {
   room.draw.phase = 'voting';
   room.draw.votes = {};
   room.draw._voteCollector = VoteCollector.create({
-    getExpectedCount: () => room.players.filter(p => p.isConnected && p.isPlaying).length,
+    getExpectedCount: () => getActivePlayers(room).length,
     allowSelfVote: false,
     onVote: (voterId, targetId) => { room.draw.votes[voterId] = targetId; },
     onComplete: () => resolveDrawVoting(io, room, code),
   });
-  const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+  const playingPlayers = getActivePlayers(room);
   const submissions = Object.entries(room.draw.submissions).map(([playerId, sub]) => {
     const player = room.players.find(p => p.id === playerId);
     const word = room.draw.mode === 'secret' ? (room.draw.playerWords?.[playerId] || '?') : room.draw.word;
@@ -392,7 +403,7 @@ const resolveDrawVoting = (io, room, code) => {
 
 // Pick the next non-host connected player to be the situational target (round-robin)
 const pickSituationalTarget = (room) => {
-  const eligible = room.players.filter(p => p.isConnected && p.isPlaying);
+  const eligible = getActivePlayers(room);
   if (eligible.length === 0) return null;
   const idx = room.sit.targetPlayerIndex % eligible.length;
   room.sit.targetPlayerIndex = (idx + 1) % eligible.length;
@@ -427,6 +438,7 @@ const advanceWstAnswerPhase = (io, room, code) => {
 
     room._timers = room._timers || {};
     if (room._timers.sitVoting) room._timers.sitVoting.cancel();
+    room.sit.secondsLeft = 45;
     room._timers.sitVoting = TimerManager.create({
       io,
       code,
@@ -434,6 +446,7 @@ const advanceWstAnswerPhase = (io, room, code) => {
       tickEvent: 'phase_timer',
       extraData: { phase: 'sit-voting' },
       isActive: () => room.phase === 'sit-voting',
+      onTick: (s) => { room.sit.secondsLeft = s; }, // track remaining for reconnect/restart resume
       onExpire: () => closeSitVoting(io, room, code),
     });
   } else {
@@ -562,7 +575,7 @@ const emitNextQuestion = (io, room, code) => {
 
   if (q.type === 'drawing') {
     room.phase = 'drawing';
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
     const drawScores = room.draw?.scores || {};
     playingPlayers.forEach(p => { if (drawScores[p.id] === undefined) drawScores[p.id] = 0; });
     room.draw = {
@@ -635,18 +648,21 @@ const closeSitVoting = (io, room, code) => {
     votes: voteCounts[a.playerId] || 0,
   }));
 
-  const scorePlayers = room.players
-    .filter(p => p.isConnected && p.isPlaying)
+  const scorePlayers = getActivePlayers(room)
     .map(p => ({ id: p.id, name: p.name, color: p.color }));
 
-  io.to(code).emit('sit:results', {
+  const payload = {
     answers: answersWithDetails,
     scores: { ...room.scores },
     players: scorePlayers,
     winners: room.answers
       .filter(a => voteCounts[a.playerId] === maxVotes && maxVotes > 0)
       .map(a => a.playerId),
-  });
+  };
+  // Stash authoritative results for reconnect restore (client uses these instead
+  // of recomputing the tally from raw votes — avoids drift).
+  room.sit.lastResults = payload;
+  io.to(code).emit('sit:results', payload);
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -658,6 +674,64 @@ const activePlayers = (room) => room.players.filter(p => p.isConnected && p.isPl
 // mergeToGlobalScores which was defined earlier).
 mltGame = createMltGame({ mergeToGlobalScores });
 totGame = createTotGame({ mergeToGlobalScores });
+
+// ─── Resume timers for restored rooms (after a server restart) ──────────────
+// Persistence brings back round state but not live timers. Re-create ONLY the
+// countdown for the current timed phase from the persisted remaining seconds so
+// the round keeps ticking and auto-advances on expiry — no game state is reset
+// (each onExpire is the same phase-guarded advance the live timer used). Phases
+// not covered (WST answering, fill-in-the-blank, draw-telephone) still advance
+// via the all-submit threshold or host controls, exactly as before.
+const resumeRoomTimers = (io, room) => {
+  if (!room || !room.phase) return;
+  const code = room.code;
+  room._timers = room._timers || {};
+  try {
+    if (room.phase === 'drawing' && room.draw?.phase === 'drawing') {
+      room._timers.draw = TimerManager.create({
+        io, code, seconds: room.draw.secondsLeft ?? room.draw.timeLimit ?? 90,
+        tickEvent: 'draw:timer',
+        isActive: () => room.draw?.phase === 'drawing',
+        onTick: (s) => { room.draw.secondsLeft = s; },
+        onExpire: () => startDrawVoting(io, room, code),
+      });
+    } else if (room.phase === 'tot' && room.tot?.roundState === 'voting') {
+      // totGame.startTimer only (re)sets the countdown + timer — no vote reset.
+      totGame.startTimer(io, room, code, room.tot.secondsLeft ?? (room.roomConfig?.roundDurationSecs || 30));
+    } else if (room.phase === 'sit-voting') {
+      const secs = room.sit?.secondsLeft ?? 45;
+      if (room.sit) room.sit.secondsLeft = secs;
+      room._timers.sitVoting = TimerManager.create({
+        io, code, seconds: secs,
+        tickEvent: 'phase_timer', extraData: { phase: 'sit-voting' },
+        isActive: () => room.phase === 'sit-voting',
+        onTick: (s) => { if (room.sit) room.sit.secondsLeft = s; },
+        onExpire: () => closeSitVoting(io, room, code),
+      });
+    } else if (room.phase === 'voting') {
+      // WST per-answer voting — resume from the persisted remaining seconds.
+      const secs = room.wstVotingSecondsLeft ?? 30;
+      room.wstVotingSecondsLeft = secs;
+      room._timers.wstVoting = TimerManager.create({
+        io, code, seconds: secs,
+        tickEvent: 'phase_timer', extraData: { phase: 'wst-voting' },
+        isActive: () => room.phase === 'voting',
+        onTick: (s) => { room.wstVotingSecondsLeft = s; },
+        onExpire: () => io.to(code).emit('all_votes_in', { currentIndex: room.currentAnswerIndex }),
+      });
+    }
+  } catch (err) {
+    log.warn('timer resume failed', { code, phase: room.phase, err: err.message });
+  }
+};
+
+// Restart restored rooms' timers. ORDERING (all at module load, intentional):
+//   1. restoreRooms(loadRooms()) earlier populated the rooms Map from disk.
+//   2. `io` is already created; mltGame/totGame + all timer helpers/advance
+//      functions above are now defined.
+//   3. So this must run HERE — after those definitions and after restore, but
+//      it's fine that it's before io.on('connection') (timers only need `io`).
+getAllRooms().forEach(room => resumeRoomTimers(io, room));
 
 // Cancel all active game timers for a room (called before starting a new game)
 function cancelAllTimers(room) {
@@ -686,7 +760,7 @@ function getPlayerSocket(player) {
 // ────────────────────────────────────────────────────────────────────────────
 
 io.on('connection', (socket) => {
-  console.log('User connected:', socket.id);
+  log.debug('socket connected', { id: socket.id });
 
   // ─── Flood guard ────────────────────────────────────────────────────────────
   // Drop events from a socket that exceeds the per-second rate limit. Silent
@@ -694,7 +768,7 @@ io.on('connection', (socket) => {
   socket.use((packet, next) => {
     if (rateLimiter.allow(socket.id)) return next();
     const now = Date.now();
-    if (now - lastRateLog > 1000) { lastRateLog = now; console.warn(`[rate-limit] throttling socket ${socket.id}`); }
+    if (now - lastRateLog > 1000) { lastRateLog = now; log.warn('rate-limit: throttling socket', { id: socket.id }); }
     // drop: do not call next()
   });
 
@@ -889,7 +963,7 @@ io.on('connection', (socket) => {
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
-    if (room.players.filter(p => p.isConnected && p.isPlaying).length < 3) return;
+    if (getActivePlayers(room).length < 3) return;
 
     // MLT is started separately via mlt:start
     if (room.gameType === 'most-likely-to') return;
@@ -1247,7 +1321,7 @@ io.on('connection', (socket) => {
     }
 
     io.to(code).emit('vote_received', { votedCount: currentAnswer.votes.length, totalPlayers: expectedVotes, votedPlayerIds: currentAnswer.votes.map(v => v.voterId) });
-    console.log(`[Server] WST vote: ${currentAnswer.votes.length}/${expectedVotes} room=${code}`);
+    log.debug('WST vote', { votes: currentAnswer.votes.length, expected: expectedVotes, code });
 
     if (currentAnswer.votes.length >= expectedVotes) {
       if (room._timers?.wstVoting) room._timers.wstVoting.cancel();
@@ -1472,7 +1546,7 @@ io.on('connection', (socket) => {
       hostPlayer.isConnected = true;
     }
 
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
 
     socket.emit('spectator_joined', {
       room: {
@@ -1637,7 +1711,7 @@ io.on('connection', (socket) => {
   // ─────────────────────────────────────────────────────────────────────────────
 
   socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
+    log.debug('socket disconnected', { id: socket.id });
     rateLimiter.forget(socket.id);
     const room = getRoomBySocketId(socket.id);
     if (room) {
@@ -1675,7 +1749,7 @@ io.on('connection', (socket) => {
 
     cancelAllTimers(room);
 
-    const connectedPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const connectedPlayers = getActivePlayers(room);
     if (connectedPlayers.length < 2) return; // need at least 2 votable players
 
     // Build prompt pool (custom questions take priority, padded with bank)
@@ -1803,7 +1877,7 @@ io.on('connection', (socket) => {
       onComplete:       () => mltGame.showResults(io, room, code),
     });
 
-    const players = room.players.filter(p => p.isConnected && p.isPlaying);
+    const players = getActivePlayers(room);
     io.to(code).emit('mlt:prompt', {
       prompt:      room.mlt.prompt,
       round:       room.mlt.round,
@@ -1897,7 +1971,7 @@ io.on('connection', (socket) => {
 
     cancelAllTimers(room);
     room.players.forEach(p => { p.joinedMidRound = false; });
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
     if (playingPlayers.length < 2) return;
 
     const totalRounds = Math.min(Math.max(parseInt(rounds) || room.totalRounds || 3, 1), 10);
@@ -1963,7 +2037,7 @@ io.on('connection', (socket) => {
       room.draw.skipCount++;
     }
 
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
 
     if (room.draw.mode === 'secret') {
       if (isHostAction) {
@@ -2021,7 +2095,7 @@ io.on('connection', (socket) => {
     } else {
       room.draw.submissions[player.id] = data;
     }
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
     const submittedCount = room.draw._submissionTracker
       ? room.draw._submissionTracker.count()
       : Object.keys(room.draw.submissions).length;
@@ -2029,7 +2103,7 @@ io.on('connection', (socket) => {
       ? room.draw._submissionTracker.getPlayerIds()
       : Object.keys(room.draw.submissions);
     io.to(code).emit('draw:submission_received', { submittedCount, totalDrawers: playingPlayers.length, submittedPlayerIds });
-    console.log(`[Server] Draw submission: ${submittedCount}/${playingPlayers.length} room=${code}`);
+    log.debug('draw submission', { count: submittedCount, of: playingPlayers.length, code });
 
     if (!room.draw._submissionTracker && submittedCount >= playingPlayers.length) {
       room._timers?.draw?.cancel();
@@ -2067,10 +2141,10 @@ io.on('connection', (socket) => {
     if (!accepted) return;
 
     room.draw.votes[player.id] = votedForPlayerId; // keep legacy map in sync
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
     const voteCount = room.draw._voteCollector?.count() ?? Object.keys(room.draw.votes).length;
     io.to(code).emit('draw:vote_received', { voteCount, totalVoters: playingPlayers.length, votedPlayerIds: room.draw._voteCollector?.getVoterIds() ?? Object.keys(room.draw.votes) });
-    console.log(`[Server] Draw vote: ${voteCount}/${playingPlayers.length} room=${code}`);
+    log.debug('draw vote', { count: voteCount, of: playingPlayers.length, code });
 
     if (!room.draw._voteCollector && voteCount >= playingPlayers.length) {
       resolveDrawVoting(io, room, code);
@@ -2125,7 +2199,7 @@ io.on('connection', (socket) => {
     room.draw.secondsLeft = room.draw.timeLimit;
     room.draw.skipCount = 0;
 
-    const nextPlayingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const nextPlayingPlayers = getActivePlayers(room);
     const players = nextPlayingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
 
     if (room.draw.mode === 'secret') {
@@ -2202,7 +2276,7 @@ io.on('connection', (socket) => {
       onResume: () => { room.fitb.paused = false; },
       onExpire: () => {
         // Auto-submit: use player's typed draft if available, otherwise default
-        const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+        const playingPlayers = getActivePlayers(room);
         playingPlayers.forEach(p => {
           if (!room.fitb.answers.find(a => a.playerId === p.id)) {
             const draftText = (room.fitb.drafts || {})[p.id] || '';
@@ -2225,7 +2299,7 @@ io.on('connection', (socket) => {
     if (!player || !player.isHost) return;
 
     cancelAllTimers(room);
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
     if (playingPlayers.length < 2) return;
 
     room.players.forEach(p => { p.joinedMidRound = false; });
@@ -2250,7 +2324,7 @@ io.on('connection', (socket) => {
       paused: false,
     };
     room.fitb._submissionTracker = SubmissionTracker.create({
-      getExpectedCount: () => room.players.filter(p => p.isConnected && p.isPlaying).length,
+      getExpectedCount: () => getActivePlayers(room).length,
       onComplete: () => startFitbVoting(io, room, code),
     });
     room.fitb.question = pickFitbQuestion(room, room.players);
@@ -2296,7 +2370,7 @@ io.on('connection', (socket) => {
       room.fitb._submissionTracker?.record(player.id, entry);
     }
 
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
     const answeredCount = room.fitb._submissionTracker?.count() ?? room.fitb.answers.length;
     const answeredPlayerIds = room.fitb._submissionTracker?.getPlayerIds() ?? room.fitb.answers.map(a => a.playerId);
     io.to(code).emit('fitb:answer_received', { answeredCount, totalPlayers: playingPlayers.length, answeredPlayerIds });
@@ -2313,7 +2387,7 @@ io.on('connection', (socket) => {
     room.fitb.phase = 'voting';
     room.fitb._votes = {};
     room.fitb._voteCollector = VoteCollector.create({
-      getExpectedCount: () => room.players.filter(p => p.isConnected && p.isPlaying).length,
+      getExpectedCount: () => getActivePlayers(room).length,
       allowSelfVote: false,
       onVote: (voterId, idxStr) => {
         if (!room.fitb._votes) room.fitb._votes = {};
@@ -2326,7 +2400,7 @@ io.on('connection', (socket) => {
     // Shuffle answers so order doesn't reveal authorship
     const shuffled = [...room.fitb.answers].sort(() => Math.random() - 0.5);
     room.fitb.answers = shuffled;
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
     // Send anonymous answers (no author info) + tell each player which index is theirs
     const anonAnswers = shuffled.map((a, i) => ({ id: i, text: a.text }));
     playingPlayers.forEach(p => {
@@ -2384,7 +2458,7 @@ io.on('connection', (socket) => {
     room.fitb._submissionTracker?.reset();
     room.fitb._votes = {};
     room.fitb.question = pickFitbQuestion(room, room.players);
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
     const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
     io.to(code).emit('fitb:round_start', {
       question: room.fitb.question,
@@ -2418,7 +2492,7 @@ io.on('connection', (socket) => {
       room.fitb.answers[idx].votes++;
     }
 
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
     const voteCount = room.fitb._voteCollector?.count() ?? Object.keys(room.fitb._votes).length;
     io.to(code).emit('fitb:vote_received', { voteCount, totalVoters: playingPlayers.length, votedPlayerIds: room.fitb._voteCollector?.getVoterIds() ?? Object.keys(room.fitb._votes) });
 
@@ -2482,7 +2556,7 @@ io.on('connection', (socket) => {
     room.fitb.question = pickFitbQuestion(room, room.players);
     const timeLimit = room.roomConfig?.roundDurationSecs || 30;
 
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
     const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
     io.to(code).emit('fitb:round_start', {
       question: room.fitb.question,
@@ -2581,7 +2655,7 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  log.info('server running', { port: PORT });
 });
 
 // ─── Room eviction: drop rooms idle for >60 minutes every 10 minutes ─────────
@@ -2591,6 +2665,6 @@ setInterval(() => {
   const evicted = evictStaleRooms(ROOM_IDLE_TTL_MS);
   if (evicted.length > 0) {
     evicted.forEach(code => eventLog.clearLog(code)); // free the room's timeline too
-    console.log(`[eviction] Dropped ${evicted.length} idle room(s):`, evicted);
+    log.info('eviction: dropped idle rooms', { count: evicted.length, codes: evicted });
   }
 }, EVICTION_INTERVAL_MS).unref(); // .unref() so this timer doesn't keep the process alive during tests

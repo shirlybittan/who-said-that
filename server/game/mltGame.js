@@ -170,13 +170,17 @@ function createMltGame({ mergeToGlobalScores }) {
       const { results, majorityPlayerIds } = computeMltRoundResults(room);
       applyMltScoring(room, majorityPlayerIds);
 
-      io.to(code).emit('mlt:results', {
+      const payload = {
         results,
         majorityPlayerIds,
         jokersUsed:  Object.keys(room.mlt.jokersThisRound),
         scores:      { ...room.mlt.scores },
         players:     getActivePlayers(room).map(p => ({ id: p.id, name: p.name, color: p.color })),
-      });
+      };
+      // Stash the authoritative results so a reconnecting client restores the
+      // exact same numbers instead of recomputing them (avoids drift).
+      room.mlt.lastResults = payload;
+      io.to(code).emit('mlt:results', payload);
     },
 
     // ── Game end ───────────────────────────────────────────────────────────

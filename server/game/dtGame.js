@@ -6,6 +6,8 @@ const VoteCollector = require('./VoteCollector');
 const { buildMiniGameSnapshot } = require('./miniGameSnapshot');
 const { shuffleAnswers } = require('./gameLogic');
 const { sanitizeStrokes } = require('./limits');
+const { getActivePlayers } = require('./players');
+const log = require('../logger');
 const {
   createRoom,
   joinRoom,
@@ -40,7 +42,7 @@ function setupDtGame(io, socket, {
     if (!player || !player.isHost) return;
 
     cancelAllTimers(room);
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
     if (playingPlayers.length < 2) return;
 
     room.players.forEach(p => { p.joinedMidRound = false; });
@@ -115,7 +117,7 @@ function setupDtGame(io, socket, {
       if (!room.dt.selfiePhotos) room.dt.selfiePhotos = {};
       room.dt.selfiePhotos[player.id] = true;
 
-      const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+      const playingPlayers = getActivePlayers(room);
       const photoCount = Object.keys(room.dt.selfiePhotos).length;
       const submittedPlayerIds = Object.keys(room.dt.selfiePhotos);
       io.to(code).emit('dt:photo_received', { photoCount, totalPhotographers: playingPlayers.length, submittedPlayerIds });
@@ -179,7 +181,7 @@ function setupDtGame(io, socket, {
       return;
     }
 
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
     const photoCount = Object.keys(room.selfie.photos).length;
     io.to(code).emit('selfie:photo_received', { photoCount, totalPhotographers: playingPlayers.length, submittedPlayerIds: Object.keys(room.selfie.photos) });
 
@@ -308,9 +310,9 @@ function setupDtGame(io, socket, {
     if (room.selfie.phase !== 'drawing') return;
     room.selfie.phase = 'voting';
     room.selfie.votes = {};
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
     room.selfie._voteCollector = VoteCollector.create({
-      getExpectedCount: () => room.players.filter(p => p.isConnected && p.isPlaying).length,
+      getExpectedCount: () => getActivePlayers(room).length,
       allowSelfVote: false,
       onVote: (voterId, targetId) => { room.selfie.votes[voterId] = targetId; },
       onComplete: () => resolveSelfieVoting(io, room, code),
@@ -400,7 +402,7 @@ function setupDtGame(io, socket, {
     if (!room.selfie._voteCollector) {
       room.selfie.votes[player.id] = drawerId;
     }
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
     const voteCount = room.selfie._voteCollector?.count() ?? Object.keys(room.selfie.votes).length;
     io.to(code).emit('selfie:vote_received', { voteCount, totalVoters: playingPlayers.length, votedPlayerIds: room.selfie._voteCollector?.getVoterIds() ?? Object.keys(room.selfie.votes) });
 
@@ -490,7 +492,7 @@ function setupDtGame(io, socket, {
     room.selfie.strokes = {};
     room.selfie.votes = {};
 
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
     if (Object.keys(room.selfie.photos).length >= playingPlayers.length) {
       assignSelfieDrawers(io, room, code);
     } else {
@@ -514,7 +516,7 @@ function setupDtGame(io, socket, {
       room.selfie.promptTemplate = promptObj.prompt;
       if (!room.selfie.usedPrompts) room.selfie.usedPrompts = [];
       room.selfie.usedPrompts.push(promptObj.prompt);
-      console.log(`[selfie_skip_question] Skipped question for room ${code}. New prompt assigned.`);
+      log.debug('selfie: skipped question, new prompt assigned', { code });
       // Clear strokes so drawers start fresh with the new prompt
       room.selfie.strokes = {};
       // Send each drawer the new prompt (keeping their existing photo assignment)
@@ -547,7 +549,7 @@ function setupDtGame(io, socket, {
       room.selfie.assignments = {};
       room.selfie.strokes = {};
       room.selfie.votes = {};
-      const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+      const playingPlayers = getActivePlayers(room);
       if (Object.keys(room.selfie.photos).length >= playingPlayers.length) {
         assignSelfieDrawers(io, room, code);
       } else {
@@ -620,7 +622,7 @@ function setupDtGame(io, socket, {
 
     // Pre-populate photos from persistent selfie bank
     const captionSaved = room.playerPhotos || {};
-    const captionPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const captionPlayers = getActivePlayers(room);
     captionPlayers.forEach(p => {
       if (captionSaved[p.id]) room.caption.photos[p.id] = captionSaved[p.id];
     });
@@ -670,7 +672,7 @@ function setupDtGame(io, socket, {
     if (!room.playerPhotos) room.playerPhotos = {};
     room.playerPhotos[player.id] = photoData;
 
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
     const submittedCount = Object.keys(room.caption.photos).length;
     io.to(code).emit('caption:photo_submitted', { playerId: player.id, submittedCount, totalCount: playingPlayers.length });
 
@@ -686,7 +688,7 @@ function setupDtGame(io, socket, {
     room.caption.votes = {};
 
     // Pick the featured photo owner for this round (cycle through players)
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
     const ownerIndex = (room.caption.currentRound - 1) % playingPlayers.length;
     room.caption.featuredOwnerId = playingPlayers[ownerIndex].id;
 
@@ -730,7 +732,7 @@ function setupDtGame(io, socket, {
       room.caption.captions[player.id] = { id: captionId, playerId: player.id, text: sanitized };
     }
 
-    const writers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const writers = getActivePlayers(room);
     const submittedCount = Object.keys(room.caption.captions).length;
     io.to(code).emit('caption:caption_submitted', { playerId: player.id, submittedCount, totalCount: writers.length });
 
@@ -745,7 +747,7 @@ function setupDtGame(io, socket, {
     room.caption.phase = 'voting';
     room.caption.votes = {};
     room.caption._voteCollector = VoteCollector.create({
-      getExpectedCount: () => room.players.filter(p => p.isConnected && p.isPlaying).length,
+      getExpectedCount: () => getActivePlayers(room).length,
       allowSelfVote: true, // self-vote validated manually in handler before castVote
       onVote: (voterId, captionId) => { room.caption.votes[voterId] = captionId; },
       onComplete: () => endCaptionRound(io, room, code),
@@ -761,7 +763,7 @@ function setupDtGame(io, socket, {
       featuredPhotoData: room.caption.photos[room.caption.featuredOwnerId],
     });
     // Tell each player their own caption ID so the client can disable it
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
     playingPlayers.forEach(p => {
       const myCap = room.caption.captions[p.id];
       if (myCap && p.socketId) {
@@ -791,7 +793,7 @@ function setupDtGame(io, socket, {
     if (!room.caption._voteCollector) {
       room.caption.votes[player.id] = captionId;
     }
-    const voters = room.players.filter(p => p.isConnected && p.isPlaying);
+    const voters = getActivePlayers(room);
     const voteCount = room.caption._voteCollector?.count() ?? Object.keys(room.caption.votes).length;
     io.to(code).emit('caption:vote_received', { voteCount, totalVoters: voters.length, votedPlayerIds: room.caption._voteCollector?.getVoterIds() ?? Object.keys(room.caption.votes) });
 
@@ -916,7 +918,7 @@ function setupDtGame(io, socket, {
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     cancelAllTimers(room);
-    const pvPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const pvPlayers = getActivePlayers(room);
     const { pmatchPrompts } = require('../questions/pmatchPrompts');
     const prompts = [...pmatchPrompts].sort(() => Math.random() - 0.5);
     room.phase = 'photovote';
@@ -938,7 +940,7 @@ function setupDtGame(io, socket, {
     if (!['pmatch', 'photoassoc'].includes(subType)) return;
 
     cancelAllTimers(room);
-    const pvPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const pvPlayers = getActivePlayers(room);
 
     // Use room-level history to avoid recently seen prompts; fix biased sort
     if (!room.promptHistory) room.promptHistory = { mlt: [], fitb: [], caption: [], pmatch: [], photoassoc: [] };
@@ -1028,7 +1030,7 @@ function setupDtGame(io, socket, {
     if (!room.playerPhotos) room.playerPhotos = {};
     room.playerPhotos[player.id] = photoData;
 
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
     const submittedCount = Object.keys(room.photoVote.photos).length;
     io.to(code).emit('photovote:photo_submitted', { playerId: player.id, submittedCount, totalCount: playingPlayers.length });
 
@@ -1052,12 +1054,12 @@ function setupDtGame(io, socket, {
     room.photoVote.phase = 'voting';
     room.photoVote.votes = {};
     room.photoVote._voteCollector = VoteCollector.create({
-      getExpectedCount: () => room.players.filter(p => p.isConnected && p.isPlaying).length,
+      getExpectedCount: () => getActivePlayers(room).length,
       allowSelfVote: false,
       onVote: (voterId, targetId) => { room.photoVote.votes[voterId] = targetId; },
       onComplete: () => endPhotoVoteRound(io, room, code),
     });
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
     let prompt;
     if (room.photoVote.pendingPrompt) {
       prompt = room.photoVote.pendingPrompt;
@@ -1101,7 +1103,7 @@ function setupDtGame(io, socket, {
     if (!room.photoVote._voteCollector) {
       room.photoVote.votes[player.id] = targetPlayerId;
     }
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
     const voteCount = room.photoVote._voteCollector?.count() ?? Object.keys(room.photoVote.votes).length;
     const votedPlayerIds = room.photoVote._voteCollector?.getVoterIds() ?? Object.keys(room.photoVote.votes);
     io.to(code).emit('photovote:vote_received', { voteCount, totalVoters: playingPlayers.length, votedPlayerIds });
@@ -1132,7 +1134,7 @@ function setupDtGame(io, socket, {
       room.photoVote._voteCollector = null;
       room.photoVote.currentPromptIndex++;
       
-      const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+      const playingPlayers = getActivePlayers(room);
       const nextIndex = room.photoVote.currentPromptIndex % room.photoVote.prompts.length;
       const rawNextPrompt = room.photoVote.prompts[nextIndex];
       const photoPhasePrompt = resolvePhotoVotePrompt(rawNextPrompt, playingPlayers);
@@ -1152,13 +1154,13 @@ function setupDtGame(io, socket, {
     room.photoVote.votes = {};
     room.photoVote._voteCollector = null;
     room.photoVote.currentPromptIndex++;
-    const playingPlayersForPrompt = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayersForPrompt = getActivePlayers(room);
     const nextIndex = room.photoVote.currentPromptIndex % room.photoVote.prompts.length;
     const rawNextPrompt = room.photoVote.prompts[nextIndex];
     const prompt = resolvePhotoVotePrompt(rawNextPrompt, playingPlayersForPrompt);
     room.photoVote.currentPrompt = prompt;
 
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
     const photoList = playingPlayers.map(p => ({
       playerId: p.id,
       playerName: p.name,
@@ -1209,7 +1211,7 @@ function setupDtGame(io, socket, {
       }
     }
 
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
     const voteResults = playingPlayers.map(p => ({
       playerId: p.id,
       playerName: p.name,
@@ -1260,7 +1262,7 @@ function setupDtGame(io, socket, {
         room.photoVote.votes = {};
         room.photoVote._voteCollector = null;
         
-        const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+        const playingPlayers = getActivePlayers(room);
         const rawNextPrompt = room.photoVote.prompts[room.photoVote.currentPromptIndex];
         const photoPhasePrompt = resolvePhotoVotePrompt(rawNextPrompt, playingPlayers);
         room.photoVote.pendingPrompt = photoPhasePrompt;
@@ -1317,7 +1319,7 @@ function setupDtGame(io, socket, {
       extraData: { phase: 'dt-prompting' },
       isActive: () => room.phase === 'dt' && room.dt.phase === 'prompting',
       onExpire: () => {
-        const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+        const playingPlayers = getActivePlayers(room);
         const autoTemplates = [
           '[name] fighting a robot',
           '[name] making a surprise discovery',
@@ -1515,7 +1517,7 @@ function setupDtGame(io, socket, {
 
     // Broadcast guessing phase to room (includes ALL payloads so each client can pick theirs)
     // This acts as a fallback: even if the direct socket send fails, the room broadcast carries the data.
-    console.log(`[DT] Emitting dt:guessing_phase to room ${code}. Total guessers: ${totalGuessers}. Payloads:`, Object.keys(guessPayloads));
+    log.debug('dt: guessing_phase', { code, totalGuessers, payloads: Object.keys(guessPayloads) });
     io.to(code).emit('dt:guessing_phase', {
       totalGuessers,
       secondsLeft: DT_GUESS_SECS,
@@ -1606,7 +1608,7 @@ function setupDtGame(io, socket, {
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
     if (playingPlayers.length < 3) {
       socket.emit('dt:error', { message: 'Need at least 3 players to start Draw Telephone.' });
       return;
@@ -1663,7 +1665,7 @@ function setupDtGame(io, socket, {
     if (room.dt.selfiePhotos[player.id]) return; // Already submitted/reused
 
     room.dt.selfiePhotos[player.id] = true;
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
     const photoCount = Object.keys(room.dt.selfiePhotos).length;
     const submittedPlayerIds = Object.keys(room.dt.selfiePhotos);
 
@@ -1696,7 +1698,7 @@ function setupDtGame(io, socket, {
     const promptId = `dt_${player.id}_${Date.now()}`;
     room.dt.prompts.push({ id: promptId, authorId: player.id, templateText: sanitized });
 
-    const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying);
+    const playingPlayers = getActivePlayers(room);
     io.to(code).emit('dt:prompt_received', {
       submittedCount: room.dt.prompts.length,
       totalPrompts: playingPlayers.length,
@@ -1738,16 +1740,16 @@ function setupDtGame(io, socket, {
     }
 
     // Create chains (without participant lists — built separately below)
-    console.log(`[DT] Creating chains for room ${code}. playingPlayers=${playingPlayers.length}, prompts=${room.dt.prompts.length}, shuffled=${shuffled.length}`);
+    log.debug('dt: creating chains', { code, playingPlayers: playingPlayers.length, prompts: room.dt.prompts.length, shuffled: shuffled.length });
     for (let i = 0; i < room.dt.prompts.length; i++) {
       const prompt = room.dt.prompts[i];
       const targetPlayerId = shuffled[i % shuffled.length];
       if (!targetPlayerId) {
-        console.error(`[DT ERROR] targetPlayerId is undefined! i=${i}, shuffled=${JSON.stringify(shuffled)}`);
+        log.error('dt: targetPlayerId undefined while creating chain', { code, i, shuffled });
       }
       const targetPlayer = playingPlayers.find(p => p.id === targetPlayerId);
       const finalText = prompt.templateText.replace(/\[name\]/gi, targetPlayer?.name || '?');
-      console.log(`[DT] Created chain ${prompt.id} with targetPlayerId=${targetPlayerId}`);
+      log.debug('dt: created chain', { promptId: prompt.id, targetPlayerId });
       room.dt.chains[prompt.id] = {
         id: prompt.id,
         authorId: prompt.authorId,

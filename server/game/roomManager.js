@@ -351,6 +351,8 @@ const getRoom = (code) => {
   return rooms.get(code) || null;
 };
 
+const getAllRooms = () => [...rooms.values()];
+
 // Compact overview of every live room — for the admin/observability dashboard.
 const listRoomsSummary = () =>
   [...rooms.values()].map((room) => ({
@@ -466,4 +468,5 @@ module.exports = {
   restoreRooms,
   persistSoon,
   listRoomsSummary,
+  getAllRooms,
 };
