@@ -182,6 +182,7 @@ export const translations = {
       changeVote: "← Change"
     },
     situational: {
+      whatWouldSay: "What would {name} say?",
       gameLabel: "Situational",
       gameLabelShort: "🎭 Situational",
       targetBadge: "This round is about",
@@ -451,6 +452,7 @@ export const translations = {
       changeVote: "← Changer"
     },
     situational: {
+      whatWouldSay: "Que dirait {name} ?",
       gameLabel: "Situationnel",
       gameLabelShort: "🎭 Situationnel",
       targetBadge: "Ce tour parle de",
@@ -720,6 +722,7 @@ export const translations = {
       changeVote: "← שנה"
     },
     situational: {
+      whatWouldSay: "מה {name} היה עונה?",
       gameLabel: "מצבים",
       gameLabelShort: "🎭 מצבים",
       targetBadge: "הסיבוב הזה על",

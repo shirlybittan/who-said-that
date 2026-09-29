@@ -21,6 +21,8 @@ export default function VotingPage() {
   const timerActive = state.phaseTimer?.active ?? false;
 
   const [pendingVoteId, setPendingVoteId] = useState(null);
+  const voterCount = state.players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound).length;
+  const tc = translations[state.lang].common;
 
   useEffect(() => {
     sounds.reveal();
@@ -29,10 +31,17 @@ export default function VotingPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.currentAnswerIndex]);
 
+  // Auto-vote when the vote timer runs out. The old check required the timer to
+  // be active AND at 0 at the same time, which the store never allows, so a
+  // pending (unconfirmed) pick was always lost (AUDIT.md P2-14).
+  const timerWasActiveRef = React.useRef(false);
+  useEffect(() => { timerWasActiveRef.current = false; }, [state.currentAnswerIndex]);
   useEffect(() => {
+    if (timerActive) timerWasActiveRef.current = true;
     if (!state.isPlaying) return;   // cast screen never auto-votes
-    if (state.hasVoted || isRevealed || state.allVotesIn || !timerActive) return;
-    if (serverTimeLeft <= 0) {
+    if (state.hasVoted || isRevealed || state.allVotesIn || !timerWasActiveRef.current) return;
+    // Fire on the last tick (1s): at 0 the server already closes the vote.
+    if (serverTimeLeft <= 1) {
        const eligiblePlayers = state.players.filter(p => p.isConnected && p.isPlaying && p.id !== state.playerId);
        if (eligiblePlayers.length > 0) {
          const target = pendingVoteId
@@ -67,21 +76,18 @@ export default function VotingPage() {
       className="flex flex-col items-center justify-start min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 pb-24"
       initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}
     >
-      <div className="flex justify-between w-full max-w-md items-center py-4 mb-4">
+      <div className="flex justify-between w-full max-w-md items-center py-2 mb-4">
          <p className="text-xl font-['Fredoka_One'] text-[#FFE66D] uppercase tracking-widest text-center w-full relative">
            {t.answerNum.replace('{current}', state.currentAnswerIndex + 1).replace('{total}', state.answers.length)}
-           {!state.hasVoted && !isRevealed && !state.allVotesIn && timerActive && (
-             <span className="absolute right-0 text-red-500 text-lg top-0">⏳ {serverTimeLeft}s</span>
-           )}
          </p>
       </div>
 
-      <div className={`bg-[#1A1A2E] w-full max-w-md border border-[#2D2D44] p-8 rounded-3xl shadow-2xl mb-8 flex flex-col justify-center items-center h-48 transition-all duration-700
+      <div className={`bg-[#1A1A2E] w-full max-w-md border border-[#2D2D44] p-8 rounded-3xl shadow-2xl mb-8 flex flex-col justify-center items-center min-h-48 transition-all duration-700
          ${isRevealed ? "rotate-y-180 bg-[#2D2D44] border-[#FF6B6B]" : ""}`}
          style={{ transformStyle: 'preserve-3d', perspective: '1000px' }}
       >
           {!isRevealed ? (
-             <h1 className="text-3xl md:text-4xl font-['Nunito'] font-extrabold text-white text-center italic transition-opacity">
+             <h1 className="text-3xl md:text-4xl font-['Nunito'] font-extrabold text-white text-center italic transition-opacity [overflow-wrap:anywhere]">
                "{currentAnswer.text}"
              </h1>
           ) : (
@@ -114,7 +120,7 @@ export default function VotingPage() {
            <h3 className="text-2xl font-['Fredoka_One'] text-[#FFE66D] mb-2 animate-pulse">{t.yourAnswer}</h3>
            <p className="text-gray-300 font-['Nunito'] text-lg mt-2">{t.letsSee}</p>
            <p className="text-sm text-gray-400 font-['Nunito'] mt-1">
-             {t.waitingVotes.replace('{current}', state.votedCount).replace('{total}', state.totalPlayers || state.players.length - 1)}
+             {t.waitingVotes.replace('{current}', state.votedCount).replace('{total}', state.totalPlayers || voterCount)}
            </p>
         </div>
       )}
@@ -144,14 +150,12 @@ export default function VotingPage() {
         ))}
       </motion.div>
 
-      {state.isPlaying && pendingVoteId && !state.hasVoted && !isRevealed && (
+      {state.isPlaying && pendingVoteId && !state.hasVoted && !isRevealed && !state.allVotesIn && (
         <ConfirmVoteCard
           vote={state.players.find(p => p.id === pendingVoteId)}
           onConfirm={handleConfirmVote}
           onChange={() => setPendingVoteId(null)}
-          confirmLabel="✓ Confirm"
-          changeLabel="← Change"
-          titleLabel="Confirm your vote?"
+          accentColor="#FFE66D"
         />
       )}
 
@@ -159,7 +163,7 @@ export default function VotingPage() {
         <VoteLocked
           label={t.voteLocked}
           voteCount={state.votedCount}
-          totalVoters={state.totalPlayers || state.players.length - 1}
+          totalVoters={state.totalPlayers || voterCount}
           accentColor="#FFE66D"
         />
       )}
@@ -194,11 +198,11 @@ export default function VotingPage() {
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: idx * 0.06, duration: 0.3 }}
                 >
-                  <div className="flex items-center space-x-2">
+                  <div className="flex items-center gap-2">
                     <span className="w-4 h-4 rounded-full inline-block" style={{ backgroundColor: p.color }}></span>
                     <span className="font-['Fredoka_One'] text-sm">{p.name}</span>
                   </div>
-                  <span className="font-bold text-[#FFE66D]">{state.scores?.[p.id] || 0} pts</span>
+                  <span className="font-bold text-[#FFE66D]">{state.scores?.[p.id] || 0} {tc.pts}</span>
                 </motion.div>
             ))}
           </div>

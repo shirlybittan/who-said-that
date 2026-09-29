@@ -525,7 +525,7 @@ function VotingPanel({ votingData, players, phaseTimer }) {
         <div className="w-full bg-[#1A1A2E] border-2 border-[#6C5CE7]/60 rounded-3xl p-8 relative"
           style={{ boxShadow: '0 0 40px #6C5CE720' }}>
           <span className="text-6xl text-[#6C5CE7]/20 font-['Fredoka_One'] absolute top-3 left-5 leading-none select-none">"</span>
-          <p className="text-4xl md:text-5xl font-['Fredoka_One'] text-white leading-snug relative z-10">
+          <p className="text-4xl md:text-5xl font-['Fredoka_One'] text-white leading-snug relative z-10 [overflow-wrap:anywhere]">
             {current?.text || '...'}
           </p>
           <span className="text-6xl text-[#6C5CE7]/20 font-['Fredoka_One'] absolute bottom-1 right-5 leading-none select-none rotate-180">"</span>
