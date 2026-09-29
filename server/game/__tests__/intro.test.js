@@ -47,3 +47,16 @@ describe('intro gate', () => {
     expect(next).toHaveBeenCalled();
   });
 });
+
+describe('intro after a restart', () => {
+  test('a restored countdown restarts and launches', () => {
+    jest.useFakeTimers();
+    const { room, handler, intro } = setup();
+    room.phase = 'intro';
+    room.intro = { gameType: 'who-said-that', event: 'start_game', payload: { code: 'R' }, ready: {}, countdownEndsAt: Date.now() - 5000 };
+    intro.resume(room);
+    jest.advanceTimersByTime(3000);
+    expect(handler).toHaveBeenCalledWith({ code: 'R', __introDone: true });
+    jest.useRealTimers();
+  });
+});

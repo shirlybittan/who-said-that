@@ -864,6 +864,7 @@ function getPlayerSocket(player) {
 
 // Pre-game intro gate (every game start goes through an intro screen).
 const intro = createIntro({ io, getRoom, findPlayer, log });
+getAllRooms().forEach(room => intro.resume(room)); // restored mid-countdown
 
 io.on('connection', (socket) => {
   hardenSocket(socket, log);

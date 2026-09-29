@@ -75,7 +75,9 @@ function createIntro({ io, getRoom, findPlayer, log }) {
 
   function beginCountdown(room) {
     const intro = room.intro;
-    if (!intro || room.phase !== 'intro' || intro.countdownEndsAt) return;
+    // A countdown is 'running' only if its timer exists: after a server restart
+    // the saved countdownEndsAt has no timer behind it and must be restartable.
+    if (!intro || room.phase !== 'intro' || (intro.countdownEndsAt && room._introTimer)) return;
     intro.countdownEndsAt = Date.now() + COUNTDOWN_SECS * 1000;
     io.to(room.code).emit('intro:update', introPayload(room));
     if (room._introTimer) clearTimeout(room._introTimer);
@@ -130,7 +132,15 @@ function createIntro({ io, getRoom, findPlayer, log }) {
     });
   }
 
-  return { register, checkReady, introPayload };
+  /** After a restart: an intro that was counting down counts down again. */
+  function resume(room) {
+    if (room?.phase === 'intro' && room.intro?.countdownEndsAt && !room._introTimer) {
+      room.intro.countdownEndsAt = null;
+      beginCountdown(room);
+    }
+  }
+
+  return { register, checkReady, introPayload, resume };
 }
 
 module.exports = { createIntro, gameTypeFor, COUNTDOWN_SECS };
