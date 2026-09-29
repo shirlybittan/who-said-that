@@ -10,6 +10,9 @@
 // This single declarative map is applied centrally in useSocket (socket.onAny),
 // so a game can't get stuck by forgetting to set its phase.
 export const EVENT_PHASE = {
+  // Pre-game intro gate (every game)
+  'game:intro': 'intro',
+  'intro:cancelled': 'lobby',
   // Selfie Roast ("Draw on Friends")
   'selfie:photo_phase': 'selfie',
   'selfie:draw_assigned': 'selfie',

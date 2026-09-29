@@ -83,6 +83,14 @@ export const useSocket = () => {
       dispatch({ type: 'SET_ROOM', payload: { ...roomPayload, uploadToken: uploadToken || null } });
       dispatch({ type: 'SET_PLAYER_ID', payload: playerId });
       actions.forEach(action => dispatch(action));
+      if (room.phase === 'intro' && room.intro) {
+        dispatch({ type: 'INTRO_SET', payload: {
+          gameType: room.intro.gameType,
+          players: room.players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound).map(p => ({ id: p.id, name: p.name, color: p.color })),
+          readyIds: Object.keys(room.intro.ready || {}),
+          countdown: room.intro.countdownEndsAt ? Math.max(0, Math.ceil((room.intro.countdownEndsAt - Date.now()) / 1000)) : null,
+        } });
+      }
       navigate(route);
     };
 
@@ -177,6 +185,14 @@ export const useSocket = () => {
       const code = sessionStorage.getItem('wst_roomCode');
       if (code) socket.emit('request_resync', { code });
     };
+
+    // Every game starts with the shared intro screen (server/game/intro.js).
+    const onGameIntro = (data) => {
+      dispatch({ type: 'INTRO_SET', payload: data });
+      navigate('/intro');
+    };
+    const onIntroUpdate = (data) => dispatch({ type: 'INTRO_SET', payload: data });
+    const onIntroCancelled = () => navigate('/lobby');
 
     const onError = ({ message }) => {
       dispatch({ type: 'SET_ERROR', payload: message });
@@ -559,6 +575,9 @@ export const useSocket = () => {
     socket.on('error', onError);
     socket.on('game:start_rejected', onError);
     socket.on('round:admitted', onRoundAdmitted);
+    socket.on('game:intro', onGameIntro);
+    socket.on('intro:update', onIntroUpdate);
+    socket.on('intro:cancelled', onIntroCancelled);
     socket.on('kicked', onKicked);
     socket.on('mlt:prompt', onMltPrompt);
     socket.on('mlt:question_changed', onMltQuestionChanged);
@@ -809,6 +828,9 @@ export const useSocket = () => {
       socket.off('error', onError);
       socket.off('game:start_rejected', onError);
       socket.off('round:admitted', onRoundAdmitted);
+      socket.off('game:intro', onGameIntro);
+      socket.off('intro:update', onIntroUpdate);
+      socket.off('intro:cancelled', onIntroCancelled);
       socket.off('kicked', onKicked);
       socket.off('mlt:prompt', onMltPrompt);
       socket.off('mlt:question_changed', onMltQuestionChanged);

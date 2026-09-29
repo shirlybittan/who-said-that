@@ -11,6 +11,7 @@ import { getRouteForPhase } from '../utils/rejoinState.js';
 // an unmount. Keep this in sync with getRouteForPhase().
 const PHASE_ROUTES = {
   lobby: ['/lobby'],
+  intro: ['/intro'],
   question: ['/question'],
   'sit-voting': ['/sit-vote'],
   'sit-results': ['/sit-vote'],

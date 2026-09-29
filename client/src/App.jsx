@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { GameProvider, useGame } from './store/gameStore.jsx';
 import HomePage from './pages/HomePage';
 import LobbyPage from './pages/LobbyPage';
+import GameIntroPage from './game-core/player/GameIntroPage.jsx';
 import QuestionPage from './pages/QuestionPage.jsx';
 import VotingPage from './pages/VotingPage.jsx';
 import RoundEndPage from './pages/RoundEndPage.jsx';
@@ -92,6 +93,7 @@ const AnimatedRoutes = () => {
       <Routes location={location} key={location.pathname}>
         <Route path="/" element={<HomePage />} />
         <Route path="/lobby" element={<LobbyPage />} />
+        <Route path="/intro" element={<GameIntroPage />} />
         <Route path="/question" element={<QuestionPage />} />
         <Route path="/vote" element={<VotingPage />} />
         <Route path="/round-end" element={<RoundEndPage />} />

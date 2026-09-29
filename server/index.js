@@ -29,6 +29,7 @@ const log = require('./logger');
 const { hardenSocket } = require('./game/safeSocket');
 const { requireMinPlayers, clampRounds } = require('./game/rules');
 const { isGameId } = require('./game/registry');
+const { createIntro } = require('./game/intro');
 const { HOST_GRACE_MS, bindDisplay, noteHostOffline, resolveHost, withoutSecrets } = require('./game/hostIdentity');
 const { VOTE_SECS, startPhaseTimer, advanceCurrentPhase, togglePausePhase } = require('./game/phaseTimer');
 
@@ -797,6 +798,7 @@ function recheckThresholds(io, room) {
     checkWstVotesComplete(io, room, code);
     checkTotVotesComplete(io, room, code);
     recheckDtRoom(io, room, code);
+    intro.checkReady(room);
   } catch (err) {
     log.error('recheckThresholds failed', { code, err: err?.stack || String(err) });
   }
@@ -853,6 +855,9 @@ function getPlayerSocket(player) {
 }
 // ────────────────────────────────────────────────────────────────────────────
 
+// Pre-game intro gate (every game start goes through an intro screen).
+const intro = createIntro({ io, getRoom, findPlayer, log });
+
 io.on('connection', (socket) => {
   hardenSocket(socket, log);
   log.debug('socket connected', { id: socket.id });
@@ -880,6 +885,8 @@ io.on('connection', (socket) => {
     } catch (_) { /* logging must never break gameplay */ }
     next();
   });
+
+  intro.register(socket);
 
   // ─── Auto-rejoin via handshake auth ────────────────────────────────────────
   // When a mobile player reconnects after a phone call / app switch, their
@@ -1670,6 +1677,7 @@ io.on('connection', (socket) => {
 
     socket.emit('spectator_joined', {
       canControl,
+      intro: room.phase === 'intro' ? intro.introPayload(room) : null,
       room: {
         code: room.code,
         gameName: room.gameName,
@@ -2722,8 +2730,10 @@ io.on('connection', (socket) => {
     if (!player || !player.isHost) return;
     if (!isGameId(newGameType)) return;
 
-    // Cancel any active timers before resetting state
+    // Cancel any active timers (and a pending intro) before resetting state
     cancelAllTimers(room);
+    if (room._introTimer) { clearTimeout(room._introTimer); room._introTimer = null; }
+    room.intro = null;
 
     room.gameType = newGameType;
     room.phase = 'lobby';

@@ -9,7 +9,7 @@ import SoundToggle from '../components/shell/SoundToggle';
 import LangSwitcher from '../components/shell/LangSwitcher';
 import VoteCoin from '../components/game/VoteCoin';
 import ReplayCanvas from '../components/game/ReplayCanvas';
-import { PICKABLE_GAMES, PLAYLIST_GAMES, gameLabel, gameName, startGame } from '../games/registry';
+import { PICKABLE_GAMES, PLAYLIST_GAMES, getGame, gameLabel, gameName, gameRules, startGame } from '../games/registry';
 import MostLikelyToHostView from '../games/most-likely-to/HostView.jsx';
 import ThisOrThatHostView from '../games/this-or-that/HostView.jsx';
 import useSingleFlight from '../game-core/hooks/useSingleFlight';
@@ -620,6 +620,34 @@ function RoundEndPanel({ roundEndData, players }) {
           <ScoreList players={activePlayers} scores={roundEndData.scores} prevScores={roundEndData.prevScores} />
         </div>
         <p className="text-sm font-['Nunito'] text-gray-500 italic text-center">Waiting for host to continue...</p>
+      </div>
+    </div>
+  );
+}
+
+// TV intro: game icon, name, rules, who's ready, countdown (server/game/intro.js).
+function IntroPanel({ intro }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { const id = setInterval(() => setNow(Date.now()), 250); return () => clearInterval(id); }, []);
+  if (!intro) return null;
+  const game = getGame(intro.gameType);
+  const accent = game?.accent || '#4ECDC4';
+  const readyIds = intro.readyIds || [];
+  const countdown = intro.countdown != null ? Math.max(1, Math.ceil(intro.countdown - (now - intro.at) / 1000)) : null;
+  return (
+    <div data-testid="host-intro" className="flex flex-col items-center gap-6 w-full max-w-3xl text-center">
+      <p className="text-8xl">{game?.icon || '🎮'}</p>
+      <h1 className="text-6xl font-['Fredoka_One']" style={{ color: accent }}>{gameName(intro.gameType)}</h1>
+      <p className="text-2xl font-['Nunito'] text-gray-200 max-w-2xl leading-snug">{gameRules(intro.gameType)}</p>
+      {countdown !== null ? (
+        <p className="text-8xl font-['Fredoka_One']" style={{ color: accent }}>{countdown}</p>
+      ) : (
+        <p className="text-lg font-['Nunito'] text-gray-400">Tap “I’m ready” on your phone · {readyIds.length}/{(intro.players || []).length} ready</p>
+      )}
+      <div className="flex flex-wrap justify-center gap-4">
+        {(intro.players || []).map(p => (
+          <PlayerAvatar key={p.id} player={p} size="lg" status={readyIds.includes(p.id) ? 'answered' : 'waiting'} />
+        ))}
       </div>
     </div>
   );
@@ -2287,7 +2315,7 @@ const TIMED_PHASES = ['selfie-photo', 'selfie-voting', 'caption-photo', 'caption
 
 // ─── Host control bar (creator only) ─────────────────────────────────────────
 
-function HostControlBar({ phaseTimer, onAdvancePhase, onTogglePhasePause, status, isRoomCreator, players, mlt, votingData, fitbData, photoVoteData, captionData, isMixedMode, onStart, onMltPauseResume, onMltChangeQuestion, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, onNewGame, onPlayAgain, onNewPartyPack, gameQueue, queueIndex, onSelfieNextRound, onSelfieSkipQuestion, onShowSelfieResults, onFitbChangeQuestion, onFitbSkipToVote, onFitbShowResults, onFitbNextRound, onPhotoVoteChangeQuestion, onPhotoVoteSkipToResults, onPhotoVoteNextRound, onCaptionChangeQuestion, onCaptionSkipToVoting, onCaptionSkipToResults, onCaptionNextRound, onAnswerPauseResume, answerPaused, onFitbPauseResume, dtData, onDtPauseResume }) {
+function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onTogglePhasePause, status, isRoomCreator, players, mlt, votingData, fitbData, photoVoteData, captionData, isMixedMode, onStart, onMltPauseResume, onMltChangeQuestion, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, onNewGame, onPlayAgain, onNewPartyPack, gameQueue, queueIndex, onSelfieNextRound, onSelfieSkipQuestion, onShowSelfieResults, onFitbChangeQuestion, onFitbSkipToVote, onFitbShowResults, onFitbNextRound, onPhotoVoteChangeQuestion, onPhotoVoteSkipToResults, onPhotoVoteNextRound, onCaptionChangeQuestion, onCaptionSkipToVoting, onCaptionSkipToResults, onCaptionNextRound, onAnswerPauseResume, answerPaused, onFitbPauseResume, dtData, onDtPauseResume }) {
   // One advance per click: a double-click must not skip content (AUDIT.md P1-01).
   const guard = useSingleFlight(1000);
   onMltNext = guard(onMltNext); onNextRound = guard(onNextRound); onSkipQuestion = guard(onSkipQuestion);
@@ -2685,6 +2713,14 @@ function HostControlBar({ phaseTimer, onAdvancePhase, onTogglePhasePause, status
     </div>
   ) : null;
 
+  if (status === 'intro') {
+    controls = (
+      <button data-testid="host-intro-start-now" onClick={onIntroStartNow} className="px-8 py-2.5 rounded-xl font-['Fredoka_One'] text-base bg-[#4ECDC4] text-black hover:bg-[#3dbdb5] active:scale-95 transition">
+        ▶ Start now
+      </button>
+    );
+  }
+
   if (!controls && !timedControls) return null;
 
   return (
@@ -2700,6 +2736,7 @@ function HostControlBar({ phaseTimer, onAdvancePhase, onTogglePhasePause, status
 // ─── Phase → UI status mapping (used by both creator and spectator flows) ────
 const phaseToStatus = (roomPhase, roomData) => {
   if (roomPhase === 'lobby') return 'lobby';
+  if (roomPhase === 'intro') return 'intro';
   if (roomPhase === 'mlt') return roomData?.mlt?.roundState === 'results' ? 'mlt-results' : 'mlt-voting';
   if (roomPhase === 'mltEnd') return 'mlt-end';
   if (roomPhase === 'question') return 'question';
@@ -2750,6 +2787,7 @@ export default function HostPage() {
   const [errorMsg, setErrorMsg] = useState('');
   // Transient, non-fatal message (e.g. a start rejected for too few players).
   const [notice, setNotice] = useState('');
+  const [introData, setIntroData] = useState(null);
   // Cumulative party scores across games (playlist / mixed / repeated games).
   const [partyLeaderboard, setPartyLeaderboard] = useState([]);
   useEffect(() => {
@@ -3363,6 +3401,20 @@ export default function HostPage() {
       setDtData(prev => ({ ...prev, paused: false }));
     });
 
+    sock.on('game:intro', (data) => {
+      if (!isActiveSock()) return;
+      setIntroData({ ...data, at: Date.now() });
+      setStatus('intro');
+    });
+    sock.on('intro:update', (data) => {
+      if (!isActiveSock()) return;
+      setIntroData({ ...data, at: Date.now() });
+    });
+    sock.on('intro:cancelled', () => {
+      if (!isActiveSock()) return;
+      setStatus('lobby');
+    });
+
     sock.on('global_scores_updated', ({ leaderboard }) => {
       if (!isActiveSock()) return;
       setPartyLeaderboard(leaderboard || []);
@@ -3388,8 +3440,9 @@ export default function HostPage() {
     // (reconnect after network drop). Without this, a brief socket disconnect
     // causes the host screen to get stuck showing stale vote/submission counts
     // because it missed broadcast events while out of the room channel.
-    sock.on('spectator_joined', ({ room, canControl }) => {
+    sock.on('spectator_joined', ({ room, canControl, intro: introNow }) => {
       if (!isActiveSock()) return;
+      if (introNow) setIntroData({ ...introNow, at: Date.now() });
       console.log(`[Host] spectator_joined phase=${room.phase} code=${room.code}`);
       // View-only unless the server accepted this screen's host key.
       setIsRoomCreator(canControl !== false);
@@ -3806,6 +3859,8 @@ export default function HostPage() {
             </button>
           </div>
         );
+      case 'intro':
+        return <IntroPanel intro={introData} />;
       case 'lobby':
         return <LobbyPanel gameInfo={gameInfo} players={players} joinUrl={joinUrl} onKickPlayer={isRoomCreator ? handleKickPlayer : null} />;
       case 'mlt-voting':
@@ -4091,6 +4146,7 @@ export default function HostPage() {
       )}
 
       {!isMltCoreView && !isTotCoreView && <HostControlBar
+        onIntroStartNow={() => socketRef.current?.emit('intro:start_now', { code: gameInfo.code })}
         phaseTimer={phaseTimer}
         onAdvancePhase={() => socketRef.current?.emit('host:advance', { code: gameInfo.code })}
         onTogglePhasePause={() => socketRef.current?.emit('host:toggle_pause', { code: gameInfo.code })}

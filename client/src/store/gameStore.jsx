@@ -234,6 +234,8 @@ const initialState = {
   roundTimer: initialRoundTimer,
   // Who has submitted in the current phase (game-core/roundProgress.js).
   roundProgress: initialRoundProgress,
+  // Pre-game intro (game-core/player/GameIntroPage.jsx)
+  intro: null,
   roomConfig: { roundDurationSecs: 60, anonymousMode: false },
   caption: {
     phase: 'waiting',      // 'waiting' | 'photo' | 'writing' | 'voting' | 'results' | 'ended'
@@ -1012,6 +1014,11 @@ export const gameReducer = (state, action) => {
           paused: !!action.payload.paused,
         },
       };
+    case 'INTRO_SET': {
+      // Server sends the countdown in seconds; keep an absolute end time.
+      const { countdown, ...rest } = action.payload || {};
+      return { ...state, intro: { ...rest, countdownEndsAt: countdown != null ? Date.now() + countdown * 1000 : null } };
+    }
     case 'ROUND_PROGRESS':
     case 'ROUND_PROGRESS_RESET':
       return { ...state, roundProgress: roundProgressReducer(state.roundProgress, action) };
