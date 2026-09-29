@@ -28,6 +28,7 @@ const { renderDashboard } = require('./admin/dashboard');
 const log = require('./logger');
 const { hardenSocket } = require('./game/safeSocket');
 const { requireMinPlayers, clampRounds } = require('./game/rules');
+const { HOST_GRACE_MS, bindDisplay, noteHostOffline, resolveHost, withoutSecrets } = require('./game/hostIdentity');
 const { VOTE_SECS, startPhaseTimer, advanceCurrentPhase, togglePausePhase } = require('./game/phaseTimer');
 
 // Last-resort guard: a bug in a timer callback or handler must not take down
@@ -262,7 +263,19 @@ const mergeToGlobalScores = (io, room, scores) => {
 // "Maximum call stack size exceeded" error when it encounters these because the
 // internal Node.js Timeout objects have circular prototype chains.
 
-const sanitizeRoomForClient = (room) => TimerManager.sanitizeForClient(room);
+// Never send the host key to clients (only the creator receives it, once).
+const sanitizeRoomForClient = (room) => withoutSecrets(TimerManager.sanitizeForClient(room));
+
+// Re-evaluate who hosts the room and tell everyone if it changed.
+function refreshHost(io, room) {
+  const newHost = resolveHost(room);
+  if (newHost) {
+    io.to(room.code).emit('host_changed', { host: newHost.id });
+    eventLog.logSystem(room.code, 'host_changed', newHost.id, room.phase, { name: newHost.name });
+    persistSoon();
+  }
+  return newHost;
+}
 
 // ─── MLT game controller ──────────────────────────────────────────────────────
 // mltGame is a reusable controller created once at startup.  Socket handlers
@@ -874,11 +887,18 @@ io.on('connection', (socket) => {
   (() => {
     const { playerId, roomCode, playerName } = socket.handshake.auth || {};
     if (!playerId || !roomCode) return;
+    // Only re-attach a player that still exists. joinRoom() would otherwise
+    // create a NEW player for a stale id (e.g. after a kick), and join_room
+    // would then add a second one — a phantom that inflated every count.
+    const knownRoom = getRoom(String(roomCode).toUpperCase());
+    if (!knownRoom || !knownRoom.players.some(p => p.id === playerId)) return;
     try {
       const { room, player, isRejoin } = joinRoom(roomCode, socket.id, playerName || '', playerId);
       if (!isRejoin) return; // Only handle returning players here; fresh joins go through join_room
       touchRoom(roomCode);
       socket.join(room.code);
+      // The owner coming back reclaims host; a hostless room gets one.
+      refreshHost(io, room);
       const uploadToken = issueUploadToken(room.code, player.id);
       socket.emit('join_success', {
         room: sanitizeRoomForClient(room),
@@ -914,7 +934,7 @@ io.on('connection', (socket) => {
       room.mixedRoundsPerGame = Math.min(5, Math.max(1, parseInt(data.roundsPerSubGame, 10) || 1));
     }
     socket.join(room.code);
-    socket.emit('room_created', { code: room.code, playerId: player.id, players: room.players, gameType: room.gameType, gameName: room.gameName, selectedSubGames: room.selectedSubGames, isPlaying: player.isPlaying, roomConfig: room.roomConfig, globalScores: room.globalScores });
+    socket.emit('room_created', { code: room.code, hostKey: room.hostKey, playerId: player.id, players: room.players, gameType: room.gameType, gameName: room.gameName, selectedSubGames: room.selectedSubGames, isPlaying: player.isPlaying, roomConfig: room.roomConfig, globalScores: room.globalScores });
   });
 
   socket.on('join_room', ({ code, playerName, playerId }) => {
@@ -935,6 +955,8 @@ io.on('connection', (socket) => {
         }
       }
       socket.join(room.code);
+      // The owner coming back reclaims host; a hostless room gets one.
+      refreshHost(io, room);
       const uploadToken = issueUploadToken(room.code, player.id);
       socket.emit('join_success', {
         room: sanitizeRoomForClient(room),
@@ -1626,7 +1648,7 @@ io.on('connection', (socket) => {
 
   // ─── Host screen spectator ──────────────────────────────────────────────────
 
-  socket.on('join_spectator', ({ code } = {}) => {
+  socket.on('join_spectator', ({ code, hostKey } = {}) => {
     if (!code || typeof code !== 'string') { socket.emit('error', { message: 'Room code required' }); return; }
     const room = getRoom(code.toUpperCase().slice(0, 8));
     if (!room) { socket.emit('error', { message: 'Room not found' }); return; }
@@ -1634,22 +1656,16 @@ io.on('connection', (socket) => {
     const playerId = null;
     socket.join(room.code);
 
-    // Transfer host socket to this TV/host-screen connection so all host-guarded
-    // events work regardless of whether the room was created from this socket.
-    const hostPlayer = room.players.find(p => p.isHost);
-    if (hostPlayer) {
-      // Preserve the host player's original phone socket so they can still
-      // participate in games (drawing, guessing, voting) on their phone.
-      if (hostPlayer.socketId && hostPlayer.socketId !== socket.id) {
-        hostPlayer.phoneSocketId = hostPlayer.socketId;
-      }
-      hostPlayer.socketId = socket.id;
-      hostPlayer.isConnected = true;
-    }
+    // Only a screen presenting the room's host key controls the game (the
+    // creator's TV reconnecting, or a phone host's 'Show on TV' link). Anyone
+    // else who opens /host?room=CODE gets a view-only display (P2-31).
+    const { canControl, hostChanged } = bindDisplay(room, socket.id, hostKey);
+    if (hostChanged) io.to(room.code).emit('host_changed', { host: room.host });
 
     const playingPlayers = getActivePlayers(room);
 
     socket.emit('spectator_joined', {
+      canControl,
       room: {
         code: room.code,
         gameName: room.gameName,
@@ -1816,7 +1832,7 @@ io.on('connection', (socket) => {
     rateLimiter.forget(socket.id);
     const room = getRoomBySocketId(socket.id);
     if (room) {
-      const { player, newHost, wentOffline } = removePlayerBySocketId(socket.id, false);
+      const { player, wentOffline } = removePlayerBySocketId(socket.id, false);
       // If an MLT timer is running and room is now empty, clean it up
       if (room.phase === 'mlt' && room._timers?.mlt && room.players.filter(p => p.isConnected).length === 0) {
         room._timers.mlt.cancel();
@@ -1828,9 +1844,12 @@ io.on('connection', (socket) => {
       if (player && wentOffline) {
         io.to(room.code).emit('player_disconnected', { playerId: player.id, playerName: player.name });
         eventLog.logSystem(room.code, 'disconnect', player.id, room.phase, { name: player.name });
-        if (newHost) {
-          io.to(room.code).emit('host_changed', { host: newHost.id });
-          eventLog.logSystem(room.code, 'host_migrated', newHost.id, room.phase, { name: newHost.name });
+        if (player.isHost) {
+          // Give the host a grace period to come back before handing the role
+          // to a connected player (AUDIT.md P2-32).
+          noteHostOffline(room);
+          if (room._hostGraceTimer) clearTimeout(room._hostGraceTimer);
+          room._hostGraceTimer = setTimeout(() => { room._hostGraceTimer = null; refreshHost(io, room); }, HOST_GRACE_MS + 100);
         }
         // The expected-player set shrank: a phase may now be complete.
         recheckThresholds(io, room);

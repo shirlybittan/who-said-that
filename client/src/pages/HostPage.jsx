@@ -2775,6 +2775,14 @@ const phaseToStatus = (roomPhase, roomData) => {
 export default function HostPage() {
   const [searchParams] = useSearchParams();
   const roomCodeParam = searchParams.get('room')?.toUpperCase();
+  // The host key proves this screen may control the room (AUDIT.md P2-31):
+  // the creator's TV keeps it in sessionStorage; a phone host shares it through
+  // the "Show on TV" link (?key=). Without it the screen is view-only.
+  const hostKeyFor = (code) => {
+    const fromUrl = searchParams.get('key');
+    if (fromUrl && code) { try { sessionStorage.setItem(`wst_hostKey:${code}`, fromUrl); } catch { /* ignore */ } }
+    try { return fromUrl || sessionStorage.getItem(`wst_hostKey:${code}`) || null; } catch { return fromUrl || null; }
+  };
 
   const [status, setStatus] = useState(roomCodeParam ? 'connecting' : 'setup');
   const [errorMsg, setErrorMsg] = useState('');
@@ -3418,10 +3426,11 @@ export default function HostPage() {
     // (reconnect after network drop). Without this, a brief socket disconnect
     // causes the host screen to get stuck showing stale vote/submission counts
     // because it missed broadcast events while out of the room channel.
-    sock.on('spectator_joined', ({ room }) => {
+    sock.on('spectator_joined', ({ room, canControl }) => {
       if (!isActiveSock()) return;
       console.log(`[Host] spectator_joined phase=${room.phase} code=${room.code}`);
-      setIsRoomCreator(true);
+      // View-only unless the server accepted this screen's host key.
+      setIsRoomCreator(canControl !== false);
       setCreatorSettings(prev => ({ ...prev, gameType: room.gameType || prev.gameType }));
       setGameInfo({ code: room.code, gameName: room.gameName || '', gameType: room.gameType || '' });
       setPlayers(room.players || []);
@@ -3591,7 +3600,7 @@ export default function HostPage() {
     // Every connect (initial + reconnect) re-joins the room channel so the host
     // receives all broadcast events. attachGameHandlers registers spectator_joined
     // which restores full state from the server snapshot.
-    sock.on('connect', () => sock.emit('join_spectator', { code: roomCodeParam }));
+    sock.on('connect', () => sock.emit('join_spectator', { code: roomCodeParam, hostKey: hostKeyFor(roomCodeParam) }));
 
     attachGameHandlers(sock);
     sock.connect();
@@ -3633,13 +3642,14 @@ export default function HostPage() {
     sock.on('connect', () => {
       const currentCode = roomCodeRef.current;
       if (currentCode) {
-        sock.emit('join_spectator', { code: currentCode });
+        sock.emit('join_spectator', { code: currentCode, hostKey: hostKeyFor(currentCode) });
       }
     });
 
-    sock.on('room_created', ({ code, players: initialPlayers, gameType: gt, gameName: gn }) => {
+    sock.on('room_created', ({ code, hostKey, players: initialPlayers, gameType: gt, gameName: gn }) => {
       // Guard: ignore if this socket has been superseded
       if (socketRef.current !== sock) return;
+      if (hostKey) { try { sessionStorage.setItem(`wst_hostKey:${code}`, hostKey); } catch { /* ignore */ } }
       roomCodeRef.current = code;
       setGameInfo({ code, gameName: gn || '', gameType: gt || '' });
       setPlayers(initialPlayers || []);
@@ -3953,7 +3963,8 @@ export default function HostPage() {
           {headerRoomCode && (
             <button
               onClick={() => {
-                const hostUrl = window.location.origin + '/host?room=' + headerRoomCode;
+                const key = hostKeyFor(headerRoomCode);
+                const hostUrl = window.location.origin + '/host?room=' + headerRoomCode + (key ? '&key=' + encodeURIComponent(key) : '');
                 navigator.clipboard.writeText(hostUrl).catch(() => {});
               }}
               title="Copy host URL"

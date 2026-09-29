@@ -28,6 +28,17 @@ export default function HomePage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Play without a TV: this phone creates the room and hosts while playing.
+  const handleHostOnPhone = () => {
+    if (!joinNickname.trim()) return alert('Please enter a nickname');
+    sounds.click();
+    sessionStorage.removeItem('wst_roomCode');
+    sessionStorage.removeItem('wst_playerId');
+    sessionStorage.setItem('wst_playerName', joinNickname.trim());
+    if (!socket.connected) socket.connect();
+    socket.emit('create_room', { playerName: joinNickname.trim(), gameType: 'who-said-that', hostIsPlaying: true });
+  };
+
   const handleJoinRoom = () => {
     if (!joinNickname.trim()) return alert('Please enter a nickname');
     if (!roomCode.trim() || roomCode.length !== 4) return alert('Enter a 4-letter room code');
@@ -117,6 +128,13 @@ export default function HomePage() {
             {t.joinBtn}
           </button>
         </div>
+        <button
+          onClick={handleHostOnPhone}
+          data-testid="player-btn-host-phone"
+          className="w-full py-2.5 rounded-xl border-2 border-[#4ECDC4]/60 text-[#4ECDC4] font-['Fredoka_One'] hover:bg-[#4ECDC4]/10 active:scale-95 transition"
+        >
+          📱 No TV? Host on this phone
+        </button>
       </div>
     </motion.div>
   );

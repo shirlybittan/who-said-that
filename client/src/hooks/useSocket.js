@@ -60,8 +60,10 @@ export const useSocket = () => {
       }
     };
 
-    const onRoomCreated = ({ code, playerId, players, gameType, gameName, selectedSubGames, isPlaying, roomConfig, globalScores }) => {
+    const onRoomCreated = ({ code, hostKey, playerId, players, gameType, gameName, selectedSubGames, isPlaying, roomConfig, globalScores }) => {
       sessionStorage.setItem('wst_roomCode', code);
+      // Phone host: keep the key so a 'Show on TV' screen can be given control.
+      if (hostKey) sessionStorage.setItem(`wst_hostKey:${code}`, hostKey);
       const myPlayer = players?.find(p => p.id === playerId);
       if (myPlayer?.name) sessionStorage.setItem('wst_playerName', myPlayer.name);
       dispatch({ type: 'SET_ROOM', payload: { roomCode: code, phase: 'lobby', isHost: true, isPlaying: !!isPlaying, players, gameType, gameName: gameName || '', selectedSubGames, roomConfig: roomConfig || {}, globalScores: globalScores || {} } });
@@ -162,9 +164,8 @@ export const useSocket = () => {
     };
 
     const onHostChanged = ({ host }) => {
-      if (stateRef.current.playerId === host) {
-        dispatch({ type: 'SET_ROOM', payload: { isHost: true } });
-      }
+      // The role can move away too (grace-period handover, owner reclaim).
+      dispatch({ type: 'SET_ROOM', payload: { isHost: stateRef.current.playerId === host } });
     };
 
     // A mid-round joiner is folded in at the start of the next round: leave the
@@ -182,6 +183,8 @@ export const useSocket = () => {
 
     const onKicked = () => {
       alert("You have been kicked from the room.");
+      // Forget the room so a later reconnect can't resurrect this player (P1-13).
+      dispatch({ type: 'CLEAR_SESSION' });
       dispatch({ type: 'RESET_GAME' });
       navigate('/');
     };

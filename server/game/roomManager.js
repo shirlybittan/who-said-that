@@ -1,5 +1,6 @@
 const { randomUUID: uuidv4 } = require('crypto');
 const persistence = require('./persistence');
+const { issueHostKey } = require('./hostIdentity');
 
 const rooms = new Map();
 
@@ -32,6 +33,8 @@ const createRoom = (socketId, playerName = 'Host', gameType = 'most-likely-to', 
     color: generatePlayerColor([]),
     isHost: true,
     isPlaying: hostIsPlaying,
+    // A non-playing creator is the TV/display itself (created from /host).
+    isDisplay: !hostIsPlaying,
     isConnected: true
   };
 
@@ -175,6 +178,7 @@ const createRoom = (socketId, playerName = 'Host', gameType = 'most-likely-to', 
   
   room.lastActivityAt = Date.now();
 
+  issueHostKey(room, player.id);
   rooms.set(code, room);
   return { room, player };
 };
@@ -280,11 +284,10 @@ const joinRoom = (code, socketId, playerName, playerId) => {
   if (playerId) {
     const existingPlayer = room.players.find(p => p.id === playerId);
     if (existingPlayer) {
-      if (existingPlayer.phoneSocketId) {
-        existingPlayer.phoneSocketId = socketId;
-      } else {
-        existingPlayer.socketId = socketId;
-      }
+      // socketId is the player's controller (phone). A TV bound to the host
+      // lives in tvSocketId and is left untouched (see hostIdentity.js).
+      existingPlayer.socketId = socketId;
+      existingPlayer.phoneSocketId = null;
       existingPlayer.isConnected = true;
       existingPlayer.name = playerName || existingPlayer.name;
       return { room, player: existingPlayer, isRejoin: true };
@@ -409,15 +412,8 @@ const removePlayerBySocketId = (socketId, permanent) => {
       if (!stillConnected) {
         player.isConnected = false;
         wentOffline = true;
-        if (player.isHost) {
-          player.isHost = false;
-          const nextConnected = room.players.find(p => p.isConnected);
-          if (nextConnected) {
-            nextConnected.isHost = true;
-            room.host = nextConnected.id;
-            newHost = nextConnected;
-          }
-        }
+        // Host migration is NOT immediate any more: the caller starts a grace
+        // period (hostIdentity.noteHostOffline / resolveHost).
       }
     }
   }
@@ -428,7 +424,7 @@ const removePlayerBySocketId = (socketId, permanent) => {
 const setGameOptions = (code, socketId, mode, totalRounds, gameType, mltRounds, allowSelfVote) => {
   const room = getRoom(code);
   if (!room) throw new Error('Room not found');
-  const player = room.players.find(p => p.socketId === socketId);
+  const player = room.players.find(p => socketMatches(p, socketId));
   if (!player || !player.isHost) throw new Error('Only host can change options');
 
   if (mode !== undefined) room.mode = mode;

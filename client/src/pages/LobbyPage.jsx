@@ -26,6 +26,8 @@ export default function LobbyPage() {
   const [saveToBank, setSaveToBank] = useState(false);
   const sounds = useSounds();
   const prevPlayerCount = useRef(state.players.length);
+  const hostKey = (() => { try { return sessionStorage.getItem(`wst_hostKey:${state.roomCode}`); } catch { return null; } })();
+  const tvUrl = `${window.location.origin}/host?room=${state.roomCode}&key=${encodeURIComponent(hostKey || '')}`;
 
   useEffect(() => {
     const current = state.players.length;
@@ -65,8 +67,11 @@ export default function LobbyPage() {
     } else if (state.gameType === 'draw-telephone') {
       socket.emit('dt:start', { code: state.roomCode });
       return;
-    } else if (state.gameType === 'pmatch') {
-      socket.emit('pmatch:start', { code: state.roomCode });
+    } else if (state.gameType === 'pmatch' || state.gameType === 'photoassoc') {
+      socket.emit('photovote:start', { code: state.roomCode, subType: state.gameType, rounds: state.totalRounds });
+      return;
+    } else if (state.gameType === 'fill-in-the-blank') {
+      socket.emit('fitb:start', { code: state.roomCode, rounds: state.totalRounds });
       return;
     } else if (state.gameType === 'selfie-roast') {
       socket.emit('selfie:start', { code: state.roomCode, rounds: 3 });
@@ -78,7 +83,7 @@ export default function LobbyPage() {
       if (state.gameType === 'who-said-that' && state.mode === 'custom' && (!state.customQuestions || state.customQuestions.length < state.totalRounds)) {
         return alert(t.needCustom.replace('{count}', state.totalRounds));
       }
-      socket.emit('start_game', { code: state.roomCode });
+      socket.emit('start_game', { code: state.roomCode, rounds: state.totalRounds });
     }
   };
 
@@ -203,6 +208,14 @@ export default function LobbyPage() {
           </AnimatePresence>
          </div>
       </div>
+
+      {state.isHost && hostKey && (
+        <div data-testid="show-on-tv" className="bg-[#1A1A2E] rounded-2xl w-full max-w-md border border-[#4ECDC4]/40 p-4 mb-4 text-left">
+          <p className="font-['Fredoka_One'] text-[#4ECDC4] mb-1">📺 Show on a TV (optional)</p>
+          <p className="text-xs text-gray-400 font-['Nunito'] mb-2">Open this link on a TV or laptop to display the game. You stay the host on this phone.</p>
+          <input readOnly value={tvUrl} onFocus={(e) => e.target.select()} className="w-full p-2 rounded-lg bg-[#0D0D1A] border border-[#2D2D44] text-xs text-gray-300 font-mono" />
+        </div>
+      )}
 
       {state.isHost && (
         <div className="bg-[#1A1A2E] rounded-2xl w-full max-w-md border border-[#2D2D44] p-4 mb-32 text-left">
