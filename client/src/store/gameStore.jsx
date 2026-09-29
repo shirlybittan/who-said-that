@@ -1195,7 +1195,7 @@ export const gameReducer = (state, action) => {
     case 'PHOTOVOTE_GAME_OVER':
       return {
         ...state,
-        photoVote: { ...state.photoVote, phase: 'ended', scores: action.payload.scores },
+        photoVote: { ...state.photoVote, phase: 'ended', scores: action.payload.scores, leaderboard: action.payload.leaderboard || [] },
       };
     case 'PHOTOVOTE_RESTARTED':
       return {
