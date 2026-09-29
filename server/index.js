@@ -963,7 +963,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('start_game', ({ code }) => {
+  socket.on('start_game', ({ code, rounds }) => {
     const room = getRoom(code);
     if (!room) return;
     
@@ -976,6 +976,9 @@ io.on('connection', (socket) => {
     // MLT is started separately via mlt:start
     if (room.gameType === 'most-likely-to') return;
 
+    // The TV sends the host's chosen round count with the start request
+    // (it used to be ignored and every game played 3 rounds — AUDIT.md P1-04).
+    if (rounds !== undefined) room.totalRounds = clampRounds(rounds, room.totalRounds || 3);
     const count = Math.max(1, room.totalRounds);
     room.currentRound = 1;
     room.currentQuestionIndex = 0;

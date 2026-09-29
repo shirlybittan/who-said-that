@@ -3617,7 +3617,7 @@ export default function HostPage() {
     } else if (creatorSettings.gameType === 'draw-telephone') {
       sock.emit('dt:start', { code: gameInfo.code });
     } else {
-      sock.emit('start_game', { code: gameInfo.code });
+      sock.emit('start_game', { code: gameInfo.code, rounds: creatorSettings.rounds });
     }
   };
 
@@ -3713,7 +3713,7 @@ export default function HostPage() {
       else if (t === 'pmatch') sock.emit('photovote:start', { code, subType: 'pmatch', rounds: nextRounds });
       else if (t === 'photoassoc') sock.emit('photovote:start', { code, subType: 'photoassoc', rounds: nextRounds });
       else if (t === 'draw-telephone') sock.emit('dt:start', { code });
-      else sock.emit('start_game', { code });
+      else sock.emit('start_game', { code, rounds: nextRounds });
       
       setIsTransitioning(false);
     }, 200); // 200ms delay to ensure clients process game_changed before the start states
