@@ -844,7 +844,9 @@ function setupDtGame(io, socket, {
 
   socket.on('caption:submit_caption', ({ code, text }) => {
     const room = getRoom(code);
-    if (!room || room.phase !== 'caption' || (room.caption.phase !== 'writing' && room.caption.phase !== 'voting')) return;
+    // Captions are locked once voting starts: edits used to change text voters
+    // had already seen, and late captions never reached the ballot (P2-40).
+    if (!room || room.phase !== 'caption' || room.caption.phase !== 'writing') return;
     const player = findPlayer(room, socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
 
@@ -2145,6 +2147,8 @@ function setupDtGame(io, socket, {
 
     if (!['correct', 'close', 'wrong'].includes(vote)) return;
     if (!room.dt.chains[promptId]) return;
+    // Only the chain currently being revealed can be voted on.
+    if (promptId !== room.dt.revealQueue?.[room.dt.revealCurrentIndex]) return;
     if (!room.dt.votes[promptId]) room.dt.votes[promptId] = {};
     if (room.dt.votes[promptId][player.id]) return; // already voted
 

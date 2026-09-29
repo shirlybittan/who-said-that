@@ -327,6 +327,8 @@ const startWstVotingTimer = (io, room, code) => {
     onPause: () => { room.wstVotingPaused = true; },
     onResume: () => { room.wstVotingPaused = false; },
     onExpire: () => {
+      const answer = room.answers[room.currentAnswerIndex];
+      if (answer) answer.allVotesIn = true;
       io.to(code).emit('all_votes_in', { currentIndex: room.currentAnswerIndex });
     }
   });
@@ -594,6 +596,7 @@ const emitTotQuestion = (io, room, code) => {
 const emitNextQuestion = (io, room, code) => {
   const q = room.questions[room.currentQuestionIndex];
   if (!q) return;
+  room.answerDrafts = {}; // a previous question's draft must never be auto-submitted here (P3-17)
 
   // Let mid-round joiners participate from here on
   admitLateJoiners(io, room);
@@ -743,7 +746,11 @@ const resumeRoomTimers = (io, room) => {
         tickEvent: 'phase_timer', extraData: { phase: 'wst-voting' },
         isActive: () => room.phase === 'voting',
         onTick: (s) => { room.wstVotingSecondsLeft = s; },
-        onExpire: () => io.to(code).emit('all_votes_in', { currentIndex: room.currentAnswerIndex }),
+        onExpire: () => {
+          const answer = room.answers[room.currentAnswerIndex];
+          if (answer) answer.allVotesIn = true;
+          io.to(code).emit('all_votes_in', { currentIndex: room.currentAnswerIndex });
+        },
       });
     }
   } catch (err) {
@@ -1062,9 +1069,10 @@ io.on('connection', (socket) => {
     const player = findPlayer(room, socket.id);
     if (!player || !player.isConnected) return;
     
-    // Add custom question natively inside array
-    if (text.trim().length > 0) {
-      room.customQuestions.push({ id: `c-${room.customQuestions.length}`, text: text.trim(), saveToBank: !!saveToBank });
+    // Add custom question (string, trimmed, capped length and count — P3-18)
+    const clean = typeof text === 'string' ? text.trim().slice(0, 200) : '';
+    if (clean.length > 0 && room.customQuestions.length < 100) {
+      room.customQuestions.push({ id: `c-${room.customQuestions.length}`, text: clean, saveToBank: !!saveToBank });
       io.to(code).emit('custom_questions_updated', { customQuestions: room.customQuestions });
     }
   });
@@ -1389,6 +1397,7 @@ io.on('connection', (socket) => {
     const player = findPlayer(room, socket.id);
     if (!player || !player.isConnected || !player.isPlaying) return;
     if (answerId === player.id) return;           // can't vote own answer
+    if (!room.answers.some(a => a.playerId === answerId)) return; // must be a real answer (P3-17)
 
     // Use VoteCollector for dedup + threshold detection
     const accepted = room.sit._voteCollector
@@ -1452,7 +1461,12 @@ io.on('connection', (socket) => {
     if (!player || !player.isConnected || !player.isPlaying) return;
 
     const currentAnswer = room.answers[room.currentAnswerIndex];
-    if (!currentAnswer) return;      const connectedPlayersCount = activePlayers(room).length;
+    if (!currentAnswer) return;
+    // Voting on this answer is closed (all in / timer out): the author may
+    // already be shown, so a late vote would be a free point (P3-17).
+    if (currentAnswer.allVotesIn) return;
+    // The target must be a real player.
+    if (!room.players.some(p => p.id === votedPlayerId)) return;      const connectedPlayersCount = activePlayers(room).length;
     const expectedVotes = connectedPlayersCount; 
 
     // allow author to fake vote, record it so they look identical to others
@@ -1933,6 +1947,8 @@ io.on('connection', (socket) => {
     const player = findPlayer(room, socket.id);
     if (!player || !player.isConnected || !player.isPlaying) return;
 
+    // The target must be someone in this round (P3-17).
+    if (!getActivePlayers(room).some(p => p.id === targetPlayerId)) return;
     mltGame.rehydrate(io, room, code); // helpers are not persisted across restarts
     const accepted = room.mlt._voteCollector?.castVote(player.id, targetPlayerId);
     if (!accepted) return;

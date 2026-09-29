@@ -13,7 +13,8 @@ const STRICT_IDENTITY = process.env.STRICT_IDENTITY === '1' || process.env.STRIC
 const generateRoomCode = () => {
   let code;
   do {
-    code = Math.random().toString(36).substring(2, 6).toUpperCase();
+    // Always exactly 4 characters (toString(36) could yield 1–3 — P3-18).
+    code = Array.from({ length: 4 }, () => '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'[Math.floor(Math.random() * 36)]).join('');
   } while (rooms.has(code));
   return code;
 };
@@ -436,7 +437,11 @@ const setGameOptions = (code, socketId, mode, totalRounds, gameType, mltRounds, 
   if (!player || !player.isHost) throw new Error('Only host can change options');
 
   if (mode !== undefined) room.mode = mode;
-  if (totalRounds !== undefined) room.totalRounds = totalRounds;
+  // Clamp client-supplied rounds (P2-43).
+  if (totalRounds !== undefined) {
+    const n = parseInt(totalRounds, 10);
+    if (Number.isFinite(n)) room.totalRounds = Math.min(Math.max(n, 1), 10);
+  }
   
   const validGameTypes = GAME_IDS;
   const standaloneTypes = STANDALONE_IDS;
