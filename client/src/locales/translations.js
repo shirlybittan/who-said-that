@@ -1,6 +1,9 @@
 export const translations = {
   en: {
     common: {
+      "vote": "vote",
+      "votes": "votes",
+      "votesIn": "votes in",
       "waitingFor": "Waiting for",
       "waitingOthers": "Waiting for other players…",
       "submitted": "Submitted",
@@ -271,6 +274,9 @@ export const translations = {
   },
   fr: {
     common: {
+      "vote": "vote",
+      "votes": "votes",
+      "votesIn": "votes reçus",
       "waitingFor": "En attente de",
       "waitingOthers": "En attente des autres joueurs…",
       "submitted": "Envoyé",
@@ -541,6 +547,9 @@ export const translations = {
   },
   he: {
     common: {
+      "vote": "הצבעה",
+      "votes": "הצבעות",
+      "votesIn": "הצבעות התקבלו",
       "waitingFor": "ממתינים ל",
       "waitingOthers": "ממתינים לשאר השחקנים…",
       "submitted": "נשלח",
