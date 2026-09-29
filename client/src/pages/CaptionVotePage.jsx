@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useGame } from '../store/gameStore.jsx';
+import { translations } from '../locales/translations';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
@@ -12,6 +13,9 @@ export default function CaptionVotePage() {
   const { state, dispatch } = useGame();
   const caption = state.caption;
   const sounds = useSounds();
+  const lang = translations[state.lang] || translations.en;
+  const t = lang.caption || translations.en.caption;
+  const tc = lang.common || translations.en.common;
   const [selected, setSelected] = useState(null);
 
   const isFeaturedOwner = state.playerId === caption.featuredOwnerId;
@@ -38,19 +42,19 @@ export default function CaptionVotePage() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3, ease: 'easeOut' }}
       >
-        <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8] mt-6 mb-1">Vote for the Best! 🏆</h1>
+        <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8] mt-6 mb-1">{t.voteTitle}</h1>
         <p className="text-gray-400 font-['Nunito'] text-sm text-center mb-4">
-          Which caption fits {caption.featuredOwnerName}'s photo?
+          {t.voteHint.replace('{name}', caption.featuredOwnerName)}
         </p>
         {isFeaturedOwner && (
-          <p className="text-xs text-[#FD79A8] font-['Nunito'] mb-2">📸 It's your photo — but you still get to vote!</p>
+          <p className="text-xs text-[#FD79A8] font-['Nunito'] mb-2">{t.ownPhotoVote}</p>
         )}
 
         {caption.featuredPhotoData && (
           <img
             src={caption.featuredPhotoData}
             className="w-48 h-48 object-contain rounded-2xl border-2 border-[#FD79A8] mb-4 bg-black"
-            alt={`${caption.featuredOwnerName}'s selfie`}
+            alt={t.selfieAlt.replace('{name}', caption.featuredOwnerName)}
           />
         )}
 
@@ -75,7 +79,7 @@ export default function CaptionVotePage() {
                       : 'bg-[#1A1A2E] border-gray-600 text-white hover:border-[#FD79A8] hover:bg-[#FD79A8]/10'
                   }`}
                 >
-                  {isOwn ? <span className="me-2 text-xs text-gray-500">(yours)</span> : null}
+                  {isOwn ? <span className="me-2 text-xs text-gray-500">{tc.yours}</span> : null}
                   {isSelected && <span className="me-2">👆</span>}
                   {c.text}
                 </button>

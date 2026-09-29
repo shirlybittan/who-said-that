@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useGame } from '../store/gameStore.jsx';
+import { translations } from '../locales/translations';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
@@ -12,6 +13,9 @@ export default function CaptionWritePage() {
   const { state, dispatch } = useGame();
   const caption = state.caption;
   const sounds = useSounds();
+  const lang = translations[state.lang] || translations.en;
+  const t = lang.caption || translations.en.caption;
+  const tc = lang.common || translations.en.common;
   const [text, setText] = useState(caption.myCaption || '');
   const MAX_LEN = 140;
 
@@ -47,21 +51,21 @@ export default function CaptionWritePage() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3, ease: 'easeOut' }}
       >
-        <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8] mt-2 mb-1">Write a Caption! ✍️</h1>
+        <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8] mt-2 mb-1">{t.writeTitle}</h1>
         <div className="flex items-center gap-4 mb-1">
           <p className="text-gray-400 font-['Nunito'] text-sm text-center">
-            Round {caption.round} of {caption.totalRounds}
+            {tc.round.replace('{current}', caption.round).replace('{total}', caption.totalRounds)}
           </p>
         </div>
         {isFeaturedOwner && (
-          <p className="text-xs text-[#FD79A8] font-['Nunito'] mb-1">📸 It's your photo — write a caption about yourself!</p>
+          <p className="text-xs text-[#FD79A8] font-['Nunito'] mb-1">{t.ownPhotoWrite}</p>
         )}
 
         {caption.featuredPhotoData && (
           <img
             src={caption.featuredPhotoData}
             className="w-56 h-56 object-contain rounded-2xl border-2 border-[#FD79A8] mb-3 bg-black"
-            alt={`${caption.featuredOwnerName}'s selfie`}
+            alt={t.selfieAlt.replace('{name}', caption.featuredOwnerName)}
           />
         )}
 
@@ -73,21 +77,21 @@ export default function CaptionWritePage() {
           hasConfirmed={hasConfirmed}
           onConfirm={confirm}
           onEditResponse={editResponse}
-          confirmLabel={caption.hasWrittenCaption ? '↑ Update Caption' : 'Submit Caption 🚀'}
+          confirmLabel={caption.hasWrittenCaption ? t.updateCaption : t.submitCaption}
           disableConfirm={!text.trim()}
           isHost={state.isHost}
-          waitingMessage={`Caption submitted! (${caption.captionSubmittedCount} / ${caption.totalWriters} in)`}
+          waitingMessage={t.submittedCount.replace('{done}', caption.captionSubmittedCount).replace('{total}', caption.totalWriters)}
         >
           <div className="w-full max-w-sm flex flex-col gap-2">
             <textarea
               value={text}
               onChange={e => setText(e.target.value.slice(0, MAX_LEN))}
-              placeholder="Write something hilarious…"
+              placeholder={t.placeholder}
               rows={3}
               className="w-full rounded-2xl bg-[#1A1A2E] border border-gray-600 text-white font-['Nunito'] p-3 resize-none focus:outline-none focus:border-[#FD79A8]"
             />
             <div className="flex justify-between text-xs text-gray-500 font-['Nunito'] px-1">
-              <span>{text.trim().length === 0 ? 'Min 1 character' : ''}</span>
+              <span>{text.trim().length === 0 ? t.minChars : ''}</span>
               <span>{text.length}/{MAX_LEN}</span>
             </div>
           </div>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useGame } from '../store/gameStore.jsx';
+import { translations } from '../locales/translations';
 import { socket } from '../socket';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
@@ -18,6 +19,8 @@ export default function DrawTelRevealPage() {
   const { dt, roomCode, isHost, playerId } = state;
   const reveal = dt.reveal;
   const sounds = useSounds();
+  const t = translations[state.lang]?.dt || translations.en.dt;
+  const tc = translations[state.lang]?.common || translations.en.common;
 
   const step = reveal.step ?? 0;
   const isVoteStep = step === 2;
@@ -53,9 +56,9 @@ export default function DrawTelRevealPage() {
     >
       {/* Progress bar */}
       <div className="w-full max-w-md mb-4 flex items-center justify-between">
-        <span className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest">📞 Draw Telephone</span>
+        <span className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest">{t.gameName}</span>
         <span className="text-xs text-[#FF6B6B] font-['Nunito']">
-          Chain {(reveal.promptIndex ?? 0) + 1} / {reveal.totalPrompts}
+          {t.chain.replace('{current}', (reveal.promptIndex ?? 0) + 1).replace('{total}', reveal.totalPrompts)}
         </span>
       </div>
 
@@ -80,7 +83,7 @@ export default function DrawTelRevealPage() {
           >
             {/* Target chip + selfie */}
             <div className="bg-[#1A1A2E] rounded-2xl border-2 border-[#FF6B6B]/40 p-5">
-              <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest text-center mb-3">Someone wrote a prompt about…</p>
+              <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest text-center mb-3">{t.someoneWrote}</p>
               <div className="flex justify-center mb-4">
                 <div
                   className="inline-block px-5 py-2 rounded-2xl text-2xl font-['Fredoka_One']"
@@ -93,14 +96,14 @@ export default function DrawTelRevealPage() {
                 <div className="rounded-xl overflow-hidden border-2 border-[#FF6B6B]/30 bg-[#0D0D1A]" style={{ aspectRatio: '4/3' }}>
                   <img
                     src={reveal.originalSelfieData}
-                    alt={`${reveal.targetName}'s selfie`}
+                    alt={t.selfieAlt.replace('{name}', reveal.targetName)}
                     className="w-full h-full object-contain"
                     draggable={false}
                   />
                 </div>
               ) : (
                 <div className="rounded-xl bg-[#0D0D1A] border-2 border-[#2D2D44] flex items-center justify-center" style={{ aspectRatio: '4/3' }}>
-                  <span className="text-gray-600 font-['Nunito']">No selfie</span>
+                  <span className="text-gray-600 font-['Nunito']">{t.noSelfie}</span>
                 </div>
               )}
             </div>
@@ -115,7 +118,7 @@ export default function DrawTelRevealPage() {
             initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
           >
             <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest text-center mb-3">
-              How it evolved… ({drawingSteps.length} drawing{drawingSteps.length !== 1 ? 's' : ''})
+              {(drawingSteps.length !== 1 ? t.evolvedMany : t.evolvedOne).replace('{count}', drawingSteps.length)}
             </p>
             <div className={`grid gap-3 ${drawingSteps.length === 1 ? 'grid-cols-1 max-w-xs mx-auto' : drawingSteps.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
               {drawingSteps.map((step_, i) => (
@@ -130,7 +133,7 @@ export default function DrawTelRevealPage() {
                   <div className="p-1.5 flex items-center gap-1.5">
                     <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: step_.playerColor || '#C39BD3' }} />
                     <span className="text-xs text-gray-300 font-['Nunito'] truncate">{step_.playerName}</span>
-                    <span className="text-xs text-gray-600 font-['Nunito'] ml-auto">#{i + 1}</span>
+                    <span className="text-xs text-gray-600 font-['Nunito'] ms-auto">#{i + 1}</span>
                   </div>
                 </div>
               ))}
@@ -147,29 +150,29 @@ export default function DrawTelRevealPage() {
           >
             {/* Vote countdown */}
             <div className="flex items-center justify-between">
-              <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest">How close was the guess?</p>
+              <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest">{t.howClose}</p>
             </div>
 
             {/* Before / after comparison */}
             <div className="bg-[#1A1A2E] rounded-2xl border-2 border-[#C39BD3]/40 p-3">
-              <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest mb-2 text-center">Original selfie → Final drawing</p>
+              <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest mb-2 text-center">{t.originalToFinal}</p>
               <div className="flex gap-2">
                 <div className="flex-1">
                   <div className="rounded-lg overflow-hidden border border-[#C39BD3]/30" style={{ aspectRatio: '4/3' }}>
                     {reveal.originalSelfieData ? (
                       <img
                         src={reveal.originalSelfieData}
-                        alt="Original"
+                        alt={t.original}
                         className="w-full h-full object-contain bg-[#0D0D1A]"
                         draggable={false}
                       />
                     ) : (
                       <div className="w-full h-full bg-[#0D0D1A] flex items-center justify-center">
-                        <span className="text-gray-600 text-xs">No selfie</span>
+                        <span className="text-gray-600 text-xs">{t.noSelfie}</span>
                       </div>
                     )}
                   </div>
-                  <p className="text-xs text-center text-gray-500 font-['Nunito'] mt-1">Original</p>
+                  <p className="text-xs text-center text-gray-500 font-['Nunito'] mt-1">{t.original}</p>
                 </div>
                 <div className="flex-1">
                   <div className="rounded-lg overflow-hidden border border-[#C39BD3]/30" style={{ aspectRatio: '4/3' }}>
@@ -179,18 +182,18 @@ export default function DrawTelRevealPage() {
                       cssWidth="100%"
                     />
                   </div>
-                  <p className="text-xs text-center text-gray-500 font-['Nunito'] mt-1">Final drawing</p>
+                  <p className="text-xs text-center text-gray-500 font-['Nunito'] mt-1">{t.finalDrawing}</p>
                 </div>
               </div>
             </div>
 
             {/* Original prompt + guess */}
             <div className="bg-[#1A1A2E] rounded-2xl border-2 border-[#FF6B6B]/30 p-4 text-center">
-              <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest mb-1">Original prompt</p>
+              <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest mb-1">{t.originalPrompt}</p>
               <p className="text-lg font-['Fredoka_One'] text-[#FFE66D] leading-snug">"{reveal.finalText}"</p>
               <div className="mt-2 pt-2 border-t border-[#2D2D44]">
                 <p className="text-xs text-gray-500 font-['Nunito'] mb-0.5">
-                  <span style={{ color: reveal.targetColor || '#A8E6CF' }}>{reveal.targetName}</span> guessed…
+                  <span style={{ color: reveal.targetColor || '#A8E6CF' }}>{reveal.targetName}</span> {t.guessed}
                 </p>
                 <p className="text-base font-['Fredoka_One'] text-[#A8E6CF]">
                   "{reveal.guessText || '…'}"
@@ -202,9 +205,9 @@ export default function DrawTelRevealPage() {
             {!reveal.hasVoted && playerId !== reveal.targetPlayerId ? (
               <div className="flex gap-3">
                 {[
-                  { vote: 'correct', label: '🎯 Correct', color: '#22C55E' },
-                  { vote: 'close', label: '🤏 Close', color: '#EAB308' },
-                  { vote: 'wrong', label: '❌ Wrong', color: '#EF4444' },
+                  { vote: 'correct', label: t.voteCorrect, color: '#22C55E' },
+                  { vote: 'close', label: t.voteClose, color: '#EAB308' },
+                  { vote: 'wrong', label: t.voteWrong, color: '#EF4444' },
                 ].map(({ vote, label, color }) => (
                   <button
                     key={vote}
@@ -219,8 +222,8 @@ export default function DrawTelRevealPage() {
             ) : (
               <p className="text-center text-gray-400 font-['Nunito'] text-sm">
                 {playerId === reveal.targetPlayerId
-                  ? "It's your guess! Others are voting."
-                  : 'Vote locked in ✓'}
+                  ? t.yourGuess
+                  : tc.voteLocked}
               </p>
             )}
 
@@ -228,19 +231,19 @@ export default function DrawTelRevealPage() {
             <div className="bg-[#1A1A2E] rounded-xl border border-[#2D2D44] p-3 flex justify-around text-center">
               <div>
                 <p className="text-xl font-['Fredoka_One'] text-[#22C55E]">{reveal.correctCount ?? 0}</p>
-                <p className="text-xs text-gray-500 font-['Nunito']">Correct</p>
+                <p className="text-xs text-gray-500 font-['Nunito']">{t.correct}</p>
               </div>
               <div>
                 <p className="text-xl font-['Fredoka_One'] text-[#EAB308]">{reveal.closeCount ?? 0}</p>
-                <p className="text-xs text-gray-500 font-['Nunito']">Close</p>
+                <p className="text-xs text-gray-500 font-['Nunito']">{t.close}</p>
               </div>
               <div>
                 <p className="text-xl font-['Fredoka_One'] text-[#EF4444]">{reveal.wrongCount ?? 0}</p>
-                <p className="text-xs text-gray-500 font-['Nunito']">Wrong</p>
+                <p className="text-xs text-gray-500 font-['Nunito']">{t.wrong}</p>
               </div>
               <div>
                 <p className="text-xs text-gray-500 font-['Nunito'] mt-1">
-                  {reveal.voteCount}/{reveal.totalVoters} voted
+                  {t.votedCount.replace('{done}', reveal.voteCount).replace('{total}', reveal.totalVoters)}
                 </p>
               </div>
             </div>
@@ -257,14 +260,14 @@ export default function DrawTelRevealPage() {
               onClick={handleNext}
               className="w-full bg-[#EAB308] text-[#0D0D1A] font-['Fredoka_One'] text-lg py-3 rounded-xl transition hover:bg-[#cda007]"
             >
-              Skip to Next Drawing ⏭️
+              {t.skipToNext}
             </button>
           ) : (
             <button
               onClick={handleNext}
               className="w-full bg-[#FF6B6B] text-white font-['Fredoka_One'] text-lg py-3 rounded-xl transition hover:bg-[#ff5252]"
             >
-              Next →
+              {t.next}
             </button>
           )}
           {!isVoteStep && (
@@ -272,7 +275,7 @@ export default function DrawTelRevealPage() {
               onClick={handleEndGame}
               className="w-full text-sm text-gray-500 underline font-['Nunito'] hover:text-white transition"
             >
-              End Game
+              {t.endGame}
             </button>
           )}
         </div>

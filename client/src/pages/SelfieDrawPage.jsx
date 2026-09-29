@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { useGame } from '../store/gameStore.jsx';
+import { translations } from '../locales/translations';
 import { socket } from '../socket';
 import { useSounds } from '../hooks/useSounds';
 import { CANVAS_W, CANVAS_H, drawStroke, redrawOverlay } from '../utils/canvasUtils';
@@ -28,6 +29,7 @@ export default function SelfieDrawPage() {
   const { state, dispatch } = useGame();
   const selfie = state.selfie;
   const sounds = useSounds();
+  const t = translations[state.lang]?.selfie || translations.en.selfie;
 
   const canvasRef = useRef(null);
   const strokesRef = useRef([]);
@@ -165,7 +167,7 @@ export default function SelfieDrawPage() {
   if (!selfie.assignedPhotoData) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-[#0D0D1A] text-gray-400 font-['Nunito']">
-        Waiting for photo assignment…
+        {t.waitingAssignment}
       </div>
     );
   }
@@ -178,7 +180,7 @@ export default function SelfieDrawPage() {
     >
       {!isFullscreen && (
       <div className="flex items-center justify-between w-full max-w-sm mb-1">
-        <h1 className="text-2xl font-['Fredoka_One'] text-[#FF6B6B] mt-4">🎨 Draw on {selfie.assignedOwnerName}'s selfie!</h1>
+        <h1 className="text-2xl font-['Fredoka_One'] text-[#FF6B6B] mt-4">{t.drawOnTitle.replace('{name}', selfie.assignedOwnerName)}</h1>
         {selfie.phase === 'drawing' && (
           <div className="mt-4 flex-shrink-0">
             {/* Countdown: shell GameTimer (selfie:timer). */}
@@ -192,7 +194,7 @@ export default function SelfieDrawPage() {
             <p className="text-[#FFE66D] font-['Fredoka_One'] text-base">{selfie.assignedPrompt}</p>
           </div>
         ) : (
-          <p className="text-gray-400 font-['Nunito'] text-xs mb-3">Draw on their selfie</p>
+          <p className="text-gray-400 font-['Nunito'] text-xs mb-3">{t.drawOnTheirs}</p>
         )
       )}
 
@@ -203,7 +205,7 @@ export default function SelfieDrawPage() {
       >
         <img
           src={selfie.assignedPhotoData}
-          alt={`${selfie.assignedOwnerName}'s selfie`}
+          alt={t.selfieAlt.replace('{name}', selfie.assignedOwnerName)}
           className="absolute inset-0 w-full h-full object-contain bg-[#111827]"
           draggable={false}
         />
@@ -225,13 +227,13 @@ export default function SelfieDrawPage() {
         <button
           onClick={toggleFullscreen}
           className="absolute top-2 left-2 z-20 w-8 h-8 rounded-lg bg-black/60 text-white flex items-center justify-center text-sm hover:bg-black/80 transition"
-          title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+          title={isFullscreen ? t.exitFullscreen : t.enterFullscreen}
         >
           {isFullscreen ? '⤡' : '⤢'}
         </button>
         {hasConfirmed && (
           <div className="absolute top-2 right-2 bg-black/70 text-white text-xs font-['Nunito'] px-2 py-1 rounded-lg">
-            ✓ Submitted — keep drawing to update
+            {t.submittedKeepDrawing}
           </div>
         )}
         {/* Fullscreen toolbar overlay */}
@@ -279,7 +281,7 @@ export default function SelfieDrawPage() {
                 disabled={!hasConfirmed && strokeCount === 0}
                 className="bg-[#FF6B6B] text-white font-['Fredoka_One'] text-sm px-4 py-1.5 rounded-xl hover:bg-[#e05a5a] transition disabled:opacity-40"
               >
-                {hasConfirmed ? '↑ Update' : 'Submit ✓'}
+                {hasConfirmed ? t.updateShort : t.submitShort}
               </button>
             </div>
           </div>
@@ -293,11 +295,11 @@ export default function SelfieDrawPage() {
               hasConfirmed={hasConfirmed}
               onConfirm={confirm}
               onEditResponse={editResponse}
-              confirmLabel={selfie.hasSubmittedDrawing ? 'Update Drawing' : 'Submit Drawing'}
-              editLabel="✏️ Edit Drawing"
+              confirmLabel={selfie.hasSubmittedDrawing ? t.updateDrawing : t.submitDrawing}
+              editLabel={t.editDrawing}
               disableConfirm={strokeCount === 0}
               isHost={state.isHost}
-              waitingMessage={`Waiting for others… (${selfie.drawingCount}/${selfie.totalDrawers})`}
+              waitingMessage={t.waitingOthersCount.replace('{done}', selfie.drawingCount).replace('{total}', selfie.totalDrawers)}
             >
               {/* Color palette */}
               <div className="flex flex-wrap justify-center gap-2 mb-2">
@@ -336,7 +338,7 @@ export default function SelfieDrawPage() {
                     onClick={handleUndo}
                     className="bg-[#2D2D44] text-white px-4 py-2 rounded-xl font-['Nunito'] text-sm hover:bg-[#3D3D54] transition"
                   >
-                    ↩ Undo
+                    {t.undo}
                   </button>
                 )}
                 {strokeCount > 0 && (
@@ -344,7 +346,7 @@ export default function SelfieDrawPage() {
                     onClick={handleClear}
                     className="bg-[#2D2D44] text-white px-4 py-2 rounded-xl font-['Nunito'] text-sm hover:bg-[#3D3D54] transition"
                   >
-                    🗑 Clear
+                    {t.clear}
                   </button>
                 )}
               </div>
@@ -355,7 +357,7 @@ export default function SelfieDrawPage() {
             onClick={handleRetake}
             className="mt-2 text-sm text-[#4ECDC4] underline font-['Nunito'] hover:text-white transition"
           >
-            📷 Retake Photo
+            {t.retakePhoto}
           </button>
         </>
       )}

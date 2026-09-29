@@ -15,6 +15,7 @@ export default function CaptionResultsPage() {
   const isHost = state.isHost;
   const isEnded = caption.phase === 'ended';
   const t = translations[state.lang]?.common || translations.en.common;
+  const tcap = translations[state.lang]?.caption || translations.en.caption;
   const guard = useSingleFlight(1000);
   const isLastRound = caption.round >= caption.totalRounds;
 
@@ -47,14 +48,14 @@ export default function CaptionResultsPage() {
         transition={{ duration: 0.3, ease: 'easeOut' }}
       >
         <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8] mt-6 mb-1">
-          {isEnded ? '🏆 Final Results!' : `Round ${caption.round} Results`}
+          {isEnded ? tcap.finalResults : tcap.roundResults.replace('{round}', caption.round)}
         </h1>
 
         {caption.featuredPhotoData && (
           <img
             src={caption.featuredPhotoData}
             className="w-40 h-40 object-cover rounded-2xl border-2 border-[#FD79A8] my-4"
-            alt="featured selfie"
+            alt={tcap.featuredAlt}
           />
         )}
 
@@ -77,7 +78,7 @@ export default function CaptionResultsPage() {
               <div className="flex-1">
                 <p className="text-white font-['Nunito'] text-sm">{c.text}</p>
                 <p className="text-gray-400 font-['Nunito'] text-xs mt-1">
-                  {c.playerName} — {c.voteCount} vote{c.voteCount !== 1 ? 's' : ''}
+                  {c.playerName} — {c.voteCount} {c.voteCount !== 1 ? t.votes : t.vote}
                 </p>
               </div>
             </motion.div>
@@ -86,7 +87,7 @@ export default function CaptionResultsPage() {
 
         {isEnded && (
           <div className="w-full max-w-sm mb-4">
-            <h2 className="text-xl font-['Fredoka_One'] text-[#FFE66D] mb-3 text-center">Scoreboard</h2>
+            <h2 className="text-xl font-['Fredoka_One'] text-[#FFE66D] mb-3 text-center">{tcap.scoreboard}</h2>
             {Object.entries(caption.scores || {})
               .sort(([, a], [, b]) => b - a)
               .map(([id, pts], i) => {
@@ -94,7 +95,7 @@ export default function CaptionResultsPage() {
                 return (
                   <div key={id} className="flex justify-between items-center bg-[#1A1A2E] rounded-xl px-4 py-2 mb-2">
                     <span className="font-['Nunito'] text-white">{i + 1}. {p?.name || id}</span>
-                    <span className="font-['Fredoka_One'] text-[#FD79A8]">{pts} pts</span>
+                    <span className="font-['Fredoka_One'] text-[#FD79A8]">{pts} {t.pts}</span>
                   </div>
                 );
               })}

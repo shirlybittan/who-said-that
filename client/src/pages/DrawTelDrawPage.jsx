@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGame } from '../store/gameStore.jsx';
+import { translations } from '../locales/translations';
 import { socket } from '../socket';
 import { useSounds } from '../hooks/useSounds';
 import { CANVAS_W, CANVAS_H, redrawCanvas, redrawOverlay, drawStroke } from '../utils/canvasUtils';
@@ -29,6 +30,7 @@ export default function DrawTelDrawPage() {
   const { state, dispatch } = useGame();
   const { dt, roomCode, playerId } = state;
   const turn = dt.currentTurn;
+  const t = translations[state.lang]?.dt || translations.en.dt;
 
   // Per-turn autosave key so a refresh/reconnect mid-turn restores the strokes
   // the player already drew for this chain step. Held in a ref for the callbacks.
@@ -311,10 +313,10 @@ export default function DrawTelDrawPage() {
               <div className="flex items-center justify-between mb-2">
                 <div>
                   <p className="text-xs text-gray-400 font-['Nunito'] uppercase tracking-widest mb-1">
-                    Step {turn?.position || 1} of {turn?.totalPositions || 1}
+                    {t.step.replace('{current}', turn?.position || 1).replace('{total}', turn?.totalPositions || 1)}
                   </p>
                   <p className="text-lg text-white font-['Nunito']">
-                    {turn?.position > 1 ? "Draw over the previous drawing!" : "Draw this prompt!"}
+                    {turn?.position > 1 ? t.drawOverPrevious : t.drawThisPrompt}
                   </p>
                 </div>
                 {/* Turn countdown: shell GameTimer (fed by dt:turn_timer). */}
@@ -323,7 +325,7 @@ export default function DrawTelDrawPage() {
               {/* Previous step content */}
               <div className="bg-[#1A1A2E] rounded-2xl p-4 border border-[#FF6B6B]/30 flex-1">
                 <p className="text-xs text-gray-400 font-['Nunito'] uppercase tracking-widest mb-2">
-                  {turn?.position > 1 ? "Previous Drawing" : "Your Prompt"}
+                  {turn?.position > 1 ? t.previousDrawing : t.yourPrompt}
                 </p>
                 {turn?.position > 1 ? (
                   <>
@@ -351,7 +353,7 @@ export default function DrawTelDrawPage() {
                       "{turn?.finalText}"
                     </p>
                     {selfieData && (
-                      <img src={selfieData} className="w-24 h-24 object-cover rounded-full border-2 border-[#FF6B6B] shadow-lg shadow-[#FF6B6B]/20" alt="Selfie bg" />
+                      <img src={selfieData} className="w-24 h-24 object-cover rounded-full border-2 border-[#FF6B6B] shadow-lg shadow-[#FF6B6B]/20" alt={t.selfieBgAlt} />
                     )}
                   </div>
                 )}
@@ -364,7 +366,7 @@ export default function DrawTelDrawPage() {
               hasConfirmed={hasConfirmed}
               onConfirm={confirm}
               onEditResponse={handleEditResponse}
-              confirmLabel={dt.hasSubmittedTurn ? "Update Drawing" : "Submit Drawing"}
+              confirmLabel={dt.hasSubmittedTurn ? t.updateDrawing : t.submitDrawing}
               disableConfirm={strokeCount === 0}
               lockWhenConfirmed={false}
             >
@@ -379,7 +381,7 @@ export default function DrawTelDrawPage() {
                 >
                   {/* Selfie photo behind the canvas */}
                   {selfieData && (
-                    <img src={selfieData} alt="selfie background" className="absolute inset-0 w-full h-full object-contain bg-[#111827] rounded-2xl" />
+                    <img src={selfieData} alt={t.selfieBgAlt} className="absolute inset-0 w-full h-full object-contain bg-[#111827] rounded-2xl" />
                   )}
                   <canvas
                     ref={canvasRef}
@@ -400,7 +402,7 @@ export default function DrawTelDrawPage() {
                   {/* Fullscreen toggle button */}
                   <button
                     onClick={toggleFullscreen}
-                    aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+                    aria-label={isFullscreen ? t.exitFullscreen : t.fullscreen}
                     className="absolute top-2 left-2 z-20 bg-black/50 p-2 rounded-lg text-white hover:bg-black/80 transition pointer-events-auto"
                   >
                     {isFullscreen ? '↙️' : '↗️'}
@@ -460,14 +462,14 @@ export default function DrawTelDrawPage() {
                       disabled={strokeCount === 0}
                       className="flex-1 py-2 rounded-lg bg-[#2D2D44] text-white font-['Nunito'] disabled:opacity-50"
                     >
-                      Undo
+                      {t.undo}
                     </button>
                     <button
                       onClick={handleClear}
                       disabled={strokeCount === 0}
                       className="flex-1 py-2 rounded-lg bg-[#2D2D44] text-white font-['Nunito'] disabled:opacity-50"
                     >
-                      Clear
+                      {t.clear}
                     </button>
                   </div>
                 </div>

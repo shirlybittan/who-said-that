@@ -16,6 +16,7 @@ export default function PhotoVoteResultsPage() {
 
   const modeColor = pv.subType === 'photoassoc' ? '#A29BFE' : '#FDCB6E';
   const t = translations[state.lang]?.common || translations.en.common;
+  const tpv = translations[state.lang]?.photoVote || translations.en.photoVote;
   const guard = useSingleFlight(1000);
   const isLastRound = pv.round >= pv.totalRounds;
 
@@ -47,7 +48,7 @@ export default function PhotoVoteResultsPage() {
       initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}
     >
       <h1 className="text-3xl font-['Fredoka_One'] mt-2 mb-1" style={{ color: modeColor }}>
-        {isEnded ? '🏆 Final Results!' : `Round ${pv.round} Results`}
+        {isEnded ? tpv.finalResults : tpv.roundResults.replace('{round}', pv.round)}
       </h1>
 
       {pv.prompt && (
@@ -83,7 +84,7 @@ export default function PhotoVoteResultsPage() {
 
       {isEnded && (
         <div className="w-full max-w-sm mb-4">
-          <h2 className="text-xl font-['Fredoka_One'] text-[#FFE66D] mb-3 text-center">Scoreboard</h2>
+          <h2 className="text-xl font-['Fredoka_One'] text-[#FFE66D] mb-3 text-center">{tpv.scoreboard}</h2>
           {Object.entries(pv.scores || {})
             .sort(([, a], [, b]) => b - a)
             .map(([id, pts], i) => {
@@ -91,7 +92,7 @@ export default function PhotoVoteResultsPage() {
               return (
                 <div key={id} className="flex justify-between items-center bg-[#1A1A2E] rounded-xl px-4 py-2 mb-2">
                   <span className="font-['Nunito'] text-white">{i + 1}. {p?.name || id}</span>
-                  <span className="font-['Fredoka_One']" style={{ color: modeColor }}>{pts} pts</span>
+                  <span className="font-['Fredoka_One']" style={{ color: modeColor }}>{pts} {t.pts}</span>
                 </div>
               );
             })}

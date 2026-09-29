@@ -1,6 +1,7 @@
 import React from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useGame } from '../store/gameStore.jsx';
+import { translations } from '../locales/translations';
 
 /**
  * Full-screen "Reconnecting…" overlay shown whenever the socket connection is
@@ -15,6 +16,7 @@ import { useGame } from '../store/gameStore.jsx';
  */
 const ConnectionOverlay = () => {
   const { state } = useGame();
+  const t = translations[state.lang]?.conn || translations.en.conn;
 
   // Only relevant once the player is actually in a room. On the home screen a
   // disconnected socket is expected and shouldn't nag anyone.
@@ -40,15 +42,14 @@ const ConnectionOverlay = () => {
             transition={{ repeat: Infinity, duration: 0.9, ease: 'linear' }}
           />
           <h2 className="mt-6 text-2xl font-['Fredoka_One'] text-[#FFE66D]">
-            {state.connection === 'offline' ? 'Connection lost' : 'Reconnecting…'}
+            {state.connection === 'offline' ? t.lost : t.reconnecting}
           </h2>
           <p className="mt-2 text-sm text-gray-300 font-['Nunito'] max-w-xs">
-            Hang tight — your spot is saved. We'll drop you right back into the
-            game as soon as you're back online.
+            {t.body}
           </p>
           {state.roomCode && (
             <p className="mt-4 text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest">
-              Room {state.roomCode}
+              {t.room.replace('{code}', state.roomCode)}
             </p>
           )}
         </motion.div>
