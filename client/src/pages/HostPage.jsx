@@ -5,6 +5,8 @@ import { QRCodeSVG } from 'qrcode.react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Confetti from 'react-confetti';
 import TimerRing from '../components/game/TimerRing';
+import SoundToggle from '../components/shell/SoundToggle';
+import LangSwitcher from '../components/shell/LangSwitcher';
 import VoteCoin from '../components/game/VoteCoin';
 import ReplayCanvas from '../components/game/ReplayCanvas';
 import { PICKABLE_GAMES, PLAYLIST_GAMES, gameLabel, gameName, startGame } from '../games/registry';
@@ -3923,6 +3925,8 @@ export default function HostPage() {
               🏠 Main Menu
             </button>
           )}
+          <SoundToggle />
+          <LangSwitcher />
         </div>
       </div>}
 

@@ -37,7 +37,8 @@ function create({ io, code, seconds, tickEvent, extraData = {}, isActive, onExpi
   let timeoutRef = null;
 
   const emitTick = () => {
-    io.to(code).emit(tickEvent, { secondsLeft: remaining, paused, ...extraData });
+    // `total` lets every client draw the same proportional countdown ring.
+    io.to(code).emit(tickEvent, { secondsLeft: remaining, paused, total: seconds, ...extraData });
   };
 
   const tick = () => {

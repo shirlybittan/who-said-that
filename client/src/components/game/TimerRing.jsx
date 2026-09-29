@@ -17,15 +17,19 @@ export default function TimerRing({ secondsLeft, total = 30, paused = false, siz
   const strokeW = Math.max(4, size * 0.075);
   const fontSize = Math.round(size * 0.25);
 
+  // Canonical low-time warning, proportional to the countdown so a 20s vote
+  // and a 90s drawing warn at the same point (used to be 8/10/15s by page).
+  const urgentAt = Math.max(5, Math.round(total * 0.2));
+  const warnAt = Math.max(10, Math.round(total * 0.4));
   const color = paused
     ? '#6C5CE7'
-    : secondsLeft <= 8
+    : secondsLeft <= urgentAt
       ? '#FF6B6B'
-      : secondsLeft <= 15
+      : secondsLeft <= warnAt
         ? '#FFE66D'
         : '#4ECDC4';
 
-  const isUrgent = !paused && secondsLeft <= 8 && secondsLeft > 0;
+  const isUrgent = !paused && secondsLeft <= urgentAt && secondsLeft > 0;
 
   return (
     <motion.svg

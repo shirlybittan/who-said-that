@@ -4,6 +4,7 @@ import { useGame } from '../store/gameStore.jsx';
 import { useNavigate } from 'react-router-dom';
 import { buildJoinRestorePlan } from '../utils/rejoinState.js';
 import { phaseForEvent } from '../game-core/phaseEvents';
+import { timerActionFor } from '../game-core/roundTimer';
 
 export const useSocket = () => {
   const { state, dispatch } = useGame();
@@ -499,9 +500,12 @@ export const useSocket = () => {
     // Keep state.phase in lock-step with the server for every phase-bearing
     // event (see game-core/phaseEvents.js). onAny runs before the specific
     // listeners, so a reducer that sets a more precise phase still wins.
-    const onAnyEvent = (event) => {
+    const onAnyEvent = (event, data) => {
       const phase = phaseForEvent(event);
       if (phase) dispatch({ type: 'SET_PHASE', payload: phase });
+      // Every server countdown feeds the one canonical round timer.
+      const timerAction = timerActionFor(event, data);
+      if (timerAction) dispatch(timerAction);
     };
     socket.onAny(onAnyEvent);
 

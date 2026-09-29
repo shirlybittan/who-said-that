@@ -1,4 +1,5 @@
 import React, { createContext, useReducer, useContext } from 'react';
+import { initialRoundTimer, roundTimerReducer } from '../game-core/roundTimer';
 import { createGameSlice } from './createGameSlice';
 
 // ─── Game slices (standard action handlers generated from factory) ────────────
@@ -228,6 +229,8 @@ const initialState = {
   globalScores: {},             // { playerId: cumulativeScore } — persists across games until host resets
   globalLeaderboard: [],        // sorted [{id, name, color, score}]
   phaseTimer: { secondsLeft: 60, active: false },
+  // Canonical round timer fed by every server tick event (game-core/roundTimer.js).
+  roundTimer: initialRoundTimer,
   roomConfig: { roundDurationSecs: 60, anonymousMode: false },
   caption: {
     phase: 'waiting',      // 'waiting' | 'photo' | 'writing' | 'voting' | 'results' | 'ended'
@@ -1006,6 +1009,10 @@ export const gameReducer = (state, action) => {
           paused: !!action.payload.paused,
         },
       };
+    case 'ROUND_TIMER_TICK':
+    case 'ROUND_TIMER_PAUSED':
+    case 'ROUND_TIMER_CLEAR':
+      return { ...state, roundTimer: roundTimerReducer(state.roundTimer, action) };
     case 'PHASE_TIMER_STOP':
       return { ...state, phaseTimer: { secondsLeft: 0, active: false } };
     case 'SET_ROOM_CONFIG':

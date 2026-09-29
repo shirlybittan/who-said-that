@@ -1,9 +1,6 @@
-import React, { useEffect, useState, Component } from 'react';
+import React, { useEffect, Component } from 'react';
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
-import { AnimatePresence, motion } from 'framer-motion';
 import { GameProvider, useGame } from './store/gameStore.jsx';
-import TimerRing from './components/game/TimerRing';
-import { soundManager } from './sounds/SoundManager';
 import HomePage from './pages/HomePage';
 import LobbyPage from './pages/LobbyPage';
 import QuestionPage from './pages/QuestionPage.jsx';
@@ -39,6 +36,7 @@ import DrawTelEndPage from './pages/DrawTelEndPage.jsx';
 import DrawTelWaitPage from './pages/DrawTelWaitPage.jsx';
 import HostPage from './pages/HostPage.jsx';
 import ConnectionOverlay from './components/ConnectionOverlay.jsx';
+import PlayerTopBar from './components/shell/PlayerTopBar.jsx';
 import { useSocket } from './hooks/useSocket';
 import { usePhaseSync } from './hooks/usePhaseSync';
 import { useScreenSync } from './hooks/useScreenSync';
@@ -137,97 +135,9 @@ const LangWrapper = ({ children }) => {
 };
 
 
-const GlobalTimerOverlay = () => {
-  const { state } = useGame();
-  const timer = state.phaseTimer;
-  // Hide timer in lobby, home, or end screens — it's only relevant during active gameplay
-  const hiddenPhases = ['lobby', 'home', 'game_end', 'gameEnd', 'dt', 'drawing', 'selfie', 'mlt', 'fitb', 'caption', 'sit-voting', 'voting'];
-  if (!timer?.active || timer.secondsLeft <= 0 || hiddenPhases.includes(state.phase)) return null;
-  const total = state.roomConfig?.roundDurationSecs || 60;
-  return (
-    <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 pointer-events-none">
-      <TimerRing secondsLeft={timer.secondsLeft} total={total} size={64} />
-    </div>
-  );
-};
 
-const RoomCodeBadge = () => {
-  const { state } = useGame();
-  if (!state.roomCode || !state.phase || state.phase === 'game_end') return null;
-  return (
-    <div className="fixed bottom-4 end-4 z-50 bg-[#1A1A2E]/90 backdrop-blur-sm border border-[#2D2D44] rounded-xl px-3 py-2 text-center shadow-lg pointer-events-none">
-      <p className="text-[10px] font-['Nunito'] text-gray-500 uppercase tracking-widest leading-none mb-0.5">Room</p>
-      <p className="text-lg font-['Fredoka_One'] text-[#FFE66D] tracking-widest leading-tight">{state.roomCode}</p>
-    </div>
-  );
-};
 
-const SoundToggle = () => {
-  const [muted, setMuted] = useState(() => soundManager.muted);
-  const handleToggle = () => {
-    const nowMuted = soundManager.toggleMute();
-    setMuted(nowMuted);
-    if (!nowMuted) soundManager.playClick();
-  };
-  return (
-    <button
-      onClick={handleToggle}
-      title={muted ? 'Unmute sounds' : 'Mute sounds'}
-      className="absolute top-4 end-20 bg-[#2D2D44] text-white px-3 py-1 rounded-full text-sm font-bold z-50 border border-gray-600 hover:bg-[#4ECDC4] hover:text-black transition"
-      aria-label={muted ? 'Unmute sounds' : 'Mute sounds'}
-    >
-      {muted ? '🔇' : '🔊'}
-    </button>
-  );
-};
 
-const LangSwitcher = () => {
-  const { state, dispatch } = useGame();
-  const [open, setOpen] = useState(false);
-
-  const setLanguage = (lang) => {
-    dispatch({ type: 'SET_LANG', payload: lang });
-    setOpen(false);
-  };
-
-  const labels = {
-    en: 'EN 🇬🇧',
-    fr: 'FR 🇫🇷',
-    he: 'HE 🇮🇱'
-  };
-
-  return (
-    <div className="fixed top-4 end-4 z-[9999]">
-      <button 
-        onClick={() => setOpen(!open)} 
-        className="bg-[#2D2D44] text-white px-3 py-1 rounded-full text-sm font-bold border border-gray-600 hover:bg-[#FFE66D] hover:text-black transition flex items-center gap-1"
-      >
-        {labels[state.lang] || 'EN 🇬🇧'}
-        <span className="text-[10px]">{open ? '▲' : '▼'}</span>
-      </button>
-      <AnimatePresence>
-        {open && (
-          <motion.div 
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            className="absolute top-full mt-2 end-0 bg-[#1A1A2E] border border-[#2D2D44] rounded-lg shadow-xl overflow-hidden flex flex-col min-w-[100px]"
-          >
-            {Object.entries(labels).map(([lang, label]) => (
-              <button
-                key={lang}
-                onClick={() => setLanguage(lang)}
-                className={`px-4 py-2 text-start hover:bg-[#2D2D44] text-sm transition-colors ${state.lang === lang ? 'text-[#4ECDC4] font-bold' : 'text-white'}`}
-              >
-                {label}
-              </button>
-            ))}
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
-};
 
 function App() {
   useEffect(() => {
@@ -239,8 +149,6 @@ function App() {
       <ErrorBoundary>
         <GameProvider>
           <LangWrapper>
-            <SoundToggle />
-            <LangSwitcher />
             <Routes>
               {/* Host / TV screen */}
               <Route path="/host" element={<HostPage />} />
@@ -249,8 +157,7 @@ function App() {
               <Route path="/*" element={
                 <SocketHandler>
                   <div className="font-['Nunito'] min-h-screen bg-[#0D0D1A] text-[#F7F7F7] relative">
-                    <RoomCodeBadge />
-                    <GlobalTimerOverlay />
+                    <PlayerTopBar />
                     <AnimatedRoutes />
                     <ConnectionOverlay />
                   </div>

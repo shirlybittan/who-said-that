@@ -1546,7 +1546,7 @@ function setupDtGame(io, socket, {
         const [activeDrawerId] = activeDrawerEntry;
         const drawerPlayer = room.players.find(p => p.id === activeDrawerId);
         if (drawerPlayer?.socketId) {
-          io.to(getPlayerSocket(drawerPlayer)).emit('dt:turn_timer', { promptId, secondsLeft: chain.secondsLeft });
+          io.to(getPlayerSocket(drawerPlayer)).emit('dt:turn_timer', { promptId, secondsLeft: chain.secondsLeft, total: DT_DRAW_SECS });
         }
         io.to(code).emit('dt:drawer_timer', { playerId: activeDrawerId, secondsLeft: chain.secondsLeft });
       }
