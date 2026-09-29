@@ -876,6 +876,8 @@ export const gameReducer = (state, action) => {
         phase: action.payload.isFinal ? 'selfieEnd' : 'selfie',
         selfie: {
           ...state.selfie,
+          isFinal: !!action.payload.isFinal,
+          round: action.payload.round ?? state.selfie.round,
           phase: 'results',
           submissions: action.payload.submissions,
           scores: action.payload.scores || {},

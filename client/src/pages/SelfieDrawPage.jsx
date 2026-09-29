@@ -5,7 +5,7 @@ import { socket } from '../socket';
 import { useSounds } from '../hooks/useSounds';
 import { CANVAS_W, CANVAS_H, drawStroke, redrawOverlay } from '../utils/canvasUtils';
 import { useFullscreen } from '../hooks/useFullscreen';
-import TimerRing from '../components/game/TimerRing';
+import { saveStrokes, loadStrokes, clearStrokes } from '../utils/strokeAutosave';
 import MiniGameWrapper from '../components/MiniGameWrapper.jsx';
 import { useMiniGameLifecycle } from '../hooks/useMiniGameLifecycle.js';
 
@@ -40,13 +40,25 @@ export default function SelfieDrawPage() {
   const [strokeCount, setStrokeCount] = useState(0);
   const { isFullscreen, containerRef, toggleFullscreen } = useFullscreen();
 
-  // Ensure canvas is transparent to show photo underneath
+  // Autosave the in-progress drawing (as DrawingPage does) so "Retake Photo",
+  // a refresh or a phone sleep doesn't lose it (AUDIT.md P2-27).
+  const autosaveKey = state.roomCode && state.playerId ? `${state.roomCode}:${state.playerId}:selfie:${selfie.round || 1}` : null;
+
+  // Ensure canvas is transparent to show photo underneath, then restore autosave
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
-  }, []);
+    const saved = loadStrokes(autosaveKey);
+    if (saved && saved.length) {
+      strokesRef.current = saved;
+      setStrokeCount(saved.length);
+      redrawOverlay(canvas, saved);
+    }
+  }, [autosaveKey]);
+
+  useEffect(() => { saveStrokes(autosaveKey, strokesRef.current); }, [strokeCount, autosaveKey]);
 
   // When the host changes the prompt mid-round, clear existing strokes and let player re-draw
   const prevPromptRef = useRef(selfie.assignedPrompt);
@@ -54,6 +66,7 @@ export default function SelfieDrawPage() {
     if (prevPromptRef.current !== null && prevPromptRef.current !== selfie.assignedPrompt && selfie.assignedPrompt !== null) {
       strokesRef.current = [];
       setStrokeCount(0);
+      clearStrokes(autosaveKey);
       if (canvasRef.current) redrawOverlay(canvasRef.current, []);
     }
     prevPromptRef.current = selfie.assignedPrompt;
@@ -168,7 +181,7 @@ export default function SelfieDrawPage() {
         <h1 className="text-2xl font-['Fredoka_One'] text-[#FF6B6B] mt-4">🎨 Draw on {selfie.assignedOwnerName}'s selfie!</h1>
         {selfie.phase === 'drawing' && (
           <div className="mt-4 flex-shrink-0">
-            <TimerRing secondsLeft={selfie.secondsLeft ?? 90} total={selfie.timeLimit || 90} size={52} />
+            {/* Countdown: shell GameTimer (selfie:timer). */}
           </div>
         )}
       </div>
@@ -257,8 +270,14 @@ export default function SelfieDrawPage() {
                 <button onClick={handleClear} className="bg-[#2D2D44] text-white px-3 py-1 rounded-lg font-['Nunito'] text-xs hover:bg-[#3D3D54] transition">🗑</button>
               )}
               <button
-                onClick={confirm}
-                className="bg-[#FF6B6B] text-white font-['Fredoka_One'] text-sm px-4 py-1.5 rounded-xl hover:bg-[#e05a5a] transition"
+                data-testid="selfie-fullscreen-submit"
+                onClick={() => {
+                  // After the first submit this re-sends the current drawing (update).
+                  if (hasConfirmed) socket.emit('selfie:submit_drawing', { code: state.roomCode, strokes: strokesRef.current });
+                  else if (strokeCount > 0) confirm();
+                }}
+                disabled={!hasConfirmed && strokeCount === 0}
+                className="bg-[#FF6B6B] text-white font-['Fredoka_One'] text-sm px-4 py-1.5 rounded-xl hover:bg-[#e05a5a] transition disabled:opacity-40"
               >
                 {hasConfirmed ? '↑ Update' : 'Submit ✓'}
               </button>

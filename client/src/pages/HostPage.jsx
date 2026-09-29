@@ -1919,10 +1919,10 @@ function SelfieHostPanel({ selfieData, players, onSkipToVote, onShowResults }) {
   if (selfieData.phase === 'results') {
     return (
       <div className="flex flex-col items-center gap-8 w-full max-w-4xl" data-testid="host-question-screen">
-        <h1 className="text-4xl font-['Fredoka_One'] text-[#FD79A8]">🎨 Selfie Artist — Results{roundLabel}!</h1>
+        <h1 className="text-4xl font-['Fredoka_One'] text-[#FD79A8]">{gameLabel('selfie-roast')} — Results{roundLabel}</h1>
         <div className="w-full flex flex-col gap-3">
           {(selfieData.leaderboard || []).map((entry, i) => (
-            <motion.div key={entry.playerId} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }}
+            <motion.div key={entry.playerId || entry.id || i} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }}
               className="flex items-center gap-4 rounded-2xl px-5 py-4"
               style={i === 0 ? { background: 'linear-gradient(135deg, #FD79A820, #FFE66D20)', border: '2px solid #FD79A8' } : { background: '#1A1A2E', border: '1px solid #2D2D44' }}>
               <span className="text-2xl w-10 text-center">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}</span>
@@ -1980,7 +1980,7 @@ function SelfieHostPanel({ selfieData, players, onSkipToVote, onShowResults }) {
   return (
     <div className="flex flex-col items-center gap-6 w-full max-w-xl">
       <p className="text-5xl">📸</p>
-      <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">Selfie Artist</h1>
+      <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">{gameLabel('selfie-roast')}</h1>
       <p className="text-gray-400 font-['Nunito']">Players are taking their selfies...</p>
       <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
         <div className="flex items-center justify-between mb-3">
