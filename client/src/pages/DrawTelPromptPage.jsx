@@ -22,7 +22,7 @@ export default function DrawTelPromptPage() {
     dispatch({ type: 'DT_MARK_PROMPT_SUBMITTED' });
   };
 
-  const { hasConfirmed, confirm, editResponse, markConfirmed } = useMiniGameLifecycle({
+  const { hasConfirmed, confirm, markConfirmed } = useMiniGameLifecycle({
     onSubmit: doSubmit,
     resetKey: dt.round,
     initialConfirmed: dt.hasSubmittedPrompt,
@@ -98,9 +98,9 @@ export default function DrawTelPromptPage() {
         <MiniGameWrapper
           hasConfirmed={hasConfirmed}
           onConfirm={confirm}
-          onEditResponse={editResponse}
-          confirmLabel={dt.hasSubmittedPrompt ? 'Update Prompt' : 'Submit Prompt'}
-          editLabel="✏️ Edit Prompt"
+          // Prompts are final once submitted (the server accepts one per player).
+          onEditResponse={null}
+          confirmLabel="Submit Prompt"
           disableConfirm={!canSubmit}
           isHost={state.isHost}
           waitingMessage={`Waiting for others… (${dt.promptsSubmittedCount}/${dt.totalPrompts})`}

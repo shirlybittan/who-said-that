@@ -1452,14 +1452,21 @@ function setupDtGame(io, socket, {
   };
 
   // Helper: start the drawing timer for a specific chain
-  const startDtChainTimer = (io, room, code, promptId) => {
+  const startDtChainTimer = (io, room, code, promptId, { resume = false } = {}) => {
     const chain = room.dt.chains[promptId];
     if (!chain) return;
-    // Always reset the timer to a full turn for each new participant
-    chain.secondsLeft = DT_DRAW_SECS;
+    // A new participant gets a full turn; resuming after a pause keeps the time
+    // that was left (it used to reset every chain to 45s — AUDIT.md P2-28).
+    if (!resume || !(chain.secondsLeft > 0)) chain.secondsLeft = DT_DRAW_SECS;
     // Clear any stale interval that may still be running
     if (chain.timerRef) { clearInterval(chain.timerRef); chain.timerRef = null; }
     chain.timerRef = setInterval(() => {
+      // The game ended or moved on (e.g. host pressed End game): stop ticking.
+      if (room.phase !== 'dt' || room.dt.phase !== 'drawing') {
+        clearInterval(chain.timerRef);
+        chain.timerRef = null;
+        return;
+      }
       chain.secondsLeft--;
       // (activeTurns maps playerId→promptId, so invert the lookup)
       const activeDrawerEntry = Object.entries(room.dt.activeTurns).find(([, pid]) => pid === promptId);
@@ -1490,6 +1497,7 @@ function setupDtGame(io, socket, {
 
   // Helper: called when a turn times out — submits empty/current strokes for that turn
   const autoSubmitDtTurn = (io, room, code, promptId) => {
+    if (room.phase !== 'dt') return; // game ended during the grace window
     const chain = room.dt.chains[promptId];
     if (!chain || chain.phase !== 'drawing') return;
     const drawerEntry = Object.entries(room.dt.activeTurns).find(([, pid]) => pid === promptId);
@@ -1568,6 +1576,7 @@ function setupDtGame(io, socket, {
 
   // Helper: start guessing phase — target players see final drawing
   const startDtGuessingPhase = (io, room, code) => {
+    if (room.phase !== 'dt' || room.dt.phase !== 'drawing') return; // ended / already guessing
     room.dt.phase = 'guessing';
     const totalGuessers = Object.keys(room.dt.chains).length;
 
@@ -1971,7 +1980,7 @@ function setupDtGame(io, socket, {
     if (!room || room.phase !== 'dt' || room.dt.phase !== 'guessing') return;
     const player = findPlayer(room, socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
-    if (room.dt.guesses[promptId]) return; // already guessed
+    // A guess can be edited until the guessing phase closes (product decision).
 
     // Only the target of this chain can guess
     const chain = room.dt.chains[promptId];
@@ -1981,7 +1990,9 @@ function setupDtGame(io, socket, {
     const sanitized = guessText.trim().slice(0, 200);
     if (!sanitized) return;
 
+    const isUpdate = room.dt.guesses[promptId] !== undefined;
     room.dt.guesses[promptId] = sanitized;
+    if (isUpdate) return; // counts / completion only change on the first guess
 
     const totalGuessers = Object.keys(room.dt.chains).length;
     const guessedCount = Object.keys(room.dt.guesses).length;
@@ -2097,6 +2108,14 @@ function setupDtGame(io, socket, {
   });
 
   const endDtGame = (io, room, code) => {
+    // Stop every Draw Telephone timer: per-chain turn intervals, the prompt
+    // timeout and the phase timers. Chains used to keep ticking after "End game"
+    // and later broadcast dt:guessing_phase into the finished game (P1-09).
+    for (const chain of Object.values(room.dt.chains || {})) {
+      if (chain.timerRef) { clearInterval(chain.timerRef); chain.timerRef = null; }
+    }
+    if (room.dt.promptTimerRef) { clearTimeout(room.dt.promptTimerRef); room.dt.promptTimerRef = null; }
+    cancelAllTimers(room);
     room.dt.phase = 'end';
     room.phase = 'dtEnd';
 
@@ -2189,7 +2208,7 @@ function setupDtGame(io, socket, {
       room._timers.dtPrompt.resume();
     } else if (room.dt.phase === 'drawing') {
       for (const promptId of Object.values(room.dt.activeTurns)) {
-        startDtChainTimer(io, room, code, promptId);
+        startDtChainTimer(io, room, code, promptId, { resume: true });
       }
     } else if (room.dt.phase === 'guessing' && room._timers?.dtGuess) {
       room._timers.dtGuess.resume();

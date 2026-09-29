@@ -58,12 +58,14 @@ export default function MiniGameWrapper({
           <p className="text-[#4ECDC4] font-['Nunito'] text-sm text-center animate-pulse">
             ✓ {waitingMessage}
           </p>
+          {onEditResponse && (
           <button
             onClick={onEditResponse}
             className="w-full py-3 rounded-2xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FFE66D] hover:text-[#FFE66D] transition active:scale-95"
           >
             {editLabel}
           </button>
+          )}
         </div>
       )}
 
