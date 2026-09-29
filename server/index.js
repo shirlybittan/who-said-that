@@ -26,6 +26,12 @@ const eventLog = require('./game/eventLog');
 const { sanitizeStrokes, clampText, createRateLimiter, MAX_ANSWER } = require('./game/limits');
 const { renderDashboard } = require('./admin/dashboard');
 const log = require('./logger');
+const { hardenSocket } = require('./game/safeSocket');
+
+// Last-resort guard: a bug in a timer callback or handler must not take down
+// every room. Socket handlers are already wrapped by hardenSocket (below).
+process.on('uncaughtException', (err) => log.error('uncaughtException', { err: err?.stack || String(err) }));
+process.on('unhandledRejection', (err) => log.error('unhandledRejection', { err: err?.stack || String(err) }));
 
 // Per-socket flood guard. Generous so normal play never trips it.
 const rateLimiter = createRateLimiter({ windowMs: 1000, max: 80 });
@@ -760,6 +766,7 @@ function getPlayerSocket(player) {
 // ────────────────────────────────────────────────────────────────────────────
 
 io.on('connection', (socket) => {
+  hardenSocket(socket, log);
   log.debug('socket connected', { id: socket.id });
 
   // ─── Flood guard ────────────────────────────────────────────────────────────
