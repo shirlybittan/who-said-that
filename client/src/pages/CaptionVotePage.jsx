@@ -5,6 +5,8 @@ import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
 import GamePageWrapper from '../components/GamePageWrapper.jsx';
 import ConfirmVoteCard from '../game-core/player/ConfirmVoteCard';
+import VoteLocked from '../components/game/VoteLocked';
+import useAutoConfirmPending from '../game-core/hooks/useAutoConfirmPending';
 
 export default function CaptionVotePage() {
   const { state, dispatch } = useGame();
@@ -26,6 +28,7 @@ export default function CaptionVotePage() {
     socket.emit('caption:vote', { code: state.roomCode, captionId: selected });
     dispatch({ type: 'CAPTION_MARK_VOTED', payload: { captionId: selected } });
   };
+  useAutoConfirmPending({ pending: selected, hasVoted: !!caption.hasVoted, onConfirm: handleConfirm });
 
   return (
     <GamePageWrapper>
@@ -62,7 +65,7 @@ export default function CaptionVotePage() {
                   key={c.id}
                   onClick={() => handleSelect(c.id)}
                   disabled={isOwn}
-                  className={`w-full py-4 px-5 rounded-2xl border font-['Nunito'] text-base text-left transition-colors ${
+                  className={`w-full py-4 px-5 rounded-2xl border font-['Nunito'] text-base text-start [overflow-wrap:anywhere] transition-colors ${
                     isOwn
                       ? 'border-gray-700 bg-[#1A1A2E]/50 text-gray-500 cursor-not-allowed'
                       : isSelected
@@ -72,8 +75,8 @@ export default function CaptionVotePage() {
                       : 'bg-[#1A1A2E] border-gray-600 text-white hover:border-[#FD79A8] hover:bg-[#FD79A8]/10'
                   }`}
                 >
-                  {isOwn ? <span className="mr-2 text-xs text-gray-500">(yours)</span> : null}
-                  {isSelected && <span className="mr-2">👆</span>}
+                  {isOwn ? <span className="me-2 text-xs text-gray-500">(yours)</span> : null}
+                  {isSelected && <span className="me-2">👆</span>}
                   {c.text}
                 </button>
               );
@@ -90,9 +93,7 @@ export default function CaptionVotePage() {
                 }}
                 onConfirm={handleConfirm}
                 onChange={() => setSelected(null)}
-                confirmLabel="✓ Confirm"
-                changeLabel="← Change"
-                titleLabel="Confirm your vote?"
+                accentColor="#FD79A8"
               />
             );
           })()}
@@ -102,19 +103,17 @@ export default function CaptionVotePage() {
             {(caption.captions || []).map((c) => (
               <div
                 key={c.id}
-                className={`w-full py-4 px-5 rounded-2xl border font-['Nunito'] text-base text-left transition-colors ${
+                className={`w-full py-4 px-5 rounded-2xl border font-['Nunito'] text-base text-start [overflow-wrap:anywhere] transition-colors ${
                   c.id === caption.myVote
                     ? 'border-[#FD79A8] bg-[#FD79A8]/20 text-white'
                     : 'border-gray-700 bg-[#1A1A2E]/50 text-gray-500'
                 }`}
               >
-                {c.id === caption.myVote && <span className="mr-2">✅</span>}
+                {c.id === caption.myVote && <span className="me-2">✅</span>}
                 {c.text}
               </div>
             ))}
-            <p className="text-gray-500 font-['Nunito'] text-sm text-center mt-2">
-              {caption.voteCount} / {caption.totalVoters} votes in
-            </p>
+            <VoteLocked voteCount={caption.voteCount} totalVoters={caption.totalVoters} accentColor="#FD79A8" />
           </div>
         )}
       </motion.div>

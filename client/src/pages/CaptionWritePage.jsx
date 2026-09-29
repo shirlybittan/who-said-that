@@ -6,6 +6,7 @@ import { useSounds } from '../hooks/useSounds';
 import GamePageWrapper from '../components/GamePageWrapper.jsx';
 import MiniGameWrapper from '../components/MiniGameWrapper.jsx';
 import { useMiniGameLifecycle } from '../hooks/useMiniGameLifecycle.js';
+import useAutoConfirmPending from '../game-core/hooks/useAutoConfirmPending';
 
 export default function CaptionWritePage() {
   const { state, dispatch } = useGame();
@@ -15,8 +16,6 @@ export default function CaptionWritePage() {
   const MAX_LEN = 140;
 
   const isFeaturedOwner = state.playerId === caption.featuredOwnerId;
-  const writingSecondsLeft = caption.writingSecondsLeft ?? 60;
-  const writingTimerActive = caption.writingTimerActive ?? false;
 
   const doSubmit = () => {
     const trimmed = text.trim();
@@ -35,32 +34,10 @@ export default function CaptionWritePage() {
     initialConfirmed: caption.hasWrittenCaption,
   });
 
-  // Keep latest text accessible to the timer effect without stale closures
-  const autoSubmitRef = useRef({ text });
-  useEffect(() => { autoSubmitRef.current = { text }; });
-
-  // Track whether the timer ever became active (guard against firing before the game starts)
-  const timerWasActiveRef = useRef(false);
-  useEffect(() => {
-    if (writingTimerActive) timerWasActiveRef.current = true;
-  }, [writingTimerActive]);
-
-  // Auto-submit when the server writing timer hits 0
-  useEffect(() => {
-    if (hasConfirmed) return;
-    if (caption.phase !== 'writing') return;
-    if (!timerWasActiveRef.current) return;
-    if (writingSecondsLeft <= 0 && writingTimerActive === false) {
-      const trimmed = autoSubmitRef.current.text.trim();
-      const textToSubmit = trimmed || "I couldn't think of anything funny in time! 🕒";
-      socket.emit('caption:submit_caption', { code: state.roomCode, text: textToSubmit });
-      if (!caption.hasWrittenCaption) {
-        dispatch({ type: 'CAPTION_MARK_CAPTION_WRITTEN' });
-      }
-      markConfirmed();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [writingSecondsLeft, writingTimerActive, hasConfirmed, caption.phase]);
+  // The writing phase is server-timed (phase_timer → shell timer). A caption
+  // typed but not submitted is sent on the last second instead of being lost
+  // (the old client countdown here read fields nothing ever set).
+  useAutoConfirmPending({ pending: text.trim() ? text : null, hasVoted: hasConfirmed, onConfirm: confirm });
 
   return (
     <GamePageWrapper>
@@ -70,16 +47,11 @@ export default function CaptionWritePage() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3, ease: 'easeOut' }}
       >
-        <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8] mt-6 mb-1">Write a Caption! ✍️</h1>
+        <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8] mt-2 mb-1">Write a Caption! ✍️</h1>
         <div className="flex items-center gap-4 mb-1">
           <p className="text-gray-400 font-['Nunito'] text-sm text-center">
             Round {caption.round} of {caption.totalRounds}
           </p>
-          {writingTimerActive && !hasConfirmed && (
-            <p className={`text-sm font-bold font-['Nunito'] tabular-nums ${writingSecondsLeft <= 5 ? 'text-red-400 animate-pulse' : writingSecondsLeft <= 15 ? 'text-orange-400' : 'text-gray-400'}`}>
-              ⏳ {writingSecondsLeft}s
-            </p>
-          )}
         </div>
         {isFeaturedOwner && (
           <p className="text-xs text-[#FD79A8] font-['Nunito'] mb-1">📸 It's your photo — write a caption about yourself!</p>

@@ -1126,7 +1126,7 @@ export const gameReducer = (state, action) => {
     case 'CAPTION_GAME_OVER':
       return {
         ...state,
-        caption: { ...state.caption, phase: 'ended', scores: action.payload.scores },
+        caption: { ...state.caption, phase: 'ended', scores: action.payload.scores, leaderboard: action.payload.leaderboard || [] },
       };
     case 'CAPTION_RESTARTED':
       return {
