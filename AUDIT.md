@@ -685,3 +685,18 @@ Shared fixes come first. Each bullet is one commit and is re-verified with the P
 11. **Selfie per-round results.** Should Draw on Friends show a round-results screen (like the other games) with a separate final screen?
 12. **Intro screen gating.** Should the intro auto-start after a countdown, or wait for "ready" from every phone (with a host override)?
 13. **Photo Vote targets.** Votes for players without a photo, or who are disconnected, are accepted. Is that allowed?
+
+---
+
+## 10. Fix log
+
+Status of each finding as it is fixed (Phase 4). "Verified by" names the scenario that was re-run against the running app.
+
+| ID | Status | Commit | Verified by |
+|---|---|---|---|
+| P0-01 | ✅ fixed | 8d6b230 | Socket fuzz: 23 events × 4 payload shapes (none, null, string, wrong types); server stays up, errors logged |
+| P0-02 | ✅ fixed | 88b841f | WST question → server restart → rejoin → submit answer: accepted, no error. Jest: helpers stripped on save/restore, MLT template rehydrates |
+| P0-03 | ✅ fixed | 248f3e0 | `caption:start` / `photovote:start` / `start_game` / `mlt:start` / `dt:start` with 1 player → `game:start_rejected` with a reason (TV toast, back to lobby); caption owner picked among players with photos |
+| P1-06 | ✅ fixed | 248f3e0 | Full Caption game → TV "Game Over!" + Play Again / ▶ Next / New Party Pack; Photo Vote the same |
+| P0-04 | ✅ fixed | ae13219 | Playlist Selfie Challenge → Selfie Captions (photos banked): phones go straight to `/caption-write` and play |
+| P3-12 | ✅ fixed | 248f3e0 | Caption / Photo Vote final boards include 0-point players |
