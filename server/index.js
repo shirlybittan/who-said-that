@@ -529,10 +529,7 @@ const emitWstQuestion = (io, room, code) => {
         room.currentQuestionIndex++;
         emitNextQuestion(io, room, code);
       } else {
-        room.phase = 'gameEnd';
-        const finalStats = require('./game/gameLogic').computeStats(room.players, room.answers, room.scores);
-        io.to(code).emit('game_ended', { finalScores: room.scores, players: room.players, stats: finalStats });
-        mergeToGlobalScores(io, room, room.scores);
+        endClassicGame(io, room, code, room.answers);
       }
       return;
     }
@@ -783,6 +780,31 @@ function recheckThresholds(io, room) {
   } catch (err) {
     log.error('recheckThresholds failed', { code, err: err?.stack || String(err) });
   }
+}
+
+// ─── Game end for the question-based games (WST, Situational, ToT, Mixed) ───
+// Mixed packs keep ToT points in room.tot.scores and Drawing points in
+// room.draw.scores; the final board used to show only whichever map belonged
+// to the last round (AUDIT.md P1-08). Mixed now sums every sub-game.
+function classicFinalScores(room) {
+  if (room.gameType !== 'mixed') {
+    return room.gameType === 'this-or-that' ? { ...(room.tot?.scores || {}) } : { ...(room.scores || {}) };
+  }
+  const total = {};
+  for (const part of [room.scores, room.tot?.scores, room.draw?.mixedMode ? room.draw?.scores : null]) {
+    for (const [pid, pts] of Object.entries(part || {})) {
+      if (typeof pts === 'number') total[pid] = (total[pid] || 0) + pts;
+    }
+  }
+  return total;
+}
+
+function endClassicGame(io, room, code, answers = []) {
+  room.phase = 'gameEnd';
+  const finalScores = classicFinalScores(room);
+  const finalStats = require('./game/gameLogic').computeStats(room.players, answers || [], finalScores);
+  io.to(code).emit('game_ended', { finalScores, players: room.players, stats: finalStats });
+  mergeToGlobalScores(io, room, finalScores);
 }
 
 // Cancel all active game timers for a room (called before starting a new game)
@@ -1048,6 +1070,9 @@ io.on('connection', (socket) => {
       room.questions = selectMixedQuestions(mixedCount, room.mode, room.customQuestions, mixedTypes);
       room.miniGameSelectedTypes = mixedTypes;
       room.miniGamePlayedTypes = [];
+      // Fresh per-sub-game score maps (tot scores used to leak across games).
+      room.tot.scores = {};
+      if (room.draw) room.draw.scores = {};
     } else {
       // who-said-that
       room.questions = selectQuestions(room.mode, count, room.customQuestions);
@@ -1354,10 +1379,7 @@ io.on('connection', (socket) => {
       room.currentQuestionIndex++;
       emitNextQuestion(io, room, code);
     } else {
-      room.phase = 'gameEnd';
-      const finalStats = require('./game/gameLogic').computeStats(room.players, room.answers, room.scores);
-      io.to(code).emit('game_ended', { finalScores: room.scores, players: room.players, stats: finalStats });
-      mergeToGlobalScores(io, room, room.scores);
+      endClassicGame(io, room, code, room.answers);
     }
   });
 
@@ -1427,10 +1449,7 @@ io.on('connection', (socket) => {
       room.currentQuestionIndex++;
       emitNextQuestion(io, room, code);
     } else {
-      room.phase = 'gameEnd';
-      const finalStats = require('./game/gameLogic').computeStats(room.players, room.answers, room.scores);
-      io.to(code).emit('game_ended', { finalScores: room.scores, players: room.players, stats: finalStats });
-      mergeToGlobalScores(io, room, room.scores);
+      endClassicGame(io, room, code, room.answers);
     }
   });
 
@@ -1477,10 +1496,7 @@ io.on('connection', (socket) => {
       if (room.gameType === 'this-or-that') {
         totGame.sendEnd(io, room, code);
       } else {
-        room.phase = 'gameEnd';
-        const finalStats = require('./game/gameLogic').computeStats(room.players, [], room.tot.scores);
-        io.to(code).emit('game_ended', { finalScores: room.tot.scores, players: room.players, stats: finalStats });
-        mergeToGlobalScores(io, room, room.tot.scores);
+        endClassicGame(io, room, code, []);
       }
       return;
     }
@@ -1500,9 +1516,7 @@ io.on('connection', (socket) => {
       if (room.gameType === 'this-or-that') {
         totGame.sendEnd(io, room, code);
       } else {
-        room.phase = 'gameEnd';
-        io.to(code).emit('game_ended', { finalScores: room.tot.scores, players: room.players, stats: {} });
-        mergeToGlobalScores(io, room, room.tot.scores);
+        endClassicGame(io, room, code, []);
       }
       return;
     }
@@ -2237,11 +2251,7 @@ io.on('connection', (socket) => {
         room.currentQuestionIndex++;
         room.currentRound++;
         if (room.currentQuestionIndex >= room.questions.length) {
-          room.phase = 'gameEnd';
-          const { computeStats } = require('./game/gameLogic');
-          const finalStats = computeStats(room.players, [], room.scores);
-          io.to(code).emit('game_ended', { finalScores: room.scores, players: room.players, stats: finalStats });
-          mergeToGlobalScores(io, room, room.scores);
+          endClassicGame(io, room, code, []);
         } else {
           emitNextQuestion(io, room, code);
         }
@@ -2701,7 +2711,8 @@ io.on('connection', (socket) => {
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     room.globalScores = {};
-    io.to(code).emit('global_scores_updated', { globalScores: {}, leaderboard: [] });
+    const leaderboard = room.players.filter(p => p.isPlaying).map(p => ({ id: p.id, name: p.name, color: p.color, score: 0 }));
+    io.to(code).emit('global_scores_updated', { globalScores: {}, leaderboard });
   });
 
   socket.on('remove_from_global_scores', ({ code, playerId }) => {

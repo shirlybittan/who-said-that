@@ -635,6 +635,34 @@ function RoundEndPanel({ roundEndData, players }) {
   );
 }
 
+const END_STATUSES = ['game-end', 'mlt-end', 'tot-end', 'draw-end', 'fitb-end', 'selfie-results', 'dt-end', 'caption-end', 'photovote-end'];
+
+// Running total across every game played in this room (playlist / mixed).
+function PartyScoreboard({ leaderboard, isFinal, onReset }) {
+  return (
+    <div data-testid="party-scoreboard" className="w-full max-w-3xl mt-8 bg-[#1A1A2E] border-2 border-[#FFE66D]/40 rounded-2xl p-5">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="font-['Fredoka_One'] text-2xl text-[#FFE66D]">{isFinal ? '🏆 Final Party Scoreboard' : '📊 Party Totals'}</h2>
+        {onReset && (
+          <button onClick={onReset} className="px-4 py-1.5 rounded-xl text-sm font-['Fredoka_One'] border-2 border-[#FF6B6B]/60 text-[#FF6B6B] hover:bg-[#FF6B6B]/10 active:scale-95 transition">
+            🧹 Reset points
+          </button>
+        )}
+      </div>
+      <ol className="flex flex-col gap-2">
+        {leaderboard.map((e, i) => (
+          <li key={e.id} className="flex items-center gap-3 font-['Nunito']">
+            <span className="w-8 text-center font-['Fredoka_One'] text-lg text-gray-400">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}</span>
+            <span className="w-8 h-8 rounded-full flex items-center justify-center text-black font-bold" style={{ backgroundColor: e.color }}>{e.name?.charAt(0).toUpperCase()}</span>
+            <span className="flex-1 text-white text-lg">{e.name}</span>
+            <span className="font-['Fredoka_One'] text-xl text-[#FFE66D]">{e.score}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
 // Caption / PhotoVote send a [{id, pts}] leaderboard; GameEndPanel wants {id: score}.
 const pointsToScores = (leaderboard, scores) => (
   (leaderboard && leaderboard.length)
@@ -2733,6 +2761,8 @@ export default function HostPage() {
   const [errorMsg, setErrorMsg] = useState('');
   // Transient, non-fatal message (e.g. a start rejected for too few players).
   const [notice, setNotice] = useState('');
+  // Cumulative party scores across games (playlist / mixed / repeated games).
+  const [partyLeaderboard, setPartyLeaderboard] = useState([]);
   useEffect(() => {
     if (!notice) return undefined;
     const t = setTimeout(() => setNotice(''), 6000);
@@ -3340,6 +3370,11 @@ export default function HostPage() {
     sock.on('dt:resumed', () => {
       if (!isActiveSock()) return;
       setDtData(prev => ({ ...prev, paused: false }));
+    });
+
+    sock.on('global_scores_updated', ({ leaderboard }) => {
+      if (!isActiveSock()) return;
+      setPartyLeaderboard(leaderboard || []);
     });
 
     sock.on('game_changed', ({ gameType, players: p, gameName }) => {
@@ -4093,6 +4128,13 @@ export default function HostPage() {
               transition={{ duration: 0.3, ease: [0.2, 0.8, 0.2, 1] }}
             >
               {renderPanel()}
+              {END_STATUSES.includes(status) && (gameQueue.length > 1 || gameInfo.gameType === 'mixed') && partyLeaderboard.length > 0 && (
+                <PartyScoreboard
+                  leaderboard={partyLeaderboard}
+                  isFinal={!(gameQueue.length > 1 && queueIndex < gameQueue.length - 1)}
+                  onReset={isRoomCreator ? () => socketRef.current?.emit('reset_global_scores', { code: gameInfo.code }) : null}
+                />
+              )}
             </motion.div>
           </AnimatePresence>
         </div>
