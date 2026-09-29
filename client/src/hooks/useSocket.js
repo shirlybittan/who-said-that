@@ -3,6 +3,7 @@ import { socket } from '../socket';
 import { useGame } from '../store/gameStore.jsx';
 import { useNavigate } from 'react-router-dom';
 import { buildJoinRestorePlan } from '../utils/rejoinState.js';
+import { phaseForEvent } from '../game-core/phaseEvents';
 
 export const useSocket = () => {
   const { state, dispatch } = useGame();
@@ -477,6 +478,15 @@ export const useSocket = () => {
     };
     // ────────────────────────────────────────────────────────────────────────
 
+    // Keep state.phase in lock-step with the server for every phase-bearing
+    // event (see game-core/phaseEvents.js). onAny runs before the specific
+    // listeners, so a reducer that sets a more precise phase still wins.
+    const onAnyEvent = (event) => {
+      const phase = phaseForEvent(event);
+      if (phase) dispatch({ type: 'SET_PHASE', payload: phase });
+    };
+    socket.onAny(onAnyEvent);
+
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
     document.addEventListener('visibilitychange', onVisibilityChange);
@@ -745,6 +755,7 @@ export const useSocket = () => {
     socket.on('game_changed', onGameChanged);
 
     return () => {
+      socket.offAny(onAnyEvent);
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
       document.removeEventListener('visibilitychange', onVisibilityChange);

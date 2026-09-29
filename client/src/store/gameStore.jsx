@@ -864,7 +864,8 @@ export const gameReducer = (state, action) => {
     case 'SELFIE_RESULTS':
       return {
         ...state,
-        phase: 'selfieEnd',
+        // Only the final round ends the game; per-round results stay in 'selfie'.
+        phase: action.payload.isFinal ? 'selfieEnd' : 'selfie',
         selfie: {
           ...state.selfie,
           phase: 'results',
