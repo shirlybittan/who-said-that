@@ -700,3 +700,25 @@ Status of each finding as it is fixed (Phase 4). "Verified by" names the scenari
 | P1-06 | ✅ fixed | 248f3e0 | Full Caption game → TV "Game Over!" + Play Again / ▶ Next / New Party Pack; Photo Vote the same |
 | P0-04 | ✅ fixed | ae13219 | Playlist Selfie Challenge → Selfie Captions (photos banked): phones go straight to `/caption-write` and play |
 | P3-12 | ✅ fixed | 248f3e0 | Caption / Photo Vote final boards include 0-point players |
+| P1-01 | ✅ fixed | f0f1ed5 | Socket double `next_answer_request` → one advance; player-sent advance ignored; TV double-click on ToT Next Round → round 2 (was 3) |
+| P1-04 | ✅ fixed | e5d187b | Pick 5 rounds on the TV → "ROUND 1 OF 5" for WST, ToT, Situational |
+| P1-07 | ✅ fixed | 00d63c8 | Late joiner waits in the lobby (TV 0/3), is admitted at round 2 (TV x/4) and their answer counts |
+| P2-01 | ✅ fixed | 00d63c8 | Tab closed while pending → voting starts 0.2 s later (was: full timer) |
+| P2-02 | ✅ fixed | 00d63c8 | Jest: a submitter who left can't complete the phase for someone still typing |
+| P1-14 | ✅ fixed | 9fb082e | WST game: `join_room` re-sends per phone 12 → 0 (145 KB of snapshots saved) |
+| P1-09 | ✅ fixed | 19eb7d4 | End game during DT drawing → only `dt:end` arrives afterwards |
+| P1-10 | ✅ fixed (guesses editable, prompts final — per Q2) | 19eb7d4 | Edited guess shown in the reveal; prompt page no longer offers a no-op Edit |
+| P2-28 | ✅ fixed | 19eb7d4 | DT pause at 41 s resumes at 40 s (was 45) |
+| P1-08 | ✅ fixed | 959d872 | Mixed WST + ToT → final 3 + 2 = 5 |
+| P2-20 | ✅ fixed | 959d872 | Playlist MLT → ToT: "Party Totals" then "Final Party Scoreboard" with Reset points (Q6) |
+| P1-05 | ✅ fixed | d1bf0b1 | Caption: Continue from photo (2/3 photos) → writing → voting; unvoted round ends after 30 s; pause freezes; TV shows countdown + Pause + Continue |
+| P1-11 | ✅ fixed | 98ee2b2 | Host identity by key + `tvSocketId`; TV refresh keeps control |
+| P1-12 | ✅ fixed | 98ee2b2 | Jest: hostless room gets a host on the next (re)join |
+| P1-13 | ✅ fixed | 98ee2b2 | Stale handshake ids no longer create players; kick clears the session |
+| P2-31 | ✅ fixed | 98ee2b2 | `/host?room=CODE` without the key is view-only (no Start); key never in snapshots |
+| P2-32 | ✅ fixed | 98ee2b2 | TV dropped → phone host after 45 s, can start the game; TV back with key → host again |
+| P2-34 | ✅ fixed | 98ee2b2 | Phone lobby start covers Prompt Match / Fill in the Blank |
+| Q4 | ✅ implemented | 98ee2b2 | "No TV? Host on this phone" → full WST game played with no TV; "Show on a TV" link in the phone host's lobby |
+| New: lobby URL rewrite | ✅ fixed | 00d63c8 | `LobbyPage` no longer replaces the URL with `/?join=CODE` (a refresh in the lobby used to wipe the session) |
+| New: stuck exit animation | ✅ fixed | 00d63c8 | `AnimatePresence mode="wait"` removed; a late joiner no longer sees the previous page under the new URL |
+| P3-18 (self-kick) | ✅ fixed | 00d63c8 | Host can't kick themselves |
