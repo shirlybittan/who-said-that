@@ -133,6 +133,9 @@ const buildClassicRestore = (room, playerId) => {
 
     const myAnswer = room.answers?.find((answer) => answer.playerId === playerId);
     if (myAnswer) actions.push({ type: 'MARK_ANSWERED', payload: { myAnswer: myAnswer.text } });
+    // Who has answered so far: a refreshed phone used to show "0 / 3" until the
+    // next answer arrived (AUDIT.md P2-03).
+    actions.push({ type: 'ROUND_PROGRESS', payload: { doneIds: (room.answers || []).map((a) => a.playerId), source: 'rejoin' } });
     return actions;
   }
 
