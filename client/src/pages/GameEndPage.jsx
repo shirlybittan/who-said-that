@@ -22,7 +22,6 @@ export default function GameEndPage() {
     <GameEndShell
       title="Game Over! 🎉"
       leaderboard={leaderboard}
-      isHost={true}
       onPlayAgain={handlePlayAgain}
       gameType={state.gameType}
     />
