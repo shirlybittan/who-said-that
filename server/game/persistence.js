@@ -115,10 +115,17 @@ const writeNow = async (roomsMap) => {
   }
 };
 
-// Debounced save — coalesces bursts of mutations into one write.
+// Debounced save — coalesces bursts of mutations into one write, but never
+// waits longer than MAX_WAIT_MS: a busy room used to postpone every save until
+// a lull, so a restart rolled it back to a stale state (AUDIT.md P3-18).
+const MAX_WAIT_MS = 4000;
+let firstPendingAt = 0;
 const scheduleSave = (roomsMap, delay = 1500) => {
+  const now = Date.now();
+  if (!firstPendingAt) firstPendingAt = now;
   if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => { saveTimer = null; writeNow(roomsMap); }, delay);
+  const wait = Math.max(0, Math.min(delay, MAX_WAIT_MS - (now - firstPendingAt)));
+  saveTimer = setTimeout(() => { saveTimer = null; firstPendingAt = 0; writeNow(roomsMap); }, wait);
   // Don't let a pending save keep the process (or a test runner) alive.
   if (saveTimer && typeof saveTimer.unref === 'function') saveTimer.unref();
 };

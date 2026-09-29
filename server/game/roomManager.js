@@ -249,6 +249,8 @@ const evictStaleRooms = (maxAgeMs = 60 * 60 * 1000) => {
   for (const [code, room] of rooms.entries()) {
     const age = now - (room.lastActivityAt || 0);
     if (age < maxAgeMs) continue;
+    // Never evict a room that still has someone connected (P2-35).
+    if ((room.players || []).some(p => p.isConnected)) continue;
 
     // Cancel all timer references to free event-loop slots
     const timerFields = [
@@ -263,6 +265,10 @@ const evictStaleRooms = (maxAgeMs = 60 * 60 * 1000) => {
       room.dt?.voteTimerRef,
     ];
     timerFields.forEach(ref => { if (ref) { try { clearTimeout(ref); clearInterval(ref); } catch (_) {} } });
+    // Shared TimerManager timers and Draw Telephone chain intervals too.
+    Object.values(room._timers || {}).forEach(t => { try { t?.cancel?.(); } catch (_) {} });
+    Object.values(room.dt?.chains || {}).forEach(c => { if (c?.timerRef) clearInterval(c.timerRef); });
+    [room._hostGraceTimer, room._introTimer].forEach(ref => { if (ref) clearTimeout(ref); });
 
     // Drop heavy asset blobs to free memory before GC
     if (room.playerPhotos) room.playerPhotos = {};
@@ -274,6 +280,7 @@ const evictStaleRooms = (maxAgeMs = 60 * 60 * 1000) => {
     rooms.delete(code);
     evicted.push(code);
   }
+  if (evicted.length) persistence.scheduleSave(rooms); // drop them from rooms.json too
   return evicted;
 };
 

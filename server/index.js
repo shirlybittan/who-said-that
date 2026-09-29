@@ -882,6 +882,9 @@ io.on('connection', (socket) => {
       const code = room?.code || args[0]?.code || null;
       const player = room ? findPlayer(room, socket.id) : null;
       eventLog.logInbound(code, event, player?.id, room?.phase, args[0]);
+      // Any event from a room member is activity: keeps an active room from
+      // being evicted as idle (P2-35) and schedules a save of its new state.
+      if (room) touchRoom(room.code);
     } catch (_) { /* logging must never break gameplay */ }
     next();
   });

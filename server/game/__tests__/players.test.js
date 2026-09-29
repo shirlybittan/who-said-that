@@ -38,3 +38,20 @@ describe('admitLateJoiners', () => {
     expect(emit).toHaveBeenCalledWith('round:admitted', { playerId: 'b' });
   });
 });
+
+describe('evictStaleRooms (P2-35)', () => {
+  const roomManager = require('../roomManager');
+  test('keeps an idle-looking room while a player is connected', () => {
+    roomManager.restoreRooms({
+      LIVE: { code: 'LIVE', players: [{ id: 'a' }], lastActivityAt: 0 },
+      DEAD: { code: 'DEAD', players: [{ id: 'b' }], lastActivityAt: 0 },
+    });
+    const live = roomManager.getRoom('LIVE');
+    live.players[0].isConnected = true;
+    live.lastActivityAt = 0;
+    roomManager.getRoom('DEAD').lastActivityAt = 0;
+    const evicted = roomManager.evictStaleRooms(1000);
+    expect(evicted).toContain('DEAD');
+    expect(evicted).not.toContain('LIVE');
+  });
+});
