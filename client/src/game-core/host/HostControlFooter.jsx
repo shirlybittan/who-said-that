@@ -1,6 +1,10 @@
 import React from 'react';
+import useSingleFlight from '../hooks/useSingleFlight';
 
 export default function HostControlFooter({ paused, onPauseToggle, onChangeQuestion, onNextRound, resultsVisible, onSkipMiniGame }) {
+  const guard = useSingleFlight(1000);
+  onNextRound = guard(onNextRound);
+  onSkipMiniGame = guard(onSkipMiniGame);
   return (
     <div className="border-t border-[#2D2D44] bg-[#1A1A2E] p-4 flex justify-center">
       <div className="flex gap-3 flex-wrap justify-center">

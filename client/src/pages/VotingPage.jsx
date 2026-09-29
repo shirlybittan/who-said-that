@@ -57,7 +57,7 @@ export default function VotingPage() {
     dispatch({ type: 'MARK_VOTED' });
   };
   const handleNextAnswer = () => {
-    socket.emit('next_answer_request', { code: state.roomCode });
+    socket.emit('next_answer_request', { code: state.roomCode, answerIndex: state.currentAnswerIndex });
   };
 
   if (!currentAnswer) return <div className="text-white p-6">{t.loading}</div>;

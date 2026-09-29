@@ -1339,9 +1339,14 @@ io.on('connection', (socket) => {
 
 
 
-  socket.on('next_answer_request', ({ code }) => {
+  socket.on('next_answer_request', ({ code, answerIndex }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'voting') return;
+    const requester = findPlayer(room, socket.id);
+    if (!requester || !requester.isHost) return;
+    // Stale request (double-click, or TV + phone both pressing): the client
+    // says which answer it wants to move past; ignore it if we already moved.
+    if (typeof answerIndex === 'number' && answerIndex !== room.currentAnswerIndex) return;
 
     if (room._timers?.wstVoting) room._timers.wstVoting.cancel();
 
@@ -1415,7 +1420,9 @@ io.on('connection', (socket) => {
 
   socket.on('tot:next_round', ({ code }) => {
     const room = getRoom(code);
-    if (!room || room.phase !== 'tot') return;
+    // Only advance from the results screen: a second click lands in the next
+    // round's voting and used to skip a whole question (AUDIT.md P1-01).
+    if (!room || room.phase !== 'tot' || room.tot.roundState !== 'results') return;
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
@@ -1820,7 +1827,8 @@ io.on('connection', (socket) => {
 
   socket.on('mlt:next_round', ({ code }) => {
     const room = getRoom(code);
-    if (!room || room.phase !== 'mlt') return;
+    // Only from results (a double-click would otherwise skip a round).
+    if (!room || room.phase !== 'mlt' || room.mlt.roundState !== 'results') return;
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 

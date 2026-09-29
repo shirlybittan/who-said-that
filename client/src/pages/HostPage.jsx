@@ -10,6 +10,7 @@ import ReplayCanvas from '../components/game/ReplayCanvas';
 import { QUEUE_GAME_LABELS } from '../config/hostControls';
 import MostLikelyToHostView from '../games/most-likely-to/HostView.jsx';
 import ThisOrThatHostView from '../games/this-or-that/HostView.jsx';
+import useSingleFlight from '../game-core/hooks/useSingleFlight';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
 const CLIENT_URL = (import.meta.env.VITE_CLIENT_URL || '').replace(/\/$/, '') || null;
@@ -2294,6 +2295,17 @@ function CreateRoomForm({ onSubmit, onBack }) {
 // QUEUE_GAME_LABELS imported from '../config/hostControls'
 
 function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbData, photoVoteData, captionData, isMixedMode, onStart, onMltPauseResume, onMltChangeQuestion, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, onNewGame, onPlayAgain, onNewPartyPack, gameQueue, queueIndex, onSelfieNextRound, onSelfieSkipQuestion, onShowSelfieResults, onFitbChangeQuestion, onFitbSkipToVote, onFitbShowResults, onFitbNextRound, onPhotoVoteChangeQuestion, onPhotoVoteSkipToResults, onPhotoVoteNextRound, onCaptionChangeQuestion, onCaptionSkipToVoting, onCaptionSkipToResults, onCaptionNextRound, onAnswerPauseResume, answerPaused, onFitbPauseResume, dtData, onDtPauseResume }) {
+  // One advance per click: a double-click must not skip content (AUDIT.md P1-01).
+  const guard = useSingleFlight(1000);
+  onMltNext = guard(onMltNext); onNextRound = guard(onNextRound); onSkipQuestion = guard(onSkipQuestion);
+  onTotNext = guard(onTotNext); onSitNext = guard(onSitNext); onNextAnswer = guard(onNextAnswer);
+  onDrawSkipToVote = guard(onDrawSkipToVote); onDrawShowResults = guard(onDrawShowResults); onDrawNextRound = guard(onDrawNextRound);
+  onNextQueueGame = guard(onNextQueueGame); onSelfieNextRound = guard(onSelfieNextRound); onShowSelfieResults = guard(onShowSelfieResults);
+  onFitbSkipToVote = guard(onFitbSkipToVote); onFitbShowResults = guard(onFitbShowResults); onFitbNextRound = guard(onFitbNextRound);
+  onPhotoVoteSkipToResults = guard(onPhotoVoteSkipToResults); onPhotoVoteNextRound = guard(onPhotoVoteNextRound);
+  onCaptionSkipToVoting = guard(onCaptionSkipToVoting); onCaptionSkipToResults = guard(onCaptionSkipToResults); onCaptionNextRound = guard(onCaptionNextRound);
+  onSkipMiniGame = guard(onSkipMiniGame); onMltSkip = guard(onMltSkip);
+
   if (!isRoomCreator) return null;
 
   const playingCount = players.filter(p => p.isPlaying && p.isConnected).length;
@@ -3661,7 +3673,7 @@ export default function HostPage() {
   const handleKickPlayer = (playerId) => socketRef.current?.emit('kick_player', { code: gameInfo.code, targetPlayerId: playerId });
   const handleTotNext = () => socketRef.current?.emit('tot:next_round', { code: gameInfo.code });
   const handleSitNext = () => socketRef.current?.emit('sit:next', { code: gameInfo.code });
-  const handleNextAnswer = () => socketRef.current?.emit('next_answer_request', { code: gameInfo.code });
+  const handleNextAnswer = () => socketRef.current?.emit('next_answer_request', { code: gameInfo.code, answerIndex: votingData.currentIndex });
   const handleDrawNewWord = () => socketRef.current?.emit('draw:skip_word', { code: gameInfo.code });
   const handleDrawRestart = () => socketRef.current?.emit('draw:restart', { code: gameInfo.code });
   const handleNextQueueGame = (skipTransitionCheck = false) => {
