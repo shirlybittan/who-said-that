@@ -18,7 +18,14 @@ export const useSocket = () => {
   const stateRef = useRef(state);
   useEffect(() => { stateRef.current = state; });
 
+  // react-router's navigate changes identity on every route change. Depending
+  // on it re-registered ~120 listeners and re-sent join_room (receiving the
+  // whole room, photos included) on EVERY navigation (AUDIT.md P1-14).
+  const navigateRef = useRef(navigate);
+  useEffect(() => { navigateRef.current = navigate; });
+
   useEffect(() => {
+    const navigate = (...args) => navigateRef.current(...args);
     const onConnect = () => {
       dispatch({ type: 'SET_CONNECTION', payload: 'online' });
       const savedId = sessionStorage.getItem('wst_playerId');
@@ -155,7 +162,7 @@ export const useSocket = () => {
     };
 
     const onHostChanged = ({ host }) => {
-      if (state.playerId === host) {
+      if (stateRef.current.playerId === host) {
         dispatch({ type: 'SET_ROOM', payload: { isHost: true } });
       }
     };
@@ -886,5 +893,5 @@ export const useSocket = () => {
       socket.off('phase_timer', onPhaseTimer);
       socket.off('game_changed', onGameChanged);
     };
-  }, [dispatch, navigate, state.playerId]);
+  }, [dispatch]);
 };
