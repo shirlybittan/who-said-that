@@ -722,3 +722,56 @@ Status of each finding as it is fixed (Phase 4). "Verified by" names the scenari
 | New: lobby URL rewrite | ✅ fixed | 00d63c8 | `LobbyPage` no longer replaces the URL with `/?join=CODE` (a refresh in the lobby used to wipe the session) |
 | New: stuck exit animation | ✅ fixed | 00d63c8 | `AnimatePresence mode="wait"` removed; a late joiner no longer sees the previous page under the new URL |
 | P3-18 (self-kick) | ✅ fixed | 00d63c8 | Host can't kick themselves |
+| **Stage 2 — shared components & contract** | | | |
+| P2-18, P3-02 | ✅ fixed | 0d0ddf3 | Game registry: all 12 game types start from the TV picker; names/icons consistent; "▶ Next:" shows names |
+| P2-10 | ✅ fixed | 6fc2e0c | 360 px: top bar (room · timer · sound/lang) in flow — Confirm no longer covered; TV header no longer overlaps Main Menu |
+| P2-13 | ✅ fixed | 6fc2e0c | Timer that stops ticking disappears after 2.5 s; results/end events clear it at once (6a89fbe) |
+| Waiting state | ✅ added | 565c1ce | WST: "Waiting for Bob, Carl" → "Waiting for Carl" |
+| P2-09 | ✅ fixed | 3b2a05d | Whitespace answer → Submit disabled (WST, FITB); server refuses blank answers |
+| P2-15 | ✅ fixed | 3b2a05d | Input locked after Submit, Edit unlocks; Enter can't re-submit |
+| P2-16 | ✅ fixed | 3b2a05d | ConfirmVoteCard shows the pick + ← Change, translated |
+| P2-19 | ✅ fixed | dfb6222 | Every game starts with the intro: rules, I'm ready, 2/3 ready on TV, 3-2-1, host "Start now" |
+| P2-05 | ✅ fixed | 79910b2 | WST game over: phones show "Waiting for the host…", no Play Again; Main Menu leaves the room |
+| **Stage 3 — per-game migration** | | | |
+| P2-03, P2-08, P2-14 | ✅ fixed | eced7af | WST: "0 / 3 → 1 / 3 answered"; long answers wrap (phone + TV); unconfirmed pick submitted at the timer's end |
+| P2-12 | ✅ fixed | eced7af … ed983c7 | One timer on every screen (shell) — page timers removed game by game |
+| Situational author leak (new) | ✅ fixed | 746055c | Confirm card showed the author's name for an anonymous answer; now shows the answer text |
+| P3-06, P3-07, P3-10 | ✅ fixed | ed65a1f | Joker 1 left → Change Question → 2 left; stale pick cleared; MLT end on shared shell (confetti once) |
+| P1-02, P1-03, P2-37 | ✅ fixed | 6a89fbe | ToT: switch A→B before Confirm; results on phones; refresh restores vote/results |
+| P2-06, P2-17 (FITB), P2-21, P3-03 | ✅ fixed | 71908cf | Full FITB game: all phones on Game Over; phone host Next Round; FITB translated; key warning gone |
+| TV stale Continue (new) | ✅ fixed | 71908cf | After results the TV no longer shows a countdown with a dead Continue |
+| P2-11 (Drawing), P3-13, P3-14 | ✅ fixed | 4293f93 | Fullscreen Submit used in a full Drawing game; one auto-submit; 4:3 vote thumbnails |
+| P2-39 | ✅ fixed | 03c9e5d | Jest: removed submission must be redrawn before voting |
+| P2-11 (DT), P2-26, P2-29 | ✅ fixed | b727174 | Full DT game; fullscreen exits after submit; guess canvas scales; TV DT timers follow the server |
+| P2-22, P2-23, P2-24, P2-27 | ✅ fixed | a96e298 | 3-round Draw on Friends: round results between rounds, shared Game Over at the end |
+| P3-11, P3-12 | ✅ fixed | ed983c7 | Caption: Next Round / Finish labels; final board lists every player |
+| P2-07 | ✅ fixed | d62ddd4 | Photo playlist MLT → Selfie Challenge → Prompt Match → This or That: every phone ends on the shared end screen; "▶ Next" after Photo Vote |
+| P2-35, P3-18 (saves) | ✅ fixed | 831aa96 | Every room event touches the room; saves within 4 s under load; idle sweep skips rooms with connected players (jest) |
+| Intro after restart (new) | ✅ fixed | 4cf3842 | A countdown restored after a restart relaunches (found when a restart froze an intro) |
+| P2-40, P2-43, P3-17, P3-18 | ✅ fixed | d8889df | Caption locked in voting; WST late/unknown votes ignored; drafts reset per question; Sit/MLT/DT vote targets validated; custom questions capped; 4-char codes; rounds clamped |
+| P3-05, P3-15, P3-20, P3-21 | ✅ fixed | 7c93973 | Title "Party Pack — Who Said That?"; router warnings gone; ToT pause toggles; TV socket closed on unmount; transition lock released |
+| P2-03 (after refresh) | ✅ fixed | 5f2960c | Regression test: refresh → "1 / 3 answered" |
+| P2-33 | ✅ fixed | 248f3e0 | Server enforces 3 *connected* players for every start (incl. playlist items) and tells the host why (`game:start_rejected`) |
+| P3-08 | ✅ fixed | 6fc2e0c | The shell timer shows the paused state for every game |
+| Selfie TV end (new) | ✅ fixed | fab5d6b | Found by the regression suite: the TV's final Draw on Friends screen read "Results — Round 3/3"; now "🎉 Game Over! — Final Results" |
+| P2-17 (photo games, DT) | ✅ fixed | 1bbdfa7 | Selfie / Caption / Photo Vote / Draw Telephone / connection overlay strings translated (en/fr/he) |
+| **Phase 5 — regression safety net** | | | |
+| Suite | ✅ added | (see below) | `npm run test:regression`: happy path per game (11), playlist of every game, refresh / leave / late join / TV refresh / phone host, timer expiry, server robustness |
+
+### 10.1 Remaining / open items
+
+Not fixed on this branch — none blocks a game from being played start to finish.
+
+| ID | Status | Note |
+|----|--------|------|
+| P2-42 | ❓ open question | MLT "allow self-vote" option: self-votes are always allowed. Needs a product decision (keep the option, or remove it). |
+| P2-44 | ⚠ not reproduced | `Maximum update depth exceeded` seen once on one phone in a playlist; not seen again in any later full run. |
+| P2-38 | ◐ partial | Draw, ToT and voting timers resume after a restart (as before); other phases do not restart their timer, but the TV's ⏭ Continue (now on every timed phase) moves them on. |
+| P2-04 | ⏳ not re-tested | TV refresh keeps host control (regression test); the WST "Round x of y" restore was not re-checked. |
+| P2-25 | ⏳ todo | No client guard for very long strokes (server silently truncates at 300 points / 500 strokes). |
+| P2-30 | ◐ partial | TV now has Pause + Continue for every timed phase; dedicated "skip to reveal" (DT) buttons are not added. |
+| P2-36 | ⏳ todo | `join_success` / resync still sends the full room (answer authorship during voting, player photo bank). The host key is stripped. |
+| P2-41 | ⏳ todo | A DT player who leaves still costs one turn timer per chain step. |
+| P3-01, P3-04, P3-09, P3-16 | ⏳ todo | Draft kept on refresh; silent 503 without storage; RTL logical classes; photo submit ack. |
+| P3-19 | ⏳ todo | Dead code (ThisOrThatPage, GameRoundShell, ActionController, VotingArea, AnimatedPage, old MiniGameWrapper, `config/hostControls.js`, TotPanel) — left in place; removal needs its own careful pass with the tests. |
+| TV i18n | ⏳ todo | The TV (HostPage) is still mostly English; phones are translated. |
