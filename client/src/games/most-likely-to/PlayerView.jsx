@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useGame } from '../../store/gameStore.jsx';
 import { socket } from '../../socket';
 import { useSounds } from '../../hooks/useSounds';
@@ -7,6 +7,8 @@ import PlayerGameLayout from '../../game-core/layouts/PlayerGameLayout';
 import { usePlayerGameFrame } from '../../game-core/hooks/usePlayerGameFrame';
 import JokerButton from '../../game-core/player/JokerButton';
 import ConfirmVoteCard from '../../game-core/player/ConfirmVoteCard';
+import WaitingFor from '../../game-core/player/WaitingFor';
+import useAutoConfirmPending from '../../game-core/hooks/useAutoConfirmPending';
 
 /**
  * Keeps every choice visible at all times.
@@ -36,7 +38,7 @@ function ChoiceList({ choices, selectedChoice, onSelect, helperText }) {
               >
                 {choice.name.charAt(0).toUpperCase()}
               </div>
-              <span className={`font-['Fredoka_One'] text-xl flex-1 text-left ${isSelected ? 'text-[#4ECDC4]' : 'text-white'}`}>
+              <span className={`font-['Fredoka_One'] text-xl flex-1 text-start truncate ${isSelected ? 'text-[#4ECDC4]' : 'text-white'}`}>
                 {choice.name}
               </span>
               {isSelected && (
@@ -72,6 +74,7 @@ function LockedVoteCard({ choice, voteCount, totalVoters, voteLockedLabel, youVo
         ) : null}
       </div>
       <p className="text-gray-400 font-['Nunito'] text-sm animate-pulse">{voteCount} / {totalVoters} {votesInLabel}</p>
+      <WaitingFor />
     </div>
   );
 }
@@ -88,6 +91,18 @@ export default function MostLikelyToPlayerView() {
     dispatch,
     context: { sounds, labels: t },
   });
+
+  // A pick made for the previous prompt must not carry over to a new one
+  // (host "Change Question" / next round) — AUDIT.md P3-07.
+  useEffect(() => { setPendingChoice(null); }, [frame.prompt, frame.roundLabel]);
+
+  const confirmPending = () => {
+    if (!pendingChoice || frame.hasSubmitted) return;
+    actions.playChoiceClick(pendingChoice);
+    actions.submitChoice(pendingChoice);
+    setPendingChoice(null);
+  };
+  useAutoConfirmPending({ pending: pendingChoice, hasVoted: frame.hasSubmitted, onConfirm: confirmPending });
 
   const selectionUI = frame.hasSubmitted ? (
     <LockedVoteCard
@@ -115,15 +130,8 @@ export default function MostLikelyToPlayerView() {
   const confirmUI = pendingChoice && !frame.hasSubmitted ? (
     <ConfirmVoteCard
       vote={pendingChoice}
-      onConfirm={() => {
-        actions.playChoiceClick(pendingChoice);
-        actions.submitChoice(pendingChoice);
-        setPendingChoice(null);
-      }}
+      onConfirm={confirmPending}
       onChange={() => setPendingChoice(null)}
-      confirmLabel="✓ Confirm"
-      changeLabel="← Change"
-      titleLabel="Confirm your vote?"
     />
   ) : null;
 

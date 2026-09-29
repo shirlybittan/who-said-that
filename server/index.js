@@ -1999,6 +1999,12 @@ io.on('connection', (socket) => {
     room.mlt.prompt = candidate;
     room.mlt.prompts[room.mlt.round - 1] = candidate;
     room.mlt.votes = {};
+    // Active jokers are refunded with the new question: tell those players so
+    // their "jokers left" count doesn't stay one short (AUDIT.md P3-06).
+    for (const pid of Object.keys(room.mlt.jokersThisRound || {})) {
+      const p = room.players.find(pl => pl.id === pid);
+      if (p) io.to(getPlayerSocket(p)).emit('mlt:joker_state', { jokerActive: false, jokersLeft: room.mlt.jokers[pid] ?? 2 });
+    }
     room.mlt.jokersThisRound = {};
     room.mlt.roundState = 'voting';
     room.mlt.phase = 'voting';
