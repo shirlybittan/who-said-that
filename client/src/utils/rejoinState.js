@@ -76,6 +76,10 @@ export const getRouteForPhase = (phase, snapshot) => {
       if (snapshot?.phase === 'writing') return '/caption-write';
       if (snapshot?.phase === 'voting') return '/caption-vote';
       return '/caption-results';
+    case 'captionEnd':
+      return '/caption-results';
+    case 'photovoteEnd':
+      return '/photo-vote-results';
     case 'photovote':
       if (snapshot?.phase === 'photo') return '/photo-vote-photo';
       if (snapshot?.phase === 'voting') return '/photo-vote';

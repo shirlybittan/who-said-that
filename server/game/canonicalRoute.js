@@ -68,6 +68,10 @@ const computeCanonicalRoute = (room, playerId) => {
       if (p === 'voting') return '/photo-vote';
       return '/photo-vote-results';
     }
+    case 'captionEnd':
+      return '/caption-results';
+    case 'photovoteEnd':
+      return '/photo-vote-results';
     case 'dt':
       return computeDtRoute(room, playerId);
     case 'dtEnd':

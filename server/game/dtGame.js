@@ -7,6 +7,7 @@ const { buildMiniGameSnapshot } = require('./miniGameSnapshot');
 const { shuffleAnswers } = require('./gameLogic');
 const { sanitizeStrokes } = require('./limits');
 const { getActivePlayers } = require('./players');
+const { requireMinPlayers, clampRounds } = require('./rules');
 const log = require('../logger');
 const {
   createRoom,
@@ -42,11 +43,10 @@ function setupDtGame(io, socket, {
     if (!player || !player.isHost) return;
 
     cancelAllTimers(room);
-    const playingPlayers = getActivePlayers(room);
-    if (playingPlayers.length < 2) return;
-
     room.players.forEach(p => { p.joinedMidRound = false; });
-    const totalRounds = Math.min(Math.max(parseInt(rounds) || 3, 1), 10);
+    if (!requireMinPlayers(socket, room, 'selfie-roast')) return;
+    const playingPlayers = getActivePlayers(room);
+    const totalRounds = clampRounds(rounds, 3);
     const scores = {};
     playingPlayers.forEach(p => { scores[p.id] = 0; });
 
@@ -586,11 +586,14 @@ function setupDtGame(io, socket, {
   // Each round: everyone submits a photo, then everyone ELSE writes a caption for it.
   // The photo owner cannot write a caption but CAN vote. Votes = points.
 
-  socket.on('caption:start', ({ code, rounds = 3 }) => {
+  socket.on('caption:start', ({ code, rounds: rawRounds }) => {
     const room = getRoom(code);
     if (!room) return;
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
+    room.players.forEach(p => { p.joinedMidRound = false; });
+    if (!requireMinPlayers(socket, room, 'caption')) return;
+    const rounds = clampRounds(rawRounds, 3);
 
     cancelAllTimers(room);
     const { captionPrompts } = require('../questions/captionPrompts');
@@ -689,8 +692,15 @@ function setupDtGame(io, socket, {
 
     // Pick the featured photo owner for this round (cycle through players)
     const playingPlayers = getActivePlayers(room);
-    const ownerIndex = (room.caption.currentRound - 1) % playingPlayers.length;
-    room.caption.featuredOwnerId = playingPlayers[ownerIndex].id;
+    // Only players with a photo can be featured; with nobody left, end the game
+    // instead of indexing into an empty array (used to crash the server).
+    const candidates = playingPlayers.filter(p => room.caption.photos[p.id]);
+    if (candidates.length === 0) {
+      endCaptionGame(io, room, code);
+      return;
+    }
+    const ownerIndex = (room.caption.currentRound - 1) % candidates.length;
+    room.caption.featuredOwnerId = candidates[ownerIndex].id;
 
     const promptObj = room.caption.prompts[room.caption.currentPromptIndex] || { text: 'Write a funny caption!' };
     room.caption.currentPrompt = promptObj.text;
@@ -868,6 +878,25 @@ function setupDtGame(io, socket, {
     });
   }
 
+  // Every playing player appears on the final board, 0-point players included.
+  function buildPointsLeaderboard(room, scores) {
+    const ids = new Set([...Object.keys(scores || {}), ...room.players.filter(p => p.isPlaying).map(p => p.id)]);
+    return [...ids]
+      .map(id => ({ id, pts: (scores || {})[id] || 0, name: room.players.find(p => p.id === id)?.name || '?' }))
+      .sort((a, b) => b.pts - a.pts);
+  }
+
+  function endCaptionGame(io, room, code) {
+    if (room.caption.phase === 'ended') return;
+    mergeToGlobalScores(io, room, room.caption.scores);
+    room.caption.phase = 'ended';
+    room.phase = 'captionEnd';
+    io.to(code).emit('caption:game_over', {
+      scores: room.caption.scores,
+      leaderboard: buildPointsLeaderboard(room, room.caption.scores),
+    });
+  }
+
   socket.on('caption:next_round', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'caption' || room.caption.phase !== 'results') return;
@@ -875,15 +904,7 @@ function setupDtGame(io, socket, {
     if (!player || !player.isHost) return;
 
     if (room.caption.currentRound >= room.caption.totalRounds) {
-      // Game over — merge scores
-      mergeToGlobalScores(io, room, room.caption.scores);
-      room.caption.phase = 'ended';
-      io.to(code).emit('caption:game_over', {
-        scores: room.caption.scores,
-        leaderboard: Object.entries(room.caption.scores)
-          .map(([id, pts]) => ({ id, pts, name: room.players.find(p => p.id === id)?.name || '?' }))
-          .sort((a, b) => b.pts - a.pts),
-      });
+      endCaptionGame(io, room, code);
     } else {
       room.caption.currentRound++;
       // Reuse existing photos — skip the photo collection phase
@@ -917,6 +938,8 @@ function setupDtGame(io, socket, {
     if (!room) return;
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
+    room.players.forEach(p => { p.joinedMidRound = false; });
+    if (!requireMinPlayers(socket, room, 'pmatch')) return;
     cancelAllTimers(room);
     const pvPlayers = getActivePlayers(room);
     const { pmatchPrompts } = require('../questions/pmatchPrompts');
@@ -932,12 +955,15 @@ function setupDtGame(io, socket, {
     });
   });
 
-  socket.on('photovote:start', ({ code, subType = 'pmatch', rounds = 5 }) => {
+  socket.on('photovote:start', ({ code, subType = 'pmatch', rounds: rawRounds }) => {
     const room = getRoom(code);
     if (!room) return;
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     if (!['pmatch', 'photoassoc'].includes(subType)) return;
+    room.players.forEach(p => { p.joinedMidRound = false; });
+    if (!requireMinPlayers(socket, room, subType)) return;
+    const rounds = clampRounds(rawRounds, 5);
 
     cancelAllTimers(room);
     const pvPlayers = getActivePlayers(room);
@@ -1247,11 +1273,10 @@ function setupDtGame(io, socket, {
       }
       mergeToGlobalScores(io, room, room.photoVote.scores);
       room.photoVote.phase = 'ended';
+      room.phase = 'photovoteEnd';
       io.to(code).emit('photovote:game_over', {
         scores: room.photoVote.scores,
-        leaderboard: Object.entries(room.photoVote.scores)
-          .map(([id, pts]) => ({ id, pts, name: room.players.find(p => p.id === id)?.name || '?' }))
-          .sort((a, b) => b.pts - a.pts),
+        leaderboard: buildPointsLeaderboard(room, room.photoVote.scores),
       });
     } else {
       room.photoVote.currentRound++;
@@ -1608,11 +1633,9 @@ function setupDtGame(io, socket, {
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
+    room.players.forEach(p => { p.joinedMidRound = false; });
+    if (!requireMinPlayers(socket, room, 'draw-telephone')) return;
     const playingPlayers = getActivePlayers(room);
-    if (playingPlayers.length < 3) {
-      socket.emit('dt:error', { message: 'Need at least 3 players to start Draw Telephone.' });
-      return;
-    }
 
     cancelAllTimers(room);
     room.phase = 'dt';

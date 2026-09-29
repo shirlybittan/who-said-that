@@ -634,6 +634,13 @@ function RoundEndPanel({ roundEndData, players }) {
   );
 }
 
+// Caption / PhotoVote send a [{id, pts}] leaderboard; GameEndPanel wants {id: score}.
+const pointsToScores = (leaderboard, scores) => (
+  (leaderboard && leaderboard.length)
+    ? Object.fromEntries(leaderboard.map(e => [e.id, e.pts]))
+    : (scores || {})
+);
+
 function GameEndPanel({ gameEndData, players }) {
   const activePlayers = players.filter(p => p.isPlaying);
   const sorted = [...activePlayers].sort((a, b) => (gameEndData.finalScores[b.id] || 0) - (gameEndData.finalScores[a.id] || 0));
@@ -2634,7 +2641,7 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
         </button>
       </div>
     );
-  } else if (status === 'game-end' || status === 'mlt-end' || status === 'tot-end' || status === 'draw-end' || status === 'fitb-end' || status === 'selfie-results' || status === 'dt-end') {
+  } else if (status === 'game-end' || status === 'mlt-end' || status === 'tot-end' || status === 'draw-end' || status === 'fitb-end' || status === 'selfie-results' || status === 'dt-end' || status === 'caption-end' || status === 'photovote-end') {
     const hasNextInQueue = gameQueue && gameQueue.length > 1 && queueIndex < gameQueue.length - 1;
     const nextGame = hasNextInQueue ? gameQueue[queueIndex + 1] : null;
     controls = (
@@ -2684,10 +2691,10 @@ const phaseToStatus = (roomPhase, roomData) => {
   if (roomPhase === 'fitbEnd') return 'fitb-end';
   if (roomPhase === 'selfie') return 'selfie';
   if (roomPhase === 'selfieEnd') return 'selfie-results';
-  if (roomPhase === 'caption') return 'caption';
   if (roomPhase === 'captionEnd' || roomData?.caption?.phase === 'ended') return 'caption-end';
-  if (roomPhase === 'photovote') return 'photovote';
+  if (roomPhase === 'caption') return 'caption';
   if (roomPhase === 'photovoteEnd' || roomData?.photoVote?.phase === 'ended') return 'photovote-end';
+  if (roomPhase === 'photovote') return 'photovote';
   if (roomPhase === 'dt' || roomPhase === 'dt-prompting' || roomPhase === 'dt-selfie' || roomPhase === 'dt-drawing' || roomPhase === 'dt-guessing' || roomPhase === 'dt-reveal') {
     const dtPhase = roomData?.dt?.phase || 'prompting';
     return `dt-${dtPhase}`;
@@ -2712,6 +2719,13 @@ export default function HostPage() {
 
   const [status, setStatus] = useState(roomCodeParam ? 'connecting' : 'setup');
   const [errorMsg, setErrorMsg] = useState('');
+  // Transient, non-fatal message (e.g. a start rejected for too few players).
+  const [notice, setNotice] = useState('');
+  useEffect(() => {
+    if (!notice) return undefined;
+    const t = setTimeout(() => setNotice(''), 6000);
+    return () => clearTimeout(t);
+  }, [notice]);
   const [isRoomCreator, setIsRoomCreator] = useState(false);
   const [creatorSettings, setCreatorSettings] = useState({ gameType: 'most-likely-to', rounds: 5 });
 
@@ -3142,8 +3156,9 @@ export default function HostPage() {
     sock.on('caption:round_results', (data) => {
       setCaptionData(prev => ({ ...prev, phase: 'results', round: data.round, featuredPhotoData: data.featuredPhotoData || prev.featuredPhotoData, featuredOwnerName: data.featuredOwnerName || prev.featuredOwnerName, prompt: data.prompt || prev.prompt, captionResults: data.captionResults || [] }));
     });
-    sock.on('caption:game_over', () => {
-      setCaptionData(prev => ({ ...prev, phase: 'ended' }));
+    sock.on('caption:game_over', (data) => {
+      setCaptionData(prev => ({ ...prev, phase: 'ended', leaderboard: data?.leaderboard || [], scores: data?.scores || {} }));
+      setStatus('caption-end');
     });
     sock.on('caption:restarted', ({ players: p }) => {
       setPlayers(p || []);
@@ -3198,6 +3213,7 @@ export default function HostPage() {
         leaderboard: data?.leaderboard || [],
         scores: data?.scores || {},
       }));
+      setStatus('photovote-end');
     });
     sock.on('photovote:restarted', ({ players: p }) => {
       setPlayers(p || []);
@@ -3295,8 +3311,15 @@ export default function HostPage() {
     });
     sock.on('dt:error', ({ message }) => {
       if (!isActiveSock()) return;
-      setErrorMsg(message);
-      setStatus('error');
+      setNotice(message);
+      setStatus('lobby');
+    });
+    // A start request the server refused (e.g. too few players): stay in the
+    // lobby and say why, instead of spinning on "Connecting…" forever.
+    sock.on('game:start_rejected', ({ message }) => {
+      if (!isActiveSock()) return;
+      setNotice(message);
+      setStatus('lobby');
     });
     sock.on('dt:paused', () => {
       if (!isActiveSock()) return;
@@ -3823,6 +3846,10 @@ export default function HostPage() {
         return <SelfieHostPanel selfieData={selfieData} players={players} onSkipToVote={() => socketRef.current?.emit('selfie:skip_to_vote', { code: gameInfo.code })} onShowResults={() => socketRef.current?.emit('selfie:show_results', { code: gameInfo.code })} />;
       case 'caption':
         return <CaptionHostPanel captionData={captionData} players={players} />;
+      case 'caption-end':
+        return <GameEndPanel gameEndData={{ finalScores: pointsToScores(captionData.leaderboard, captionData.scores) }} players={players} />;
+      case 'photovote-end':
+        return <GameEndPanel gameEndData={{ finalScores: pointsToScores(photoVoteData.leaderboard, photoVoteData.scores) }} players={players} />;
       case 'photovote':
         return <PhotoVoteHostPanel photoVoteData={photoVoteData} players={players} />
       default:
@@ -3832,6 +3859,11 @@ export default function HostPage() {
 
   return (
     <div className="font-['Nunito'] h-screen bg-[#0D0D1A] text-[#F7F7F7] flex flex-col overflow-hidden">
+      {notice && (
+        <div role="alert" data-testid="host-notice" className="fixed top-20 left-1/2 -translate-x-1/2 z-50 max-w-xl px-6 py-3 rounded-2xl bg-[#FF6B6B] text-black font-['Fredoka_One'] text-lg shadow-lg">
+          {notice}
+        </div>
+      )}
       {!isMltCoreView && !isTotCoreView && <div className="flex items-center justify-between px-6 py-3 bg-[#1A1A2E] border-b border-[#2D2D44] flex-shrink-0">
         <div className="flex items-center gap-3">
           <span className="text-xl font-['Fredoka_One'] text-[#FFE66D]">🎉 Party Pack</span>

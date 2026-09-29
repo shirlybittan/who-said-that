@@ -521,6 +521,7 @@ export const useSocket = () => {
     socket.on('players_ready', onPlayersReady);
     socket.on('game_ended', onGameEnded);
     socket.on('error', onError);
+    socket.on('game:start_rejected', onError);
     socket.on('kicked', onKicked);
     socket.on('mlt:prompt', onMltPrompt);
     socket.on('mlt:question_changed', onMltQuestionChanged);
@@ -768,6 +769,7 @@ export const useSocket = () => {
       socket.off('players_ready', onPlayersReady);
       socket.off('game_ended', onGameEnded);
       socket.off('error', onError);
+      socket.off('game:start_rejected', onError);
       socket.off('kicked', onKicked);
       socket.off('mlt:prompt', onMltPrompt);
       socket.off('mlt:question_changed', onMltQuestionChanged);

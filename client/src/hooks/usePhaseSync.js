@@ -28,7 +28,9 @@ const PHASE_ROUTES = {
   selfie: ['/selfie-photo', '/selfie-draw', '/selfie-vote', '/selfie-results'],
   selfieEnd: ['/selfie-results'],
   caption: ['/caption-photo', '/caption-write', '/caption-vote', '/caption-results'],
+  captionEnd: ['/caption-results'],
   photovote: ['/photo-vote-photo', '/photo-vote', '/photo-vote-results'],
+  photovoteEnd: ['/photo-vote-results'],
   dt: ['/draw-tel-prompt', '/draw-tel-draw', '/draw-tel-guess', '/draw-tel-reveal', '/draw-tel-end', '/draw-tel-wait', '/selfie-photo'],
   dtEnd: ['/draw-tel-end'],
 };

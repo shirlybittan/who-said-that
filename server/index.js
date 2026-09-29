@@ -27,6 +27,7 @@ const { sanitizeStrokes, clampText, createRateLimiter, MAX_ANSWER } = require('.
 const { renderDashboard } = require('./admin/dashboard');
 const log = require('./logger');
 const { hardenSocket } = require('./game/safeSocket');
+const { requireMinPlayers, clampRounds } = require('./game/rules');
 
 // Last-resort guard: a bug in a timer callback or handler must not take down
 // every room. Socket handlers are already wrapped by hardenSocket (below).
@@ -970,7 +971,7 @@ io.on('connection', (socket) => {
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
-    if (getActivePlayers(room).length < 3) return;
+    if (!requireMinPlayers(socket, room, room.gameType)) return;
 
     // MLT is started separately via mlt:start
     if (room.gameType === 'most-likely-to') return;
@@ -1642,7 +1643,7 @@ io.on('connection', (socket) => {
           votedPlayerIds: Object.keys(room.selfie.votes || {}),
         } : null,
         // Caption state (for reconnect recovery)
-        caption: room.phase === 'caption' ? {
+        caption: (room.phase === 'caption' || room.phase === 'captionEnd') ? {
           phase: room.caption.phase,
           captionCount: Object.keys(room.caption.captions || {}).length,
           totalWriters: playingPlayers.length,
@@ -1652,7 +1653,7 @@ io.on('connection', (socket) => {
           votedPlayerIds: Object.keys(room.caption.votes || {}),
         } : null,
         // PhotoVote (pmatch / photoassoc) state (for reconnect recovery)
-        photoVote: room.phase === 'photovote' ? {
+        photoVote: (room.phase === 'photovote' || room.phase === 'photovoteEnd') ? {
           phase: room.photoVote?.phase || 'photo',
           submittedPlayerIds: Object.keys(room.photoVote?.photos || {}),
           voteCount: Object.keys(room.photoVote?.votes || {}).length,
@@ -1756,8 +1757,8 @@ io.on('connection', (socket) => {
 
     cancelAllTimers(room);
 
+    if (!requireMinPlayers(socket, room, 'most-likely-to')) return;
     const connectedPlayers = getActivePlayers(room);
-    if (connectedPlayers.length < 2) return; // need at least 2 votable players
 
     // Build prompt pool (custom questions take priority, padded with bank)
     const customMltPrompts = (room.customQuestions || []).map(q => q.text).filter(Boolean);
@@ -1979,10 +1980,10 @@ io.on('connection', (socket) => {
 
     cancelAllTimers(room);
     room.players.forEach(p => { p.joinedMidRound = false; });
+    if (!requireMinPlayers(socket, room, 'drawing')) return;
     const playingPlayers = getActivePlayers(room);
-    if (playingPlayers.length < 2) return;
 
-    const totalRounds = Math.min(Math.max(parseInt(rounds) || room.totalRounds || 3, 1), 10);
+    const totalRounds = clampRounds(rounds, room.totalRounds || 3);
     const drawMode = mode === 'secret' ? 'secret' : 'classic';
     const scores = {};
     playingPlayers.forEach(p => { scores[p.id] = 0; });
@@ -2307,11 +2308,10 @@ io.on('connection', (socket) => {
     if (!player || !player.isHost) return;
 
     cancelAllTimers(room);
-    const playingPlayers = getActivePlayers(room);
-    if (playingPlayers.length < 2) return;
-
     room.players.forEach(p => { p.joinedMidRound = false; });
-    const totalRounds = Math.min(Math.max(parseInt(rounds) || room.totalRounds || 3, 1), 10);
+    if (!requireMinPlayers(socket, room, 'fill-in-the-blank')) return;
+    const playingPlayers = getActivePlayers(room);
+    const totalRounds = clampRounds(rounds, room.totalRounds || 3);
     const timeLimit = room.roomConfig?.roundDurationSecs || 30;
     const scores = {};
     playingPlayers.forEach(p => { scores[p.id] = 0; });
