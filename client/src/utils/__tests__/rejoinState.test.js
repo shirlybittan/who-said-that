@@ -48,12 +48,20 @@ describe('getRouteForPhase', () => {
 
 describe('buildJoinRestorePlan', () => {
   it('keeps brand-new mid-round joins in the lobby', () => {
-    const room = { ...baseRoom, phase: 'fitb' };
+    // The server flags the late joiner on their player record.
+    const room = { ...baseRoom, phase: 'fitb', players: baseRoom.players.map(p => (p.id === 'p2' ? { ...p, joinedMidRound: true } : p)) };
     const plan = buildJoinRestorePlan({ room, playerId: 'p2', isRejoin: false, miniGameState: null });
 
     expect(plan.route).toBe('/lobby');
     expect(plan.roomPayload.joinedMidRound).toBe(true);
     expect(plan.actions).toEqual([]);
+  });
+
+  it('a resync (isRejoin) keeps a not-yet-admitted joiner in the lobby', () => {
+    const room = { ...baseRoom, phase: 'fitb', players: baseRoom.players.map(p => (p.id === 'p2' ? { ...p, joinedMidRound: true } : p)) };
+    const plan = buildJoinRestorePlan({ room, playerId: 'p2', isRejoin: true, miniGameState: null });
+    expect(plan.roomPayload.joinedMidRound).toBe(true);
+    expect(plan.route).toBe('/lobby');
   });
 
   it('restores drawing voting state and vote ownership', () => {

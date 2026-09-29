@@ -1,3 +1,5 @@
+const { makeIsComplete } = require('./threshold');
+
 /**
  * VoteCollector — shared vote deduplication and threshold detection.
  *
@@ -18,7 +20,8 @@
  * Creates a vote collector for a single voting phase.
  *
  * @param {object}   opts
- * @param {Function} opts.getExpectedCount   - () => number  Expected voter count at call-time
+ * @param {Function} [opts.getExpectedIds]   - () => string[] ids expected to vote (preferred; see threshold.js)
+ * @param {Function} [opts.getExpectedCount] - () => number  legacy: expected voter count
  * @param {Function} opts.onComplete         - () => void    Called once when threshold is reached
  * @param {Function} [opts.onVote]           - (voterId, targetId, isAuthorFakeVote) => void
  *                                             Side-effect hook fired synchronously BEFORE
@@ -33,12 +36,13 @@
  *
  * @returns {{ castVote, hasVoted, getVotes, getVoterIds, count, isComplete, reset }}
  */
-function create({ getExpectedCount, onComplete, onVote, allowSelfVote = false, allowAuthorVote = false }) {
+function create({ getExpectedIds, getExpectedCount, onComplete, onVote, allowSelfVote = false, allowAuthorVote = false }) {
   const votes = new Map(); // voterId → { targetId, isAuthorFakeVote }
   let completeFired = false;
+  const isDone = makeIsComplete({ getExpectedIds, getExpectedCount });
 
   const checkComplete = () => {
-    if (!completeFired && votes.size >= getExpectedCount()) {
+    if (!completeFired && isDone(votes)) {
       completeFired = true;
       onComplete();
     }
@@ -97,7 +101,10 @@ function create({ getExpectedCount, onComplete, onVote, allowSelfVote = false, a
 
     getVoterIds()  { return [...votes.keys()]; },
     count()        { return votes.size; },
-    isComplete()   { return votes.size >= getExpectedCount(); },
+    isComplete()   { return isDone(votes); },
+
+    /** Re-evaluate completion after the expected set changed (disconnect, kick). */
+    recheck()      { checkComplete(); },
 
     /**
      * Reset for a new round/answer. onComplete can fire again after reset.

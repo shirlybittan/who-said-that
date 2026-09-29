@@ -59,7 +59,9 @@ export const computeReconcileTarget = (state, path) => {
   const { phase, roomCode, joinedMidRound } = state;
   if (!roomCode || !phase || phase === 'home') return null;
   if (path === '/' || path === '/host') return null;
-  if (joinedMidRound) return null;
+  // A mid-round joiner waits in the lobby until the server admits them at the
+  // next round — even if a broadcast (e.g. voting_started) navigated them away.
+  if (joinedMidRound) return path === '/lobby' ? null : '/lobby';
 
   const valid = PHASE_ROUTES[phase];
   if (!valid) return null;
@@ -102,7 +104,6 @@ export const usePhaseSync = () => {
   useEffect(() => {
     if (!roomCode || !phase || phase === 'home') return;   // not in an active game
     if (path === '/' || path === '/host') return;          // home / TV screen opt out
-    if (joinedMidRound) return;                            // intentionally parked in lobby until next round
 
     const target = computeReconcileTarget(state, path);
     if (target) navigate(target, { replace: true });

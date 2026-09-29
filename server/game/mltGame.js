@@ -20,9 +20,7 @@
 const { createVotingGame } = require('./templates/VotingGameTemplate');
 const VoteCollector = require('./VoteCollector');
 
-// Active players are connected, playing, and not mid-round joiners.
-const getActivePlayers = (room) =>
-  room.players.filter(p => p.isConnected && p.isPlaying && !p.joinedMidRound);
+const { getActivePlayers, admitLateJoiners } = require('./players');
 
 // ── Pure scoring helpers ──────────────────────────────────────────────────────
 
@@ -144,7 +142,7 @@ function createMltGame({ mergeToGlobalScores }) {
     onRoundStart(io, room, code, round) {
       room.mlt.roundState = 'voting';
       room.mlt.jokersThisRound = {};
-      room.players.forEach(p => { p.joinedMidRound = false; });
+      admitLateJoiners(io, room);
 
       const players = getActivePlayers(room);
 

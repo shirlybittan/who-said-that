@@ -20,6 +20,10 @@ describe('computeReconcileTarget', () => {
     expect(computeReconcileTarget(S({ phase: 'voting', joinedMidRound: true }), '/lobby')).toBeNull();
   });
 
+  it('brings a mid-round joiner back to the lobby if a broadcast moved them', () => {
+    expect(computeReconcileTarget(S({ phase: 'voting', joinedMidRound: true }), '/vote')).toBe('/lobby');
+  });
+
   it('does nothing while the screen is already valid for the phase', () => {
     expect(computeReconcileTarget(S({ phase: 'question' }), '/question')).toBeNull();
     expect(computeReconcileTarget(S({ phase: 'drawing' }), '/draw')).toBeNull();

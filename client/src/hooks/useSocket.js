@@ -160,6 +160,14 @@ export const useSocket = () => {
       }
     };
 
+    // A mid-round joiner is folded in at the start of the next round: leave the
+    // lobby and pull the authoritative snapshot (join_success navigates us).
+    const onRoundAdmitted = () => {
+      dispatch({ type: 'SET_ROOM', payload: { joinedMidRound: false } });
+      const code = sessionStorage.getItem('wst_roomCode');
+      if (code) socket.emit('request_resync', { code });
+    };
+
     const onError = ({ message }) => {
       dispatch({ type: 'SET_ERROR', payload: message });
       alert(message);
@@ -532,6 +540,7 @@ export const useSocket = () => {
     socket.on('game_ended', onGameEnded);
     socket.on('error', onError);
     socket.on('game:start_rejected', onError);
+    socket.on('round:admitted', onRoundAdmitted);
     socket.on('kicked', onKicked);
     socket.on('mlt:prompt', onMltPrompt);
     socket.on('mlt:question_changed', onMltQuestionChanged);
@@ -781,6 +790,7 @@ export const useSocket = () => {
       socket.off('game_ended', onGameEnded);
       socket.off('error', onError);
       socket.off('game:start_rejected', onError);
+      socket.off('round:admitted', onRoundAdmitted);
       socket.off('kicked', onKicked);
       socket.off('mlt:prompt', onMltPrompt);
       socket.off('mlt:question_changed', onMltQuestionChanged);

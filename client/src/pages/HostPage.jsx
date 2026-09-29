@@ -269,7 +269,7 @@ function MltVotingPanel({ mlt, players, gameName }) {
         <div className="flex-1 bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
           <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-4">Voting</p>
           <div className="flex flex-wrap gap-4 justify-center">
-            {players.filter(p => p.isPlaying && p.isConnected).map(p => (
+            {players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound).map(p => (
               <PlayerAvatar key={p.id} player={p} size="md" status={mlt.votedPlayerIds?.includes(p.id) ? 'voted' : 'waiting'} />
             ))}
           </div>
@@ -431,7 +431,7 @@ function MltEndPanel({ mlt }) {
 }
 
 function QuestionPanel({ questionData, players, paused = false, serverSecondsLeft }) {
-  const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
+  const activePlayers = players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound);
   const computeSecondsLeft = () => {
     const elapsed = questionData.startedAt ? Math.floor((Date.now() - questionData.startedAt) / 1000) : 0;
     return Math.max(0, (questionData.roundDuration || 60) - elapsed);
@@ -521,7 +521,7 @@ function QuestionPanel({ questionData, players, paused = false, serverSecondsLef
 function VotingPanel({ votingData, players, phaseTimer }) {
   const current = votingData.answers?.[votingData.currentIndex];
   const authorId = current?.playerId;
-  const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
+  const activePlayers = players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound);
   return (
     <div className="flex flex-col items-center gap-8 w-full max-w-4xl" data-testid="host-question-screen">
       <div className="flex items-center gap-3">
@@ -695,7 +695,7 @@ function GameEndPanel({ gameEndData, players }) {
 }
 
 function TotPanel({ totData, players }) {
-  const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
+  const activePlayers = players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound);
   if (totData.resultsVisible) {
     return (
       <div className="flex flex-col items-center gap-8 w-full max-w-4xl" data-testid="host-question-screen">
@@ -767,7 +767,7 @@ function TotPanel({ totData, players }) {
 }
 
 function SitPanel({ sitData, players, phaseTimer }) {
-  const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
+  const activePlayers = players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound);
   if (sitData.hasResults) {
     return (
       <div className="flex flex-col items-center gap-6 w-full max-w-4xl">
@@ -1181,7 +1181,7 @@ function DtHostPanel({ dtData, players, status, onRevealNext, drawerTimers = {},
 
   // ── PROMPTING phase ─────────────────────────────────────────────────────
   if (status === 'dt-prompting') {
-    const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
+    const activePlayers = players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound);
     return (
       <div className="flex flex-col items-center gap-6 w-full max-w-lg">
         <motion.div className="text-center" initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }}>
@@ -1206,7 +1206,7 @@ function DtHostPanel({ dtData, players, status, onRevealNext, drawerTimers = {},
 
   // ── SELFIE phase ────────────────────────────────────────────────────────
   if (status === 'dt-selfie') {
-    const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
+    const activePlayers = players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound);
     return (
       <div className="flex flex-col items-center gap-6 w-full max-w-lg">
         <motion.div className="text-center" initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }}>
@@ -1230,7 +1230,7 @@ function DtHostPanel({ dtData, players, status, onRevealNext, drawerTimers = {},
 
   // ── DRAWING phase ────────────────────────────────────────────────────────
   if (status === 'dt-drawing') {
-    const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
+    const activePlayers = players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound);
     const chainEntries = Object.entries(chainProgress);
     const activeDrawerIds = dtData.activeDrawerIds || [];
     return (
@@ -1285,7 +1285,7 @@ function DtHostPanel({ dtData, players, status, onRevealNext, drawerTimers = {},
           </div>
           <ProgressBar value={guessedCount} total={totalGuessers} color="#FF6B6B" />
           <div className="flex flex-wrap gap-2 mt-4 justify-center">
-            {players.filter(p => p.isPlaying && p.isConnected).map(p => (
+            {players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound).map(p => (
               <PlayerAvatar key={p.id} player={p} size="sm" status={(dtData.guessedPlayerIds || []).includes(p.id) ? 'answered' : 'waiting'} />
             ))}
           </div>
@@ -1509,7 +1509,7 @@ function DtHostPanel({ dtData, players, status, onRevealNext, drawerTimers = {},
 }
 
 function FitbHostPanel({ fitbData, players, onSkipToVote, onShowResults, onNextRound }) {
-  const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
+  const activePlayers = players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound);
   if (fitbData.phase === 'end') {
     return (
       <div className="flex flex-col items-center gap-8 w-full max-w-lg">
@@ -1720,7 +1720,7 @@ function PhotoVoteHostPanel({ photoVoteData, players }) {
 }
 
 function SimplePhotoHostPanel({ label, phase, players, onSkipToResults, onNextRound }) {
-  const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
+  const activePlayers = players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound);
   return (
     <div className="flex flex-col items-center gap-6 w-full max-w-xl">
       <h1 className="text-3xl font-['Fredoka_One'] text-[#FFE66D]">{label}</h1>
@@ -1755,7 +1755,7 @@ function CaptionHostPanel({ captionData, players }) {
   ) : null;
 
   if (phase === 'photo') {
-    const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
+    const activePlayers = players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound);
     return (
       <div className="flex flex-col items-center gap-6 w-full max-w-xl">
         <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">💬 Selfie Captions{roundLabel}</h1>
@@ -1769,7 +1769,7 @@ function CaptionHostPanel({ captionData, players }) {
 
   if (phase === 'writing') {
     const written = captionData.captionCount || 0;
-    const total = captionData.totalWriters || players.filter(p => p.isPlaying && p.isConnected).length;
+    const total = captionData.totalWriters || players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound).length;
     return (
       <div className="flex flex-col items-center gap-6 w-full max-w-xl">
         <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">💬 Selfie Captions{roundLabel}</h1>
@@ -1791,7 +1791,7 @@ function CaptionHostPanel({ captionData, players }) {
             <div className="bg-[#FD79A8] h-2 rounded-full transition-all" style={{ width: total ? `${(written / total) * 100}%` : '0%' }} />
           </div>
           <div className="flex flex-wrap gap-3 justify-center mt-4">
-            {players.filter(p => p.isPlaying && p.isConnected).map(p => (
+            {players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound).map(p => (
               <PlayerAvatar key={p.id} player={p} size="sm" status={(captionData.captionSubmittedPlayerIds || []).includes(p.id) ? 'answered' : 'waiting'} />
             ))}
           </div>
@@ -1802,7 +1802,7 @@ function CaptionHostPanel({ captionData, players }) {
 
   if (phase === 'voting') {
     const voted = captionData.voteCount || 0;
-    const total = captionData.totalVoters || players.filter(p => p.isPlaying && p.isConnected).length;
+    const total = captionData.totalVoters || players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound).length;
     return (
       <div className="flex flex-col items-center gap-6 w-full max-w-xl">
         <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">💬 Selfie Captions{roundLabel}</h1>
@@ -1829,7 +1829,7 @@ function CaptionHostPanel({ captionData, players }) {
             <div className="bg-[#FFE66D] h-2 rounded-full transition-all" style={{ width: total ? `${(voted / total) * 100}%` : '0%' }} />
           </div>
           <div className="flex flex-wrap gap-3 justify-center mt-4">
-            {players.filter(p => p.isPlaying && p.isConnected).map(p => (
+            {players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound).map(p => (
               <PlayerAvatar key={p.id} player={p} size="sm" status={captionData.votedPlayerIds?.includes(p.id) ? 'voted' : 'waiting'} />
             ))}
           </div>
@@ -1868,7 +1868,7 @@ function CaptionHostPanel({ captionData, players }) {
   }
 
   // Fallback
-  const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
+  const activePlayers = players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound);
   return (
     <div className="flex flex-col items-center gap-6 w-full max-w-xl">
       <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">💬 Selfie Captions{roundLabel}</h1>
@@ -1880,7 +1880,7 @@ function CaptionHostPanel({ captionData, players }) {
 }
 
 function SelfieHostPanel({ selfieData, players, onSkipToVote, onShowResults }) {
-  const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
+  const activePlayers = players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound);
   const roundLabel = selfieData.totalRounds > 1 ? ` — Round ${selfieData.round}/${selfieData.totalRounds}` : '';
   if (selfieData.phase === 'results') {
     return (
@@ -2308,7 +2308,7 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
 
   if (!isRoomCreator) return null;
 
-  const playingCount = players.filter(p => p.isPlaying && p.isConnected).length;
+  const playingCount = players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound).length;
   const canStart = playingCount >= 3;
 
   let controls = null;
@@ -3386,7 +3386,7 @@ export default function HostPage() {
         setQuestionData(prev => ({
           ...prev, text: room.currentQuestion || '',
           answeredCount: room.answersCount || 0,
-          totalAnswerers: room.players?.filter(p => p.isPlaying && p.isConnected).length || 0,
+          totalAnswerers: room.players?.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound).length || 0,
         }));
       }
       // ── ToT ───────────────────────────────────────────────────────────────

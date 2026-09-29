@@ -7,7 +7,10 @@ const getBaseRoomPayload = (room, playerId, isRejoin) => {
   const isPlaying = myPlayer?.isPlaying ?? true;
   const isHost = room.host === playerId;
   const phase = room.phase;
-  const joinedMidRound = !isRejoin && phase && phase !== 'lobby';
+  // Server-authoritative: the player record carries joinedMidRound until the
+  // server admits them at the next round (players.admitLateJoiners). Deriving it
+  // from isRejoin broke on every resync, which reports isRejoin:true.
+  const joinedMidRound = !!myPlayer?.joinedMidRound && phase && phase !== 'lobby';
 
   return {
     roomCode: room.code,

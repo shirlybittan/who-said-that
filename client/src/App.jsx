@@ -83,10 +83,14 @@ class ErrorBoundary extends Component {
   }
 }
 
+// Pages animate themselves in (motion initial/animate). No AnimatePresence exit
+// here: with mode="wait", rapid back-to-back navigations (e.g. a server resync
+// right after a round-start event) could leave the EXITING page on screen while
+// the URL already pointed at the new one.
 const AnimatedRoutes = () => {
   const location = useLocation();
   return (
-    <AnimatePresence mode="wait">
+    <>
       <Routes location={location} key={location.pathname}>
         <Route path="/" element={<HomePage />} />
         <Route path="/lobby" element={<LobbyPage />} />
@@ -122,7 +126,7 @@ const AnimatedRoutes = () => {
         <Route path="/draw-tel-end" element={<DrawTelEndPage />} />
         <Route path="/draw-tel-wait" element={<DrawTelWaitPage />} />
       </Routes>
-    </AnimatePresence>
+    </>
   );
 };
 

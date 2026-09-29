@@ -157,7 +157,7 @@ function createVotingGame({
     /** @private */
     _createVoteCollector(io, room, code) {
       return VoteCollector.create({
-        getExpectedCount: () => activePlayers(room).length,
+        getExpectedIds: () => activePlayers(room).map(p => p.id),
         allowSelfVote: scoreConfig.allowSelfVote || false,
         onVote: (voterId, targetId) => {
           room[gameKey].votes[voterId] = targetId;

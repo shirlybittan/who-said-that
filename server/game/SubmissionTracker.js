@@ -1,3 +1,5 @@
+const { makeIsComplete } = require('./threshold');
+
 /**
  * SubmissionTracker — shared submission counting and threshold detection.
  *
@@ -17,18 +19,20 @@
  * Creates a submission tracker.
  *
  * @param {object}   opts
- * @param {Function} opts.getExpectedCount  - () => number  Active player count at call-time
+ * @param {Function} [opts.getExpectedIds]  - () => string[] ids expected to submit (preferred; see threshold.js)
+ * @param {Function} [opts.getExpectedCount] - () => number  legacy: expected submission count
  * @param {Function} opts.onComplete        - () => void    Called once when threshold is crossed
  * @param {Function} [opts.onRecord]        - (playerId, data, isUpdate) => void  Side-effect hook
  *
  * @returns {{ record, update, has, get, getAll, getPlayerIds, count, isComplete, reset }}
  */
-function create({ getExpectedCount, onComplete, onRecord }) {
+function create({ getExpectedIds, getExpectedCount, onComplete, onRecord }) {
   const store = new Map(); // playerId → data
   let completeFired = false;
+  const isDone = makeIsComplete({ getExpectedIds, getExpectedCount });
 
   const checkComplete = () => {
-    if (!completeFired && store.size >= getExpectedCount()) {
+    if (!completeFired && isDone(store)) {
       completeFired = true;
       onComplete();
     }
@@ -83,7 +87,10 @@ function create({ getExpectedCount, onComplete, onRecord }) {
     getAll()         { return [...store.values()]; },
     getPlayerIds()   { return [...store.keys()]; },
     count()          { return store.size; },
-    isComplete()     { return store.size >= getExpectedCount(); },
+    isComplete()     { return isDone(store); },
+
+    /** Re-evaluate completion after the expected set changed (disconnect, kick). */
+    recheck()        { checkComplete(); },
 
     /**
      * Reset for a new round. onComplete can fire again after reset.
