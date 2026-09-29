@@ -84,9 +84,6 @@ export default function DrawTelGuessPage() {
           <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest mb-1">📞 Draw Telephone</p>
           <div className="flex items-center justify-between">
             <h2 className="text-2xl font-['Fredoka_One'] text-[#FF6B6B]">What's the original prompt?</h2>
-            <span className="text-sm font-['Nunito'] tabular-nums ml-3" style={{ color: secondsLeft <= 10 ? '#FF6B6B' : '#9CA3AF' }}>
-              ⏱ {secondsLeft}s
-            </span>
           </div>
           <p className="text-sm text-gray-400 font-['Nunito'] mt-1">
             {guessTurn.drawerCount} player{guessTurn.drawerCount !== 1 ? 's' : ''} drew this for you. What do you think the original sentence was?
@@ -99,7 +96,7 @@ export default function DrawTelGuessPage() {
             <ReplayCanvas
               strokes={guessTurn.finalStrokes || []}
               photoData={guessTurn.originalSelfieData || null}
-              cssWidth={400}
+              cssWidth="100%"
             />
           </div>
         </div>

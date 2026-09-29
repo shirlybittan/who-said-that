@@ -148,12 +148,6 @@ export default function DrawTelRevealPage() {
             {/* Vote countdown */}
             <div className="flex items-center justify-between">
               <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest">How close was the guess?</p>
-              <span
-                className="text-sm font-['Nunito'] tabular-nums"
-                style={{ color: voteSecondsLeft <= 10 ? '#FF6B6B' : '#9CA3AF' }}
-              >
-                ⏱ {voteSecondsLeft}s
-              </span>
             </div>
 
             {/* Before / after comparison */}

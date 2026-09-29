@@ -58,13 +58,10 @@ export default function DrawTelPromptPage() {
       className="flex flex-col items-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6"
       initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}
     >
-      <div className="w-full max-w-md mt-6 mb-2 flex items-center justify-between">
+      <div className="w-full max-w-md mt-2 mb-2 flex items-center justify-between">
         <span className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest">📞 Draw Telephone</span>
         <span className="text-xs text-[#FF6B6B] font-['Nunito']">
           {dt.promptsSubmittedCount}/{dt.totalPrompts} submitted
-        </span>
-        <span className="text-xs font-['Nunito'] tabular-nums" style={{ color: secondsLeft <= 10 ? '#FF6B6B' : '#9CA3AF' }}>
-          ⏱ {secondsLeft}s
         </span>
       </div>
 

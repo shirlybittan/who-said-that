@@ -6,7 +6,6 @@ import { useSounds } from '../hooks/useSounds';
 import { CANVAS_W, CANVAS_H, redrawCanvas, redrawOverlay, drawStroke } from '../utils/canvasUtils';
 import { saveStrokes, loadStrokes, clearRoomStrokes } from '../utils/strokeAutosave';
 import { useFullscreen } from '../hooks/useFullscreen';
-import TimerRing from '../components/game/TimerRing';
 import GamePageWrapper from '../components/GamePageWrapper.jsx';
 import { motion } from 'framer-motion';
 import MiniGameWrapper from '../components/MiniGameWrapper.jsx';
@@ -232,6 +231,12 @@ export default function DrawTelDrawPage() {
     }
   }, [redrawAll, sounds, hasConfirmed, roomCode, turn?.promptId]);
 
+  // After submitting, leave fullscreen: Edit lives outside the fullscreen
+  // container, and a locked fullscreen canvas used to trap the player (P2-11).
+  useEffect(() => {
+    if (hasConfirmed && isFullscreen) toggleFullscreen();
+  }, [hasConfirmed]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Auto-submit at ≤1 second (belt-and-suspenders alongside dt:time_up)
   useEffect(() => {
     if (!hasConfirmed && turn && dt.currentTurn?.secondsLeft <= 1) {
@@ -312,7 +317,7 @@ export default function DrawTelDrawPage() {
                     {turn?.position > 1 ? "Draw over the previous drawing!" : "Draw this prompt!"}
                   </p>
                 </div>
-                <TimerRing secondsLeft={turn?.secondsLeft ?? 0} total={45} size={52} />
+                {/* Turn countdown: shell GameTimer (fed by dt:turn_timer). */}
               </div>
 
               {/* Previous step content */}
@@ -361,6 +366,7 @@ export default function DrawTelDrawPage() {
               onEditResponse={handleEditResponse}
               confirmLabel={dt.hasSubmittedTurn ? "Update Drawing" : "Submit Drawing"}
               disableConfirm={strokeCount === 0}
+              lockWhenConfirmed={false}
             >
               <div
                 ref={containerRef}
@@ -394,7 +400,8 @@ export default function DrawTelDrawPage() {
                   {/* Fullscreen toggle button */}
                   <button
                     onClick={toggleFullscreen}
-                    className="absolute top-2 left-2 z-20 bg-black/50 p-2 rounded-lg text-white hover:bg-black/80 transition"
+                    aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+                    className="absolute top-2 left-2 z-20 bg-black/50 p-2 rounded-lg text-white hover:bg-black/80 transition pointer-events-auto"
                   >
                     {isFullscreen ? '↙️' : '↗️'}
                   </button>
@@ -403,7 +410,7 @@ export default function DrawTelDrawPage() {
                 {/* Toolbar */}
                 <div className={`bg-[#1A1A2E] rounded-2xl p-3 border border-[#2D2D44] flex flex-col gap-2 w-full ${isFullscreen ? 'absolute bottom-0 left-0 right-0 rounded-none rounded-t-2xl bg-[#1A1A2E]/95 backdrop-blur-sm z-20' : ''}`}>
                   {/* Colors */}
-                  <div className="flex justify-between">
+                  <div className="flex flex-wrap justify-center gap-1.5">
                     {COLORS.map(c => (
                       <button
                         key={c}

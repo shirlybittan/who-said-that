@@ -2,6 +2,7 @@ import React from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import GameEndShell from '../components/game/GameEndShell';
+import { gameLabel } from '../games/registry';
 import GamePageWrapper from '../components/GamePageWrapper.jsx';
 
 export default function DrawTelEndPage() {
@@ -11,8 +12,7 @@ export default function DrawTelEndPage() {
   return (
     <GamePageWrapper>
       <GameEndShell
-        title="Game Over!"
-        subtitle="📞 Draw Telephone"
+        subtitle={gameLabel('draw-telephone', state.lang)}
         leaderboard={dt.leaderboard || []}
         accentColor="#FF6B6B"
         isHost={isHost}

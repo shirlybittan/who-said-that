@@ -1207,24 +1207,11 @@ function DrawingHostPanel({ drawData, players, status }) {
 function DtHostPanel({ dtData, players, status, onRevealNext, drawerTimers = {}, phaseTimer = null }) {
   const { phase, promptsSubmittedCount, totalPrompts, totalChains, chainsCompletedCount, chainProgress, guessedCount, totalGuessers, reveal, leaderboard } = dtData;
 
-  // Countdown for prompting phase
-  const [promptSecs, setPromptSecs] = useState(dtData.promptSecondsLeft || 60);
-  useEffect(() => {
-    if (status !== 'dt-prompting') return;
-    setPromptSecs(dtData.promptSecondsLeft || 60);
-    const id = setInterval(() => setPromptSecs(s => Math.max(0, s - 1)), 1000);
-    return () => clearInterval(id);
-  }, [status]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Vote countdown for reveal step 2 (guess+vote — auto-advances)
-  const isRevealVoteStep = status === 'dt-reveal' && (reveal?.step ?? 0) === 2;
-  const [hostVoteSecs, setHostVoteSecs] = useState(30);
-  useEffect(() => {
-    if (!isRevealVoteStep) return;
-    setHostVoteSecs(reveal?.voteSecondsLeft ?? 30);
-    const id = setInterval(() => setHostVoteSecs(s => Math.max(0, s - 1)), 1000);
-    return () => clearInterval(id);
-  }, [isRevealVoteStep]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Countdowns come from the server's phase_timer ticks (they used to be local
+  // intervals that ignored pause and drifted — AUDIT.md P2-29).
+  const promptSecs = phaseTimer?.phase === 'dt-prompting' ? phaseTimer.secondsLeft : (dtData.promptSecondsLeft || 60);
+  const hostVoteSecs = phaseTimer?.phase === 'dt-vote' ? phaseTimer.secondsLeft : (reveal?.voteSecondsLeft ?? 30);
+  const dtPaused = !!phaseTimer?.paused || !!dtData.paused;
 
   // ── PROMPTING phase ─────────────────────────────────────────────────────
   if (status === 'dt-prompting') {
@@ -1236,7 +1223,7 @@ function DtHostPanel({ dtData, players, status, onRevealNext, drawerTimers = {},
           <h1 className="text-4xl font-['Fredoka_One'] text-[#FF6B6B]">Drawing in Chain</h1>
           <p className="text-xl text-gray-300 font-['Nunito'] mt-1">Players are writing prompts…</p>
         </motion.div>
-        <TimerRing secondsLeft={promptSecs} total={dtData.promptTimeTotal || 60} paused={false} size={100} />
+        <TimerRing secondsLeft={promptSecs} total={phaseTimer?.total || dtData.promptTimeTotal || 60} paused={dtPaused} size={100} />
         <div className="w-full bg-[#1A1A2E] rounded-2xl p-6 border border-[#FF6B6B]/30">
           <div className="flex justify-between items-center mb-3">
             <span className="text-gray-400 font-['Nunito']">Prompts submitted</span>
@@ -1264,7 +1251,7 @@ function DtHostPanel({ dtData, players, status, onRevealNext, drawerTimers = {},
         <div className="w-full bg-[#1A1A2E] rounded-2xl p-6 border border-[#FF6B6B]/30">
           <div className="flex justify-between items-center mb-3">
             <span className="text-gray-400 font-['Nunito']">Selfies submitted</span>
-            <span className="text-[#FF6B6B] font-['Fredoka_One'] text-2xl">{(dtData.submittedPlayerIds || []).length}<span className="text-gray-500">/{totalPrompts}</span></span>
+            <span className="text-[#FF6B6B] font-['Fredoka_One'] text-2xl">{(dtData.submittedPlayerIds || []).length}<span className="text-gray-500">/{dtData.selfieTotalPhotographers || players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound).length}</span></span>
           </div>
           <ProgressBar value={(dtData.submittedPlayerIds || []).length} total={totalPrompts} color="#FF6B6B" />
           <div className="flex flex-wrap gap-2 mt-4 justify-center">
