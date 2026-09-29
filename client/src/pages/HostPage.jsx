@@ -2319,10 +2319,13 @@ function CreateRoomForm({ onSubmit, onBack }) {
   );
 }
 
+// Server phases timed by server/game/phaseTimer.js (phase_timer.phase labels).
+const TIMED_PHASES = ['selfie-photo', 'selfie-voting', 'caption-photo', 'caption-writing', 'caption-voting', 'photovote-photo', 'photovote-voting', 'dt-selfie', 'draw-voting', 'fitb-voting'];
+
 // ─── Host control bar (creator only) ─────────────────────────────────────────
 // QUEUE_GAME_LABELS imported from '../config/hostControls'
 
-function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbData, photoVoteData, captionData, isMixedMode, onStart, onMltPauseResume, onMltChangeQuestion, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, onNewGame, onPlayAgain, onNewPartyPack, gameQueue, queueIndex, onSelfieNextRound, onSelfieSkipQuestion, onShowSelfieResults, onFitbChangeQuestion, onFitbSkipToVote, onFitbShowResults, onFitbNextRound, onPhotoVoteChangeQuestion, onPhotoVoteSkipToResults, onPhotoVoteNextRound, onCaptionChangeQuestion, onCaptionSkipToVoting, onCaptionSkipToResults, onCaptionNextRound, onAnswerPauseResume, answerPaused, onFitbPauseResume, dtData, onDtPauseResume }) {
+function HostControlBar({ phaseTimer, onAdvancePhase, onTogglePhasePause, status, isRoomCreator, players, mlt, votingData, fitbData, photoVoteData, captionData, isMixedMode, onStart, onMltPauseResume, onMltChangeQuestion, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, onNewGame, onPlayAgain, onNewPartyPack, gameQueue, queueIndex, onSelfieNextRound, onSelfieSkipQuestion, onShowSelfieResults, onFitbChangeQuestion, onFitbSkipToVote, onFitbShowResults, onFitbNextRound, onPhotoVoteChangeQuestion, onPhotoVoteSkipToResults, onPhotoVoteNextRound, onCaptionChangeQuestion, onCaptionSkipToVoting, onCaptionSkipToResults, onCaptionNextRound, onAnswerPauseResume, answerPaused, onFitbPauseResume, dtData, onDtPauseResume }) {
   // One advance per click: a double-click must not skip content (AUDIT.md P1-01).
   const guard = useSingleFlight(1000);
   onMltNext = guard(onMltNext); onNextRound = guard(onNextRound); onSkipQuestion = guard(onSkipQuestion);
@@ -2332,7 +2335,7 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
   onFitbSkipToVote = guard(onFitbSkipToVote); onFitbShowResults = guard(onFitbShowResults); onFitbNextRound = guard(onFitbNextRound);
   onPhotoVoteSkipToResults = guard(onPhotoVoteSkipToResults); onPhotoVoteNextRound = guard(onPhotoVoteNextRound);
   onCaptionSkipToVoting = guard(onCaptionSkipToVoting); onCaptionSkipToResults = guard(onCaptionSkipToResults); onCaptionNextRound = guard(onCaptionNextRound);
-  onSkipMiniGame = guard(onSkipMiniGame); onMltSkip = guard(onMltSkip);
+  onSkipMiniGame = guard(onSkipMiniGame); onMltSkip = guard(onMltSkip); onAdvancePhase = guard(onAdvancePhase);
 
   if (!isRoomCreator) return null;
 
@@ -2705,12 +2708,28 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
     );
   }
 
-  if (!controls) return null;
+  // Generic controls for any server-timed waiting phase (photos, captions,
+  // votes): a countdown, Pause, and "Continue" = end the phase now (P1-05).
+  const timedPhaseActive = !!phaseTimer?.phase && TIMED_PHASES.includes(phaseTimer.phase) && phaseTimer.secondsLeft > 0;
+  const timedControls = timedPhaseActive ? (
+    <div className="flex items-center gap-3" data-testid="timed-phase-controls">
+      <TimerRing secondsLeft={phaseTimer.secondsLeft} total={phaseTimer.total || 30} paused={phaseTimer.paused} size={44} />
+      <button onClick={onTogglePhasePause} className="px-5 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FFE66D] text-[#FFE66D] bg-[#FFE66D]/10 hover:bg-[#FFE66D]/20 active:scale-95 transition">
+        {phaseTimer.paused ? '▶ Resume' : '⏸ Pause'}
+      </button>
+      <button onClick={onAdvancePhase} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base bg-[#4ECDC4] text-black hover:bg-[#3dbdb5] active:scale-95 transition">
+        ⏭ Continue
+      </button>
+    </div>
+  ) : null;
+
+  if (!controls && !timedControls) return null;
 
   return (
     <div className="flex-shrink-0 flex justify-center items-center gap-6 py-4 px-6 bg-[#0D0D1A]/95 border-t border-[#2D2D44] z-10">
       <span className="text-xs font-['Nunito'] text-gray-600 uppercase tracking-widest">Host Controls</span>
       <div className="w-px h-5 bg-[#2D2D44]" />
+      {timedControls}
       {controls}
     </div>
   );
@@ -3024,7 +3043,9 @@ export default function HostPage() {
     sock.on('tot:paused', ({ secondsLeft }) => setTotData(prev => ({ ...prev, paused: true, secondsLeft: secondsLeft ?? prev.secondsLeft })));
     sock.on('tot:resumed', ({ secondsLeft }) => setTotData(prev => ({ ...prev, paused: false, secondsLeft: secondsLeft ?? prev.secondsLeft })));
 
-    sock.on('phase_timer', (data) => setPhaseTimer({ secondsLeft: data.secondsLeft, active: data.secondsLeft > 0, paused: !!data.paused }));
+    sock.on('phase_timer', (data) => setPhaseTimer({ secondsLeft: data.secondsLeft, active: data.secondsLeft > 0, paused: !!data.paused, phase: data.phase || null, total: data.total || null }));
+
+    sock.on('phase_paused', ({ paused }) => setPhaseTimer(prev => (prev ? { ...prev, paused: !!paused } : prev)));
 
     sock.on('tot:results', (data) => {
       setTotData(prev => ({
@@ -4141,6 +4162,9 @@ export default function HostPage() {
       )}
 
       {!isMltCoreView && !isTotCoreView && <HostControlBar
+        phaseTimer={phaseTimer}
+        onAdvancePhase={() => socketRef.current?.emit('host:advance', { code: gameInfo.code })}
+        onTogglePhasePause={() => socketRef.current?.emit('host:toggle_pause', { code: gameInfo.code })}
         status={status}
         isRoomCreator={isRoomCreator}
         players={players}

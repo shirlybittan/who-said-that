@@ -28,6 +28,7 @@ const { renderDashboard } = require('./admin/dashboard');
 const log = require('./logger');
 const { hardenSocket } = require('./game/safeSocket');
 const { requireMinPlayers, clampRounds } = require('./game/rules');
+const { VOTE_SECS, startPhaseTimer, advanceCurrentPhase, togglePausePhase } = require('./game/phaseTimer');
 
 // Last-resort guard: a bug in a timer callback or handler must not take down
 // every room. Socket handlers are already wrapped by hardenSocket (below).
@@ -368,6 +369,11 @@ const startDrawVoting = (io, room, code) => {
   for (let i = submissions.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1)); [submissions[i], submissions[j]] = [submissions[j], submissions[i]];
   }
+  startPhaseTimer(io, room, code, {
+    key: 'drawVote', seconds: VOTE_SECS, phase: 'draw-voting',
+    isActive: () => room.phase === 'drawing' && room.draw?.phase === 'voting',
+    onExpire: () => resolveDrawVoting(io, room, code),
+  });
   io.to(code).emit('draw:voting_started', { submissions, round: room.draw.round, word: room.draw.word, mode: room.draw.mode || 'classic', totalVoters: playingPlayers.length });
 };
 
@@ -1236,6 +1242,25 @@ io.on('connection', (socket) => {
       room.skipVotes = [];
       emitWstQuestion(io, room, code);
     }
+  });
+
+  // ─── Generic host controls for timed phases (AUDIT.md P1-05) ──────────────
+  // "Continue": end the current timed phase now, exactly as if its timer ran out.
+  socket.on('host:advance', ({ code }) => {
+    const room = getRoom(code);
+    if (!room) return;
+    const player = findPlayer(room, socket.id);
+    if (!player || !player.isHost) return;
+    advanceCurrentPhase(room);
+  });
+
+  socket.on('host:toggle_pause', ({ code }) => {
+    const room = getRoom(code);
+    if (!room) return;
+    const player = findPlayer(room, socket.id);
+    if (!player || !player.isHost) return;
+    const paused = togglePausePhase(room);
+    if (paused !== null) io.to(code).emit('phase_paused', { paused, phase: room._advance?.phase });
   });
 
   socket.on('kick_player', ({ code, targetPlayerId }) => {
@@ -2462,6 +2487,11 @@ io.on('connection', (socket) => {
     room._timers?.fitbAnswer?.cancel();
     room.fitb.phase = 'voting';
     room.fitb._votes = {};
+    startPhaseTimer(io, room, code, {
+      key: 'fitbVote', seconds: VOTE_SECS, phase: 'fitb-voting',
+      isActive: () => room.phase === 'fitb' && room.fitb?.phase === 'voting',
+      onExpire: () => resolveFitbVoting(io, room, code),
+    });
     room.fitb._voteCollector = VoteCollector.create({
       getExpectedIds: () => getActivePlayers(room).map(p => p.id),
       allowSelfVote: false,
@@ -2490,7 +2520,7 @@ io.on('connection', (socket) => {
     });
     // Broadcast to everyone else in the room (host socket, spectator/browser screen, non-playing players)
     // This ensures the host TV screen receives the event even when it has a separate socket from hostPlayer.
-    const playingSocketIds = playingPlayers.map(p => p.socketId);
+    const playingSocketIds = playingPlayers.map(p => getPlayerSocket(p));
     io.to(code).except(playingSocketIds).emit('fitb:voting_started', {
       answers: anonAnswers,
       question: room.fitb.question,

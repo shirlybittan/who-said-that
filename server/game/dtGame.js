@@ -8,6 +8,7 @@ const { shuffleAnswers } = require('./gameLogic');
 const { sanitizeStrokes } = require('./limits');
 const { getActivePlayers, admitLateJoiners } = require('./players');
 const { requireMinPlayers, clampRounds } = require('./rules');
+const { PHOTO_SECS, VOTE_SECS, startPhaseTimer } = require('./phaseTimer');
 const log = require('../logger');
 const {
   createRoom,
@@ -85,6 +86,7 @@ function setupDtGame(io, socket, {
 
     const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
     io.to(code).emit('selfie:photo_phase', { round: 1, totalRounds, players, totalPhotographers: playingPlayers.length });
+    startSelfiePhotoTimer(io, room, code);
 
     // Notify players whose photos were pre-loaded so they see "saved selfie" UI
     playingPlayers.forEach(p => {
@@ -309,6 +311,11 @@ function setupDtGame(io, socket, {
     if (room.selfie.phase !== 'drawing') return;
     room.selfie.phase = 'voting';
     room.selfie.votes = {};
+    startPhaseTimer(io, room, code, {
+      key: 'selfieVote', seconds: VOTE_SECS, phase: 'selfie-voting',
+      isActive: () => room.phase === 'selfie' && room.selfie?.phase === 'voting',
+      onExpire: () => resolveSelfieVoting(io, room, code),
+    });
     const playingPlayers = getActivePlayers(room);
     room.selfie._voteCollector = VoteCollector.create({
       getExpectedIds: () => getActivePlayers(room).map(p => p.id),
@@ -493,6 +500,7 @@ function setupDtGame(io, socket, {
     } else {
       const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
       io.to(code).emit('selfie:photo_phase', { round: room.selfie.round, totalRounds: room.selfie.totalRounds, players, totalPhotographers: playingPlayers.length });
+      startSelfiePhotoTimer(io, room, code);
     }
   });
 
@@ -550,6 +558,7 @@ function setupDtGame(io, socket, {
       } else {
         const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
         io.to(code).emit('selfie:photo_phase', { round: room.selfie.round, totalRounds: room.selfie.totalRounds, players, totalPhotographers: playingPlayers.length });
+        startSelfiePhotoTimer(io, room, code);
       }
     }
   });
@@ -575,6 +584,51 @@ function setupDtGame(io, socket, {
     room.players.forEach(p => { p.isReady = false; });
     io.to(code).emit('selfie:restarted', { code, players: room.players });
   });
+
+  // ─── Phase timers (AUDIT.md P1-05) ────────────────────────────────────────
+  // Every waiting phase has a countdown; host:advance ends it early through the
+  // same onExpire path. Photo phases need at least 2 photos to continue.
+  const enoughPhotos = (photos) => Object.keys(photos || {}).length >= 2;
+
+  function startSelfiePhotoTimer(io, room, code) {
+    startPhaseTimer(io, room, code, {
+      key: 'selfiePhoto', seconds: PHOTO_SECS, phase: 'selfie-photo',
+      isActive: () => room.phase === 'selfie' && room.selfie?.phase === 'photo',
+      onExpire: () => (enoughPhotos(room.selfie.photos) ? assignSelfieDrawers(io, room, code) : startSelfiePhotoTimer(io, room, code)),
+    });
+  }
+
+  function startCaptionPhotoTimer(io, room, code) {
+    startPhaseTimer(io, room, code, {
+      key: 'captionPhoto', seconds: PHOTO_SECS, phase: 'caption-photo',
+      isActive: () => room.phase === 'caption' && room.caption?.phase === 'photo',
+      onExpire: () => (enoughPhotos(room.caption.photos) ? startCaptionWritingPhase(io, room, code) : startCaptionPhotoTimer(io, room, code)),
+    });
+  }
+
+  function startPhotoVotePhotoTimer(io, room, code) {
+    startPhaseTimer(io, room, code, {
+      key: 'photoVotePhoto', seconds: PHOTO_SECS, phase: 'photovote-photo',
+      isActive: () => room.phase === 'photovote' && room.photoVote?.phase === 'photo',
+      onExpire: () => (enoughPhotos(room.photoVote.photos) ? startPhotoVoteRound(io, room, code) : startPhotoVotePhotoTimer(io, room, code)),
+    });
+  }
+
+  function startDtSelfieTimer(io, room, code) {
+    startPhaseTimer(io, room, code, {
+      key: 'dtSelfie', seconds: PHOTO_SECS, phase: 'dt-selfie',
+      isActive: () => room.phase === 'dt' && room.dt?.phase === 'selfie',
+      onExpire: () => startDtPromptPhase(io, room, code),
+    });
+  }
+
+  function startDtPromptPhase(io, room, code) {
+    if (room.phase !== 'dt' || room.dt.phase !== 'selfie') return;
+    room.dt.phase = 'prompting';
+    const list = getActivePlayers(room).map(p => ({ id: p.id, name: p.name, color: p.color }));
+    io.to(code).emit('dt:prompt_phase', { players: list, totalPrompts: list.length, secondsLeft: DT_PROMPT_SECS });
+    startDtPromptTimer(io, room, code);
+  }
 
   // ─── Threshold evaluation (shared by submit handlers and disconnects) ─────
   // "Everyone we're waiting for has submitted" for the current sub-phase of the
@@ -621,10 +675,7 @@ function setupDtGame(io, socket, {
       case 'dt': {
         const dt = room.dt;
         if (dt.phase === 'selfie' && everyone(players, id => dt.selfiePhotos?.[id])) {
-          dt.phase = 'prompting';
-          const list = players.map(p => ({ id: p.id, name: p.name, color: p.color }));
-          io.to(code).emit('dt:prompt_phase', { players: list, totalPrompts: list.length, secondsLeft: DT_PROMPT_SECS });
-          startDtPromptTimer(io, room, code);
+          startDtPromptPhase(io, room, code);
         } else if (dt.phase === 'prompting' && everyone(players, id => dt.prompts.some(pr => pr.authorId === id))) {
           if (dt.promptTimerRef) { clearTimeout(dt.promptTimerRef); dt.promptTimerRef = null; }
           startDtDrawingPhase(io, room, code, players);
@@ -704,6 +755,7 @@ function setupDtGame(io, socket, {
       totalRounds: room.caption.totalRounds,
       players,
     });
+    startCaptionPhotoTimer(io, room, code);
 
     // Notify pre-loaded players
     captionPlayers.forEach(p => {
@@ -782,6 +834,12 @@ function setupDtGame(io, socket, {
       featuredPhotoData: room.caption.photos[room.caption.featuredOwnerId],
       writers: playingPlayers.map(p => ({ id: p.id, name: p.name })),
     });
+    const writingSecs = room.roomConfig?.roundDurationSecs || 60;
+    startPhaseTimer(io, room, code, {
+      key: 'captionWriting', seconds: writingSecs, phase: 'caption-writing',
+      isActive: () => room.phase === 'caption' && room.caption?.phase === 'writing',
+      onExpire: () => startCaptionVotingPhase(io, room, code),
+    });
   }
 
   socket.on('caption:submit_caption', ({ code, text }) => {
@@ -814,6 +872,11 @@ function setupDtGame(io, socket, {
     if (room.caption.phase !== 'writing') return; // guard against double-fire
     room.caption.phase = 'voting';
     room.caption.votes = {};
+    startPhaseTimer(io, room, code, {
+      key: 'captionVote', seconds: VOTE_SECS, phase: 'caption-voting',
+      isActive: () => room.phase === 'caption' && room.caption?.phase === 'voting',
+      onExpire: () => endCaptionRound(io, room, code),
+    });
     room.caption._voteCollector = VoteCollector.create({
       getExpectedIds: () => getActivePlayers(room).map(p => p.id),
       allowSelfVote: true, // self-vote validated manually in handler before castVote
@@ -1006,6 +1069,7 @@ function setupDtGame(io, socket, {
       players: pvPlayers.map(p => ({ id: p.id, name: p.name, color: p.color })),
       prompt: photoPhasePrompt,
     });
+    startPhotoVotePhotoTimer(io, room, code);
   });
 
   socket.on('photovote:start', ({ code, subType = 'pmatch', rounds: rawRounds }) => {
@@ -1076,6 +1140,7 @@ function setupDtGame(io, socket, {
       players,
       prompt: photoPhasePrompt,
     });
+    startPhotoVotePhotoTimer(io, room, code);
 
     // Notify pre-loaded players
     pvPlayers.forEach(p => {
@@ -1130,6 +1195,11 @@ function setupDtGame(io, socket, {
   function startPhotoVoteRound(io, room, code) {
     room.photoVote.phase = 'voting';
     room.photoVote.votes = {};
+    startPhaseTimer(io, room, code, {
+      key: 'photoVoteVote', seconds: VOTE_SECS, phase: 'photovote-voting',
+      isActive: () => room.phase === 'photovote' && room.photoVote?.phase === 'voting',
+      onExpire: () => endPhotoVoteRound(io, room, code),
+    });
     room.photoVote._voteCollector = VoteCollector.create({
       getExpectedIds: () => getActivePlayers(room).map(p => p.id),
       allowSelfVote: false,
@@ -1219,6 +1289,7 @@ function setupDtGame(io, socket, {
         players: playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color })),
         prompt: photoPhasePrompt,
       });
+      startPhotoVotePhotoTimer(io, room, code);
       return;
     }
 
@@ -1346,6 +1417,7 @@ function setupDtGame(io, socket, {
           players: playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color })),
           prompt: photoPhasePrompt,
         });
+        startPhotoVotePhotoTimer(io, room, code);
       } else {
         room.photoVote.phase = 'voting';
         room.photoVote.votes = {};
@@ -1725,6 +1797,7 @@ function setupDtGame(io, socket, {
     room.dt.phase = 'selfie';
     room.dt.selfiePhotos = {}; // Players must explicitly submit or reuse
     io.to(code).emit('dt:selfie_phase', { players, photoCount: 0, totalPhotographers: playingPlayers.length });
+    startDtSelfieTimer(io, room, code);
 
     // Notify players whose photos are already saved so they can choose to reuse them
     playingPlayers.forEach(p => {
