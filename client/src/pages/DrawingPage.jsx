@@ -8,11 +8,12 @@ import { useSounds } from '../hooks/useSounds';
 import { CANVAS_W, CANVAS_H, redrawCanvas } from '../utils/canvasUtils';
 import { saveStrokes, loadStrokes, clearStrokes, clearRoomStrokes } from '../utils/strokeAutosave';
 import { useFullscreen } from '../hooks/useFullscreen';
-import TimerRing from '../components/game/TimerRing';
 import ReplayCanvas from '../components/game/ReplayCanvas';
 import MiniGameWrapper from '../components/MiniGameWrapper.jsx';
 import { useMiniGameLifecycle } from '../hooks/useMiniGameLifecycle.js';
 import ConfirmVoteCard from '../game-core/player/ConfirmVoteCard';
+import VoteLocked from '../components/game/VoteLocked';
+import useAutoConfirmPending from '../game-core/hooks/useAutoConfirmPending';
 
 const COLORS = [
   '#000000', '#FFFFFF', '#EF4444', '#F97316', '#EAB308',
@@ -37,6 +38,7 @@ export default function DrawingPage() {
   const navigate = useNavigate();
   const { draw, isHost, roomCode, playerId, isPlaying, lang } = state;
   const t = translations[lang].draw;
+  const tc = translations[state.lang]?.common || translations.en.common;
 
   const sounds = useSounds();
 
@@ -223,14 +225,17 @@ export default function DrawingPage() {
     initialConfirmed: draw.hasSubmitted,
   });
 
-  // Auto-submit when timer is about to expire to capture the latest drawing.
+  // Auto-submit once when the timer is about to expire, to capture the latest
+  // drawing (the effect used to fire up to 3 times — AUDIT.md P3-13).
+  const autoSubmittedRoundRef = useRef(null);
   useEffect(() => {
-    if (draw.phase === 'drawing' && draw.secondsLeft <= 1) {
+    if (draw.phase === 'drawing' && draw.secondsLeft <= 1 && autoSubmittedRoundRef.current !== draw.round) {
+      autoSubmittedRoundRef.current = draw.round;
       socket.emit('draw:submit', { code: roomCode, strokes: strokesRef.current });
       if (!draw.hasSubmitted) dispatch({ type: 'DRAW_MARK_SUBMITTED' });
       markConfirmed();
     }
-  }, [draw.secondsLeft, draw.phase, draw.hasSubmitted, roomCode, dispatch, markConfirmed]);
+  }, [draw.secondsLeft, draw.phase, draw.round, draw.hasSubmitted, roomCode, dispatch, markConfirmed]);
 
   const handleVote = (votedForPlayerId) => {
     if (draw.hasVoted || votedForPlayerId === playerId) return;
@@ -245,6 +250,7 @@ export default function DrawingPage() {
   };
 
   const handleCancelVote = () => setPendingVote(null);
+  useAutoConfirmPending({ pending: pendingVote, hasVoted: draw.hasVoted, onConfirm: handleConfirmVote });
 
   const handleSkipToVote = () => socket.emit('draw:skip_to_vote', { code: roomCode });
   const handleShowResults = () => socket.emit('draw:show_results', { code: roomCode });
@@ -271,7 +277,6 @@ export default function DrawingPage() {
               <span className="text-xl font-['Fredoka_One'] text-[#FFE66D] uppercase">{displayWord}</span>
             </div>
           </div>
-          <TimerRing secondsLeft={draw.secondsLeft} total={draw.timeLimit} />
         </div>
 
         {/* Submission count */}
@@ -320,7 +325,7 @@ export default function DrawingPage() {
 
             {draw.hasSubmitted && (
               <div className="absolute top-2 right-2 bg-black/70 text-white text-xs font-['Nunito'] px-2 py-1 rounded-lg">
-                ✓ Submitted — keep drawing to update
+                {t.keepDrawing}
               </div>
             )}
           </div>
@@ -350,7 +355,7 @@ export default function DrawingPage() {
                 <button onClick={() => setTool('eraser')}
                   className={`px-3 py-1 rounded-lg text-sm font-['Fredoka_One'] transition border-2 ${tool === 'eraser' ? 'bg-white text-black border-[#FFE66D]' : 'bg-[#2D2D44] text-white border-transparent'}`}
                 >
-                  ✏️ Eraser
+                  ✏️ {t.eraser}
                 </button>
                 <button onClick={handleUndo} disabled={strokeCount === 0}
                   className="px-3 py-1 rounded-lg text-sm font-['Fredoka_One'] bg-[#2D2D44] text-white disabled:opacity-40 hover:bg-[#3D3D54] transition">
@@ -361,6 +366,15 @@ export default function DrawingPage() {
                   🗑
                 </button>
               </div>
+              {/* Submit must be reachable in fullscreen too (AUDIT.md P2-11). */}
+              <button
+                data-testid="draw-fullscreen-submit"
+                onClick={() => { if (hasConfirmed) editResponse(); else if (strokeCount > 0) confirm(); }}
+                disabled={!hasConfirmed && strokeCount === 0}
+                className="w-full py-2.5 rounded-xl font-['Fredoka_One'] text-lg bg-[#FFE66D] text-black disabled:opacity-40 active:scale-95 transition"
+              >
+                {hasConfirmed ? `↑ ${t.updateBtn || 'Update'}` : `✓ ${t.submitBtn}`}
+              </button>
             </div>
           )}
         </div>
@@ -406,7 +420,7 @@ export default function DrawingPage() {
               onClick={() => setTool('eraser')}
               className={`px-3 py-1.5 rounded-lg text-sm font-['Fredoka_One'] transition border-2 ${tool === 'eraser' ? 'bg-white text-black border-[#FFE66D]' : 'bg-[#2D2D44] text-white border-transparent'}`}
             >
-              ✏️ Eraser
+              ✏️ {t.eraser}
             </button>
           </div>
 
@@ -481,7 +495,7 @@ export default function DrawingPage() {
                   'border-[#2D2D44]'
                 }`}
               >
-                <ReplayCanvas strokes={sub.strokes} cssWidth="100%" cssHeight={130} className="w-full" />
+                <ReplayCanvas strokes={sub.strokes} cssWidth="100%" className="w-full" />
                 <div className="bg-[#1A1A2E] py-2 px-2">
                   {isSecretMode && sub.word && (
                     <p className="text-[10px] font-['Fredoka_One'] text-[#FFE66D] uppercase text-center mb-1 truncate">{sub.word}</p>
@@ -510,26 +524,19 @@ export default function DrawingPage() {
           return (
             <ConfirmVoteCard
               vote={{
-                label: selectedSub?.word ? `Drawing for "${selectedSub.word}"` : 'Anonymous Drawing',
+                label: selectedSub?.word ? t.drawingFor.replace('{word}', selectedSub.word) : t.anonDrawing,
                 badge: String.fromCharCode(65 + selectedIndex)
               }}
               onConfirm={handleConfirmVote}
               onChange={handleCancelVote}
-              confirmLabel="✓ Confirm"
-              changeLabel="← Change"
-              titleLabel="Confirm your vote?"
+              accentColor="#C39BD3"
             />
           );
         })()}
 
         {/* Voted confirmation or waiting state */}
         {draw.hasVoted && (
-          <div className="w-full max-w-md mt-2 py-4 rounded-2xl bg-[#1A1A2E] border-2 border-[#FFE66D] text-center">
-            <p className="text-[#FFE66D] font-['Fredoka_One'] text-lg">✓ Vote locked in!</p>
-            <p className="text-gray-400 font-['Nunito'] text-sm mt-1">
-              {draw.voteCount || 0}/{draw.totalVoters || subs.length} voted — waiting for results
-            </p>
-          </div>
+          <VoteLocked voteCount={draw.voteCount || 0} totalVoters={draw.totalVoters || subs.length} accentColor="#C39BD3" />
         )}
 
         {isHost && (
@@ -599,7 +606,7 @@ export default function DrawingPage() {
 
         {/* Leaderboard snapshot */}
         <div className="w-full max-w-md bg-[#1A1A2E] rounded-2xl border border-[#2D2D44] p-4 mb-4">
-          <h3 className="text-sm font-['Fredoka_One'] text-gray-400 uppercase tracking-widest mb-3">Scores</h3>
+          <h3 className="text-sm font-['Fredoka_One'] text-gray-400 uppercase tracking-widest mb-3">{t.scores}</h3>
           {(draw.leaderboard || []).map((p, i) => (
             <div key={p.id} className="flex items-center justify-between py-1">
               <div className="flex items-center gap-2">
@@ -613,7 +620,7 @@ export default function DrawingPage() {
         </div>
 
         {isHost && (
-          <div className="fixed bottom-0 w-full max-w-md px-4 py-4 bg-[#1A1A2E] border-t border-[#2D2D44] flex gap-3">
+          <div className="sticky bottom-0 w-full max-w-md px-4 py-4 bg-[#1A1A2E] border-t border-[#2D2D44] flex gap-3">
             <button
               onClick={handleNextRound}
               className="flex-1 py-3 rounded-xl font-['Fredoka_One'] text-lg bg-[#C39BD3] text-black hover:bg-[#b089c2] transition"
@@ -624,7 +631,7 @@ export default function DrawingPage() {
         )}
         {!isHost && (
           <p className="text-[#C39BD3] font-['Fredoka_One'] text-lg animate-pulse mt-4">
-            {isLastRound ? 'Waiting for host...' : 'Waiting for next round...'}
+            {isLastRound ? tc.waitingHost : t.waitingNext}
           </p>
         )}
       </motion.div>
@@ -634,7 +641,7 @@ export default function DrawingPage() {
   // Fallback while transitioning
   return (
     <motion.div className="flex items-center justify-center min-h-screen bg-[#0D0D1A]" initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.3 }}>
-      <p className="text-white font-['Fredoka_One'] text-2xl animate-pulse">🎨 Loading...</p>
+      <p className="text-white font-['Fredoka_One'] text-2xl animate-pulse">🎨 {tc.loading}</p>
     </motion.div>
   );
 }

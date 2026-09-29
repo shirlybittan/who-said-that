@@ -974,7 +974,7 @@ function DrawingHostPanel({ drawData, players, status }) {
       <div className="flex flex-col items-center gap-6 w-full max-w-xl">
         <motion.div className="text-center" initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }}>
           <p className="text-5xl mb-2">🎨</p>
-          <h1 className="text-4xl font-['Fredoka_One'] text-[#C39BD3]">Sketch It!</h1>
+          <h1 className="text-4xl font-['Fredoka_One'] text-[#C39BD3]">{gameName('drawing')}</h1>
           <div className="flex items-center justify-center gap-2 mt-1">
             {isSecretMode
               ? <span className="px-3 py-1 rounded-full bg-[#C39BD3]/20 text-[#C39BD3] text-xs font-['Nunito'] font-bold uppercase tracking-widest">✦ Secret Words</span>
@@ -1141,7 +1141,7 @@ function DrawingHostPanel({ drawData, players, status }) {
       <div className="flex flex-col items-center gap-8 w-full max-w-3xl">
         <motion.div className="text-center" initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }}>
           <p className="text-6xl mb-3">🎨</p>
-          <h1 className="text-5xl font-['Fredoka_One'] text-[#C39BD3] mb-2">Sketch It!</h1>
+          <h1 className="text-5xl font-['Fredoka_One'] text-[#C39BD3] mb-2">{gameName('drawing')}</h1>
           <p className="text-2xl font-['Fredoka_One'] text-[#FFE66D]">Game Over!</p>
         </motion.div>
 
@@ -1198,7 +1198,7 @@ function DrawingHostPanel({ drawData, players, status }) {
   return (
     <div className="flex flex-col items-center gap-4">
       <p className="text-5xl">🎨</p>
-      <h1 className="text-4xl font-['Fredoka_One'] text-[#C39BD3]">Sketch It!</h1>
+      <h1 className="text-4xl font-['Fredoka_One'] text-[#C39BD3]">{gameName('drawing')}</h1>
     </div>
   );
 }

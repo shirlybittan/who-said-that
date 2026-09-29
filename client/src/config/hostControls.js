@@ -24,7 +24,7 @@ export const QUEUE_GAME_LABELS = {
   'whos-most-likely': 'Most Likely To',
   'this-or-that': 'This or That',
   situational: 'Situational',
-  drawing: 'Sketch It',
+  drawing: 'Pictionary Battle',
   mixed: 'Mixed',
   'fill-in-the-blank': 'Fill in the Blank',
   caption: 'Selfie Captions',
