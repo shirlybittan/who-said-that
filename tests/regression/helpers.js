@@ -66,7 +66,7 @@ export async function joinRoom(phone, code, name) {
   await phone.getByTestId('player-input-name').fill(name);
   await phone.getByTestId('player-input-pin').fill(code);
   await phone.getByTestId('player-btn-join').click();
-  await phone.waitForURL(/\/lobby/, { timeout: 10_000 });
+  await phone.waitForURL(/\/lobby/, { timeout: 20_000 }); // a cold Vite may still be compiling
 }
 
 export async function startFromTv(tv) {
