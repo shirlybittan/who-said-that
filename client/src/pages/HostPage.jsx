@@ -3615,6 +3615,11 @@ export default function HostPage() {
     return () => { sock.disconnect(); };
   }, [roomCodeParam, attachGameHandlers]);
 
+  // Whatever socket this screen ends up owning (creator or spectator) is closed
+  // when the TV page unmounts — the creator socket used to stay connected with
+  // ~100 listeners calling setState on an unmounted page (AUDIT.md P3-15).
+  useEffect(() => () => { socketRef.current?.disconnect(); socketRef.current = null; }, []);
+
   // ─── Creator flow ─────────────────────────────────────────────────────────
   const handleCreateRoom = useCallback(({ gameType, gameName, rounds, selectedSubGames, roundsPerSubGame, drawMode, roomConfig, gameQueue: queue }) => {
     setCreatorSettings({ gameType, rounds, drawMode: drawMode || 'classic' });
@@ -3745,7 +3750,9 @@ export default function HostPage() {
     const code = gameInfo.code;
     const sock = socketRef.current;
     if (!sock || !code) {
-      if (!skipTransitionCheck) setIsTransitioning(false);
+      // Always release the lock (Skip Mini Game passes skipTransitionCheck and
+      // used to leave every transition button dead — AUDIT.md P3-21).
+      setIsTransitioning(false);
       return;
     }
     

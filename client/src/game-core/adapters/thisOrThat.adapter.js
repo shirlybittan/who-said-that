@@ -44,13 +44,12 @@ export const thisOrThatAdapter = {
     };
   },
 
-  createHostActions({ socket, roomCode }) {
+  createHostActions({ socket, roomCode, state }) {
     return {
+      // Toggle from the current state (it used to always pause — AUDIT.md P3-20).
       togglePause: () => {
         if (!socket || !roomCode) return;
-        // Read current paused state from the emitted event — adapter is stateless,
-        // so we rely on the server toggling via separate pause/resume events.
-        socket.emit('tot:pause', { code: roomCode });
+        socket.emit(state?.tot?.paused ? 'tot:resume' : 'tot:pause', { code: roomCode });
       },
       togglePauseResume: (paused) => {
         if (!socket || !roomCode) return;
