@@ -22,7 +22,7 @@ export const TIMER_PAUSE_EVENTS = {
 export const STALE_AFTER_MS = 2500;
 
 // Results / end events: the countdown is over even if its last tick wasn't 0.
-const TIMER_STOP_EVENTS = /(:results$|round_results|round_ended|all_votes_in|game_over|game_ended|:end$|intro:update|game:intro)/;
+export const TIMER_STOP_EVENTS = /(:results$|round_results|round_ended|all_votes_in|game_over|game_ended|:end$|intro:update|game:intro)/;
 
 /** Store action for an incoming socket event, or null when it isn't timer-related. */
 export function timerActionFor(event, data) {

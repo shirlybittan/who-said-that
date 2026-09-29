@@ -8,6 +8,9 @@ import VoteCoin from '../components/game/VoteCoin';
 import MiniGameWrapper from '../components/MiniGameWrapper.jsx';
 import { useMiniGameLifecycle } from '../hooks/useMiniGameLifecycle.js';
 import ConfirmVoteCard from '../game-core/player/ConfirmVoteCard';
+import VoteLocked from '../components/game/VoteLocked';
+import useAutoConfirmPending from '../game-core/hooks/useAutoConfirmPending';
+import useSingleFlight from '../game-core/hooks/useSingleFlight';
 
 export default function FillBlankPage() {
   const { state, dispatch } = useGame();
@@ -20,6 +23,9 @@ export default function FillBlankPage() {
   const answerTimeLeft = fitb.answerTimeLeft ?? 30;
 
   const tQuestion = translations[state.lang]?.question || translations.en.question;
+  const tf = translations[state.lang]?.fitb || translations.en.fitb;
+  const tc = translations[state.lang]?.common || translations.en.common;
+  const guard = useSingleFlight(1000);
 
   const doSubmitAnswer = () => {
     const textToSubmit = answerText.trim() || tQuestion.fallbackAnswer;
@@ -96,25 +102,13 @@ export default function FillBlankPage() {
       setPendingVote(null);
     }
   };
+  useAutoConfirmPending({ pending: pendingVote, hasVoted: fitb.hasVoted, onConfirm: handleVoteConfirm });
 
-  const handleSkipToVote = () => {
-    sounds.click?.();
-    socket.emit('fitb:skip_to_vote', { code: state.roomCode });
-  };
-
-  const handleShowResults = () => {
-    sounds.click?.();
-    socket.emit('fitb:show_results', { code: state.roomCode });
-  };
-
+  // Host advance on the phone (the TV has its own controls; skipping a timed
+  // vote is the shared PhoneHostBar's "Continue").
   const handleNextRound = () => {
     sounds.click?.();
     socket.emit('fitb:next_round', { code: state.roomCode });
-  };
-
-  const handleRestart = () => {
-    sounds.click?.();
-    socket.emit('fitb:restart', { code: state.roomCode });
   };
 
   // ── Answering phase ────────────────────────────────────────────────────────
@@ -124,14 +118,13 @@ export default function FillBlankPage() {
         className="flex flex-col items-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6"
         initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}
       >
-        <div className="w-full max-w-md mt-16 mb-4 flex items-center justify-between text-sm text-gray-500 font-['Nunito']">
-          <span>Round {fitb.round} / {fitb.totalRounds}</span>
-          <span className="text-red-400 font-bold tracking-widest tabular-nums">⏳ {answerTimeLeft}s</span>
-          <span className="text-[#4ECDC4]">Fill in the Blank</span>
+        <div className="w-full max-w-md mt-2 mb-4 flex items-center justify-between text-sm text-gray-500 font-['Nunito']">
+          <span>{tc.round.replace('{current}', fitb.round).replace('{total}', fitb.totalRounds)}</span>
+          <span className="text-[#4ECDC4]">{tf.title}</span>
         </div>
 
         <div className="w-full max-w-md bg-[#1A1A2E] rounded-2xl border-2 border-[#4ECDC4]/40 p-6 mb-6">
-          <p className="text-xl font-['Fredoka_One'] text-white text-center leading-snug">
+          <p className="text-xl font-['Fredoka_One'] text-white text-center leading-snug [overflow-wrap:anywhere]">
             {fitb.question || '…'}
           </p>
         </div>
@@ -141,17 +134,17 @@ export default function FillBlankPage() {
             hasConfirmed={hasConfirmed}
             onConfirm={confirm}
             onEditResponse={editResponse}
-            confirmLabel={fitb.hasAnswered ? tQuestion.updateBtn : 'Submit'}
+            confirmLabel={fitb.hasAnswered ? tQuestion.updateBtn : tc.submit}
             editLabel={tQuestion.editBtn}
-            disableConfirm={false}
+            value={answerText}
             isHost={state.isHost}
           >
             <input
               className="w-full bg-[#1A1A2E] border-2 border-[#2D2D44] focus:border-[#4ECDC4] outline-none rounded-xl px-4 py-3 text-white font-['Nunito'] text-base placeholder-gray-500 transition"
-              placeholder={fitb.hasAnswered ? 'Update your answer…' : 'Type your funniest answer…'}
+              placeholder={tf.placeholder}
               value={answerText}
               onChange={(e) => setAnswerText(e.target.value.slice(0, 120))}
-              onKeyDown={(e) => e.key === 'Enter' && confirm()}
+              onKeyDown={(e) => e.key === 'Enter' && answerText.trim() && confirm()}
               maxLength={120}
               autoFocus={!hasConfirmed}
             />
@@ -178,7 +171,7 @@ export default function FillBlankPage() {
         className="flex flex-col items-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6"
         initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}
       >
-        <h1 className="text-2xl font-['Fredoka_One'] text-[#FF6B6B] mt-6 mb-2">Vote for the best!</h1>
+        <h1 className="text-2xl font-['Fredoka_One'] text-[#FF6B6B] mt-2 mb-2">{tf.votePrompt}</h1>
         <p className="text-gray-400 font-['Nunito'] text-sm italic text-center mb-6">"{fitb.question}"</p>
 
         <motion.div
@@ -195,15 +188,15 @@ export default function FillBlankPage() {
                 key={ans.id}
                 onClick={() => !fitb.hasVoted && !isOwn && setPendingVote(ans.id)}
                 disabled={fitb.hasVoted || isOwn}
-                className={`w-full text-left rounded-2xl p-4 border-2 font-['Nunito'] transition
+                className={`w-full text-start rounded-2xl p-4 border-2 font-['Nunito'] transition
                   ${isSelected ? 'border-[#4ECDC4] bg-[#4ECDC4]/10' : 'border-[#2D2D44] bg-[#1A1A2E]'}
                   ${fitb.hasVoted || isOwn ? 'cursor-default opacity-50' : 'hover:border-[#4ECDC4]/60 cursor-pointer'}
                   ${isOwn ? 'opacity-40' : ''}`}
                 variants={{ hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { duration: 0.25 } } }}
               >
-                <span className="text-white">{ans.text}</span>
-                {isOwn && <span className="ml-2 text-xs text-gray-500">(yours)</span>}
-                {isSelected && <span className="ml-2 text-[#4ECDC4]">✓</span>}
+                <span className="text-white [overflow-wrap:anywhere]">{ans.text}</span>
+                {isOwn && <span className="ms-2 text-xs text-gray-500">{tc.yours}</span>}
+                {isSelected && <span className="ms-2 text-[#4ECDC4]">✓</span>}
               </motion.button>
             );
           })}
@@ -220,17 +213,12 @@ export default function FillBlankPage() {
               }}
               onConfirm={handleVoteConfirm}
               onChange={() => setPendingVote(null)}
-              confirmLabel="✓ Confirm"
-              changeLabel="← Change"
-              titleLabel="Confirm your vote?"
             />
           );
         })()}
 
         {fitb.hasVoted && (
-          <p className="text-gray-400 font-['Nunito'] text-sm">
-            Waiting for results… ({fitb.voteCount}/{fitb.totalVoters} voted)
-          </p>
+          <VoteLocked voteCount={fitb.voteCount} totalVoters={fitb.totalVoters} />
         )}
 
 
@@ -248,7 +236,7 @@ export default function FillBlankPage() {
         className="flex flex-col items-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6"
         initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}
       >
-        <h1 className="text-3xl font-['Fredoka_One'] text-[#FF6B6B] mb-2 mt-4">Results!</h1>
+        <h1 className="text-3xl font-['Fredoka_One'] text-[#FF6B6B] mb-2 mt-2">{tf.results}</h1>
         <p className="text-gray-400 font-['Nunito'] italic text-center mb-6">"{fitb.question}"</p>
 
         <motion.div
@@ -270,9 +258,9 @@ export default function FillBlankPage() {
                     <span className="font-['Fredoka_One'] text-sm">{ans.playerName || 'Player'}</span>
                     {isWinner && <span className="text-lg">⭐</span>}
                   </div>
-                  <span className="text-sm font-['Nunito'] text-gray-400">{ans.votes} {ans.votes === 1 ? 'vote' : 'votes'}</span>
+                  <span className="text-sm font-['Nunito'] text-gray-400">{ans.votes} {ans.votes === 1 ? tc.vote : tc.votes}</span>
                 </div>
-                <p className="text-white font-['Nunito'] italic">"{ans.text}"</p>
+                <p className="text-white font-['Nunito'] italic [overflow-wrap:anywhere]">"{ans.text}"</p>
                 {ans.votes > 0 && (
                   <div className="flex flex-wrap gap-1.5 mt-2">
                     {Array.from({ length: Math.min(ans.votes, 10) }).map((_, j) => (
@@ -287,18 +275,26 @@ export default function FillBlankPage() {
 
         {/* Leaderboard */}
         <div className="w-full max-w-md bg-[#1A1A2E] rounded-2xl border border-[#2D2D44] p-4 mb-6">
-          <h3 className="text-lg font-['Fredoka_One'] text-[#FFE66D] mb-3">Leaderboard</h3>
+          <h3 className="text-lg font-['Fredoka_One'] text-[#FFE66D] mb-3">{tc.leaderboard}</h3>
           {fitb.leaderboard.map((p, i) => (
             <div key={p.id} className="flex items-center justify-between py-1">
               <div className="flex items-center gap-2">
-                <span className="text-gray-500 font-['Nunito'] w-5 text-right">{i + 1}.</span>
+                <span className="text-gray-500 font-['Nunito'] w-5 text-end">{i + 1}.</span>
                 <span className="w-3 h-3 rounded-full" style={{ backgroundColor: p.color }} />
                 <span className="font-['Nunito']">{p.name}</span>
               </div>
-              <span className="font-['Fredoka_One'] text-[#FF6B6B]">{p.score} pts</span>
+              <span className="font-['Fredoka_One'] text-[#FF6B6B]">{p.score} {tc.pts}</span>
             </div>
           ))}
         </div>
+
+        {fitb.phase === 'results' && (state.isHost ? (
+          <button data-testid="fitb-next-round" onClick={guard(handleNextRound)} className="w-full max-w-md py-4 rounded-2xl font-['Fredoka_One'] text-xl bg-[#FFE66D] text-black active:scale-95 transition">
+            {fitb.round >= fitb.totalRounds ? tc.finish : tc.nextRound}
+          </button>
+        ) : (
+          <p className="text-gray-400 font-['Nunito'] animate-pulse">{tc.waitingHost}</p>
+        ))}
 
 
 
@@ -313,7 +309,7 @@ export default function FillBlankPage() {
       className="flex flex-col items-center justify-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7]"
       initial={{ opacity: 0 }} animate={{ opacity: 1 }}
     >
-      <p className="text-gray-400 font-['Nunito']">Loading…</p>
+      <p className="text-gray-400 font-['Nunito']">{tc.loading}</p>
     </motion.div>
   );
 }

@@ -38,6 +38,7 @@ import DrawTelWaitPage from './pages/DrawTelWaitPage.jsx';
 import HostPage from './pages/HostPage.jsx';
 import ConnectionOverlay from './components/ConnectionOverlay.jsx';
 import PlayerTopBar from './components/shell/PlayerTopBar.jsx';
+import PhoneHostBar from './components/shell/PhoneHostBar.jsx';
 import { useSocket } from './hooks/useSocket';
 import { usePhaseSync } from './hooks/usePhaseSync';
 import { useScreenSync } from './hooks/useScreenSync';
@@ -161,6 +162,7 @@ function App() {
                   <div className="font-['Nunito'] min-h-screen bg-[#0D0D1A] text-[#F7F7F7] relative">
                     <PlayerTopBar />
                     <AnimatedRoutes />
+                    <PhoneHostBar />
                     <ConnectionOverlay />
                   </div>
                 </SocketHandler>

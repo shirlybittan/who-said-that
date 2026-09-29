@@ -1,6 +1,18 @@
 export const translations = {
   en: {
+    fitb: {
+      "title": "Fill in the Blank",
+      "placeholder": "Type your funniest answer…",
+      "votePrompt": "Vote for the best!",
+      "results": "Results!",
+      "gameOver": "Game Over!"
+    },
     common: {
+      "continue": "Continue",
+      "nextRound": "Next Round →",
+      "finish": "Finish 🏁",
+      "yours": "(yours)",
+      "leaderboard": "Leaderboard",
       "vote": "vote",
       "votes": "votes",
       "votesIn": "votes in",
@@ -276,7 +288,19 @@ export const translations = {
     }
   },
   fr: {
+    fitb: {
+      "title": "Compléter la phrase",
+      "placeholder": "Écris ta réponse la plus drôle…",
+      "votePrompt": "Vote pour la meilleure !",
+      "results": "Résultats !",
+      "gameOver": "Partie terminée !"
+    },
     common: {
+      "continue": "Continuer",
+      "nextRound": "Manche suivante →",
+      "finish": "Terminer 🏁",
+      "yours": "(la tienne)",
+      "leaderboard": "Classement",
       "vote": "vote",
       "votes": "votes",
       "votesIn": "votes reçus",
@@ -552,7 +576,19 @@ export const translations = {
     }
   },
   he: {
+    fitb: {
+      "title": "השלם את החסר",
+      "placeholder": "כתבו את התשובה הכי מצחיקה…",
+      "votePrompt": "הצביעו לטובה ביותר!",
+      "results": "תוצאות!",
+      "gameOver": "המשחק נגמר!"
+    },
     common: {
+      "continue": "המשך",
+      "nextRound": "לסבב הבא ←",
+      "finish": "סיום 🏁",
+      "yours": "(שלך)",
+      "leaderboard": "טבלת מובילים",
       "vote": "הצבעה",
       "votes": "הצבעות",
       "votesIn": "הצבעות התקבלו",

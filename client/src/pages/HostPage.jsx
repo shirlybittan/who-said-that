@@ -13,6 +13,7 @@ import { PICKABLE_GAMES, PLAYLIST_GAMES, getGame, gameLabel, gameName, gameRules
 import MostLikelyToHostView from '../games/most-likely-to/HostView.jsx';
 import ThisOrThatHostView from '../games/this-or-that/HostView.jsx';
 import useSingleFlight from '../game-core/hooks/useSingleFlight';
+import { TIMER_STOP_EVENTS } from '../game-core/roundTimer';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
 const CLIENT_URL = (import.meta.env.VITE_CLIENT_URL || '').replace(/\/$/, '') || null;
@@ -1566,7 +1567,7 @@ function FitbHostPanel({ fitbData, players, onSkipToVote, onShowResults, onNextR
         </div>
         <div className="w-full flex flex-col gap-3">
           {(fitbData.leaderboard || []).map((entry, i) => (
-            <motion.div key={entry.playerId} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }}
+            <motion.div key={entry.playerId || entry.id || i} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }}
               className="flex items-center gap-4 rounded-2xl px-5 py-4"
               style={i === 0 ? { background: 'linear-gradient(135deg, #F9CA2420, #FFE66D20)', border: '2px solid #F9CA24' } : { background: '#1A1A2E', border: '1px solid #2D2D44' }}>
               <span className="text-2xl w-10 text-center">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}</span>
@@ -1586,8 +1587,8 @@ function FitbHostPanel({ fitbData, players, onSkipToVote, onShowResults, onNextR
           <h2 className="text-2xl font-['Fredoka_One'] text-[#F9CA24] leading-snug">{fitbData.question}</h2>
         </div>
         <div className="w-full flex flex-col gap-3">
-          {(fitbData.answers || []).sort((a, b) => (b.votes || 0) - (a.votes || 0)).map((ans, i) => (
-            <div key={ans.playerId} className="flex items-start gap-3 rounded-2xl px-5 py-4 bg-[#1A1A2E] border border-[#2D2D44]">
+          {[...(fitbData.answers || [])].sort((a, b) => (b.votes || 0) - (a.votes || 0)).map((ans, i) => (
+            <div key={ans.playerId || i} className="flex items-start gap-3 rounded-2xl px-5 py-4 bg-[#1A1A2E] border border-[#2D2D44]">
               <span className="font-['Fredoka_One'] text-[#FFE66D] w-6">{ans.votes || 0}★</span>
               <div className="flex-1">
                 <p className="text-white font-['Nunito'] italic">"{ans.text}"</p>
@@ -3053,6 +3054,11 @@ export default function HostPage() {
 
     sock.on('phase_timer', (data) => setPhaseTimer({ secondsLeft: data.secondsLeft, active: data.secondsLeft > 0, paused: !!data.paused, phase: data.phase || null, total: data.total || null }));
 
+    // A phase that ended (results / game over) has no countdown any more —
+    // otherwise the TV kept showing a stale timer with a dead Continue button.
+    sock.onAny((event) => {
+      if (TIMER_STOP_EVENTS.test(event)) setPhaseTimer(prev => (prev ? { ...prev, secondsLeft: 0, active: false, phase: null } : prev));
+    });
     sock.on('phase_paused', ({ paused }) => setPhaseTimer(prev => (prev ? { ...prev, paused: !!paused } : prev)));
 
     sock.on('tot:results', (data) => {
