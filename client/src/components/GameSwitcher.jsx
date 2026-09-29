@@ -2,20 +2,9 @@ import React, { useState } from 'react';
 import { socket } from '../socket';
 import { useGame } from '../store/gameStore.jsx';
 
-const AVAILABLE_GAMES = [
-  { id: 'most-likely-to',    label: '👑 Most Likely To',   accent: '#4ECDC4' },
-  { id: 'who-said-that',     label: '🤔 Who Said That?',   accent: '#FFE66D' },
-  { id: 'situational',       label: '💭 Situational',      accent: '#6C5CE7' },
-  { id: 'this-or-that',      label: '🆚 This or That',     accent: '#A29BFE' },
-  { id: 'drawing',           label: '🎨 Sketch It!',       accent: '#C39BD3' },
-  { id: 'fill-in-the-blank', label: '✏️ Fill in the Blank', accent: '#55EFC4' },
-  { id: 'draw-telephone',    label: '📞 Drawing in Chain', accent: '#FF6B6B' },
-  { id: 'selfie-roast',      label: '📸 Selfie Artist',    accent: '#FD79A8' },
-  { id: 'caption',           label: '💬 Selfie Captions',  accent: '#FD79A8' },
-  { id: 'pmatch',            label: '🎯 Who Fits?',         accent: '#FDCB6E' },
-  { id: 'photoassoc',        label: '🏆 Photo Traits',      accent: '#A29BFE' },
-  { id: 'mixed',             label: '🎲 Mixed Pack',       accent: '#FDCB6E' },
-];
+import { PICKABLE_GAMES, gameLabel } from '../games/registry';
+
+const AVAILABLE_GAMES = PICKABLE_GAMES.map(g => ({ id: g.id, label: gameLabel(g.id), accent: g.accent }));
 
 export default function GameSwitcher({ currentGameType }) {
   const { state } = useGame();

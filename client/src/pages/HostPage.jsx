@@ -7,7 +7,7 @@ import Confetti from 'react-confetti';
 import TimerRing from '../components/game/TimerRing';
 import VoteCoin from '../components/game/VoteCoin';
 import ReplayCanvas from '../components/game/ReplayCanvas';
-import { QUEUE_GAME_LABELS } from '../config/hostControls';
+import { PICKABLE_GAMES, PLAYLIST_GAMES, gameLabel, gameName, startGame } from '../games/registry';
 import MostLikelyToHostView from '../games/most-likely-to/HostView.jsx';
 import ThisOrThatHostView from '../games/this-or-that/HostView.jsx';
 import useSingleFlight from '../game-core/hooks/useSingleFlight';
@@ -19,20 +19,8 @@ const CLIENT_URL = (import.meta.env.VITE_CLIENT_URL || '').replace(/\/$/, '') ||
 
 const COLORS = ['#FF6B6B', '#4ECDC4', '#FFE66D', '#A8E6CF', '#FF8B94', '#6C5CE7', '#FFA07A', '#00CEC9'];
 
-const GAME_TYPE_LABELS = {
-  'who-said-that': '🤔 Who Said That?',
-  'situational': ' Situational',
-  'this-or-that': '⚡ This or That',
-  'most-likely-to': '👑 Most Likely To',
-  'mixed': '🎲 Mixed',
-  'drawing': '🎨 Pictionary Battle',
-  'fill-in-the-blank': '✏️ Fill in the Blank',
-  'draw-telephone': '📞 Drawing in Chain',
-  'selfie-roast': '📸 Draw on Friends',
-  'caption': '💬 Selfie Captions',
-  'pmatch': '🎭 Selfie Challenge',
-  'photoassoc': '🎯 Prompt Match',
-};
+// Game names/icons come from games/registry.js (single source of truth).
+const GAME_TYPE_LABELS = new Proxy({}, { get: (_, id) => (typeof id === 'string' ? gameLabel(id) : undefined) });
 
 // ─── Shared sub-components ───────────────────────────────────────────────────
 
@@ -1993,19 +1981,8 @@ function SelfieHostPanel({ selfieData, players, onSkipToVote, onShowResults }) {
 }
 
 const GAME_TYPES_FOR_CREATE = [
-  { id: 'most-likely-to',    label: '👑 Most Likely To',      desc: 'Who fits the prompt?',           accent: '#4ECDC4' },
-  { id: 'who-said-that',     label: '🤔 Who Said That?',      desc: 'Guess who wrote it!',            accent: '#FFE66D' },
-  { id: 'situational',       label: ' Situational',         desc: 'Answer for someone!',            accent: '#A8E6CF' },
-  { id: 'this-or-that',      label: '⚡ This or That',        desc: 'Pick a side!',                   accent: '#6C5CE7' },
-  { id: 'drawing',           label: '🎨 Pictionary Battle',    desc: 'Draw and guess!',                accent: '#C39BD3' },
-  { id: 'fill-in-the-blank', label: '✏️ Fill in the Blank',  desc: 'Finish the sentence!',           accent: '#F9CA24' },
-  { id: 'draw-telephone',    label: '📞 Drawing in Chain',    desc: 'Draw step by step, guess the prompt!', accent: '#FF6B6B' },
-  { id: 'selfie-roast',      label: '📸 Draw on Friends',       desc: "Draw on someone's selfie!",     accent: '#FD79A8' },
-  { id: 'caption',           label: '💬 Selfie Captions',     desc: 'Write funny captions!',          accent: '#FD79A8' },
-  { id: 'pmatch',            label: '🎭 Selfie Challenge',    desc: 'Act out a prompt — best selfie wins!', accent: '#FDCB6E' },
-  { id: 'photoassoc',        label: '🎯 Prompt Match',        desc: 'Vote who matches the vibe!',     accent: '#A29BFE' },
-  { id: 'mixed',             label: '🎲 Mixed',               desc: 'All modes shuffled!',            accent: '#FF8B94' },
-  { id: 'playlist',          label: '📋 Playlist',            desc: 'Play multiple games in order!',  accent: '#FDCB6E', colSpan: 2 },
+  ...PICKABLE_GAMES.map(g => ({ id: g.id, label: gameLabel(g.id), desc: g.tagline, accent: g.accent })),
+  { id: 'playlist', label: '📋 Playlist', desc: 'Play multiple games in order!', accent: '#FDCB6E', colSpan: 2 },
 ];
 
 function SetupScreen({ onCreateRoom, onSpectate }) {
@@ -2065,12 +2042,8 @@ function SetupScreen({ onCreateRoom, onSpectate }) {
   );
 }
 
-const MIXED_SUB_GAMES = [
-  { id: 'who-said-that', label: '🤔 Who Said That?', accent: '#FFE66D' },
-  { id: 'situational',   label: ' Situational',   accent: '#A8E6CF' },
-  { id: 'this-or-that',  label: '⚡ This or That',  accent: '#6C5CE7' },
-  { id: 'drawing',       label: '🎨 Pictionary Battle',  accent: '#C39BD3' },
-];
+const MIXED_SUB_GAMES = ['who-said-that', 'situational', 'this-or-that', 'drawing']
+  .map(id => ({ id, label: gameLabel(id), accent: PICKABLE_GAMES.find(g => g.id === id)?.accent }));
 
 const DEFAULT_SUB_GAMES = ['who-said-that', 'situational', 'this-or-that', 'drawing'];
 
@@ -2128,19 +2101,7 @@ function CreateRoomForm({ onSubmit, onBack }) {
     }
   };
 
-  const PLAYLIST_GAME_OPTIONS = [
-    { id: 'most-likely-to', label: '👑 Most Likely To', accent: '#4ECDC4' },
-    { id: 'who-said-that',  label: '🤔 Who Said That?', accent: '#FFE66D' },
-    { id: 'situational',   label: ' Situational',   accent: '#A8E6CF' },
-    { id: 'this-or-that',  label: '⚡ This or That',  accent: '#6C5CE7' },
-    { id: 'drawing',       label: '🎨 Pictionary Battle',  accent: '#C39BD3' },
-    { id: 'fill-in-the-blank', label: '✏️ Fill in the Blank', accent: '#F9CA24' },
-    { id: 'draw-telephone', label: '📞 Drawing in Chain', accent: '#FF6B6B' },
-    { id: 'selfie-roast',  label: '📸 Draw on Friends', accent: '#FD79A8' },
-    { id: 'caption',       label: '💬 Selfie Captions', accent: '#FD79A8' },
-    { id: 'pmatch',        label: '🎭 Selfie Challenge', accent: '#FDCB6E' },
-    { id: 'photoassoc',    label: '🎯 Prompt Match',     accent: '#A29BFE' },
-  ];
+  const PLAYLIST_GAME_OPTIONS = PLAYLIST_GAMES.map(g => ({ id: g.id, label: gameLabel(g.id), accent: g.accent }));
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 overflow-auto">
@@ -2323,7 +2284,6 @@ function CreateRoomForm({ onSubmit, onBack }) {
 const TIMED_PHASES = ['selfie-photo', 'selfie-voting', 'caption-photo', 'caption-writing', 'caption-voting', 'photovote-photo', 'photovote-voting', 'dt-selfie', 'draw-voting', 'fitb-voting'];
 
 // ─── Host control bar (creator only) ─────────────────────────────────────────
-// QUEUE_GAME_LABELS imported from '../config/hostControls'
 
 function HostControlBar({ phaseTimer, onAdvancePhase, onTogglePhasePause, status, isRoomCreator, players, mlt, votingData, fitbData, photoVoteData, captionData, isMixedMode, onStart, onMltPauseResume, onMltChangeQuestion, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, onNewGame, onPlayAgain, onNewPartyPack, gameQueue, queueIndex, onSelfieNextRound, onSelfieSkipQuestion, onShowSelfieResults, onFitbChangeQuestion, onFitbSkipToVote, onFitbShowResults, onFitbNextRound, onPhotoVoteChangeQuestion, onPhotoVoteSkipToResults, onPhotoVoteNextRound, onCaptionChangeQuestion, onCaptionSkipToVoting, onCaptionSkipToResults, onCaptionNextRound, onAnswerPauseResume, answerPaused, onFitbPauseResume, dtData, onDtPauseResume }) {
   // One advance per click: a double-click must not skip content (AUDIT.md P1-01).
@@ -2694,7 +2654,7 @@ function HostControlBar({ phaseTimer, onAdvancePhase, onTogglePhasePause, status
         </button>
         {hasNextInQueue && (
           <button onClick={onNextQueueGame} className="px-8 py-2.5 rounded-xl font-['Fredoka_One'] text-base bg-[#6C5CE7] text-white hover:bg-[#5a4bd0] active:scale-95 transition" style={{ boxShadow: '0 0 16px #6C5CE740' }}>
-            ▶ Next: {QUEUE_GAME_LABELS[nextGame.type] || nextGame.type}
+            ▶ Next: {gameName(nextGame.type)}
           </button>
         )}
         <button
@@ -3666,25 +3626,7 @@ export default function HostPage() {
   const handleStartGame = () => {
     const sock = socketRef.current;
     if (!sock || !gameInfo.code) return;
-    if (creatorSettings.gameType === 'most-likely-to') {
-      sock.emit('mlt:start', { code: gameInfo.code, rounds: creatorSettings.rounds, allowSelfVote: true });
-    } else if (creatorSettings.gameType === 'drawing') {
-      sock.emit('draw:start', { code: gameInfo.code, rounds: creatorSettings.rounds, mode: creatorSettings.drawMode || 'classic' });
-    } else if (creatorSettings.gameType === 'fill-in-the-blank') {
-      sock.emit('fitb:start', { code: gameInfo.code, rounds: creatorSettings.rounds });
-    } else if (creatorSettings.gameType === 'selfie-roast') {
-      sock.emit('selfie:start', { code: gameInfo.code, rounds: creatorSettings.rounds });
-    } else if (creatorSettings.gameType === 'caption') {
-      sock.emit('caption:start', { code: gameInfo.code, rounds: creatorSettings.rounds });
-    } else if (creatorSettings.gameType === 'pmatch') {
-      sock.emit('photovote:start', { code: gameInfo.code, subType: 'pmatch', rounds: creatorSettings.rounds });
-    } else if (creatorSettings.gameType === 'photoassoc') {
-      sock.emit('photovote:start', { code: gameInfo.code, subType: 'photoassoc', rounds: creatorSettings.rounds });
-    } else if (creatorSettings.gameType === 'draw-telephone') {
-      sock.emit('dt:start', { code: gameInfo.code });
-    } else {
-      sock.emit('start_game', { code: gameInfo.code, rounds: creatorSettings.rounds });
-    }
+    startGame(sock, creatorSettings.gameType, { code: gameInfo.code, rounds: creatorSettings.rounds, mode: creatorSettings.drawMode });
   };
 
   const handleMltPauseResume = () => {
@@ -3771,15 +3713,7 @@ export default function HostPage() {
     // Then start the next game directly — server start handlers cancel previous timers and setup state
     const t = nextGame.type;
     setTimeout(() => {
-      if (t === 'most-likely-to') sock.emit('mlt:start', { code, rounds: nextRounds, allowSelfVote: true });
-      else if (t === 'drawing') sock.emit('draw:start', { code, rounds: nextRounds, mode: nextMode });
-      else if (t === 'fill-in-the-blank') sock.emit('fitb:start', { code, rounds: nextRounds });
-      else if (t === 'selfie-roast') sock.emit('selfie:start', { code, rounds: nextRounds });
-      else if (t === 'caption') sock.emit('caption:start', { code, rounds: nextRounds });
-      else if (t === 'pmatch') sock.emit('photovote:start', { code, subType: 'pmatch', rounds: nextRounds });
-      else if (t === 'photoassoc') sock.emit('photovote:start', { code, subType: 'photoassoc', rounds: nextRounds });
-      else if (t === 'draw-telephone') sock.emit('dt:start', { code });
-      else sock.emit('start_game', { code, rounds: nextRounds });
+      startGame(sock, t, { code, rounds: nextRounds, mode: nextMode });
       
       setIsTransitioning(false);
     }, 200); // 200ms delay to ensure clients process game_changed before the start states
@@ -4028,19 +3962,9 @@ export default function HostPage() {
 
             <div className="grid grid-cols-2 gap-2">
               {[
-                { id: 'most-likely-to',    label: '👑 Most Likely To',      accent: '#4ECDC4' },
-                { id: 'who-said-that',     label: '🤔 Who Said That?',      accent: '#FFE66D' },
-                { id: 'situational',       label: '💭 Situational',         accent: '#6C5CE7' },
-                { id: 'this-or-that',      label: '🆚 This or That',        accent: '#A29BFE' },
-                { id: 'drawing',           label: '🎨 Pictionary Battle',   accent: '#C39BD3' },
-                { id: 'fill-in-the-blank', label: '✏️ Fill in the Blank',  accent: '#55EFC4' },
-                { id: 'draw-telephone',    label: '📞 Drawing in Chain',   accent: '#FF6B6B' },
-                { id: 'selfie-roast',      label: '📸 Draw on Friends',     accent: '#FD79A8' },
-                { id: 'caption',           label: '💬 Selfie Captions',     accent: '#FD79A8' },
-                { id: 'pmatch',            label: '🎭 Selfie Challenge',    accent: '#FDCB6E' },
-                { id: 'photoassoc',        label: '🎯 Prompt Match',        accent: '#A29BFE' },
-                { id: 'playlist',          label: '📋 Playlist',            accent: '#FDCB6E' },
-                { id: 'mixed',             label: '🎲 Mixed Pack',          accent: '#FDCB6E', colSpan: true },
+                ...PICKABLE_GAMES.filter(g => g.id !== 'mixed').map(g => ({ id: g.id, label: gameLabel(g.id), accent: g.accent })),
+                { id: 'playlist', label: '📋 Playlist', accent: '#FDCB6E' },
+                { id: 'mixed', label: gameLabel('mixed'), accent: '#FDCB6E', colSpan: true },
               ].map(g => (
                 <button
                   key={g.id}
@@ -4088,19 +4012,9 @@ export default function HostPage() {
             <p className="text-sm font-['Nunito'] text-gray-400 mb-4 text-center">Same room &amp; players — new game starts immediately</p>
             <div className="grid grid-cols-2 gap-2 max-h-[60vh] overflow-y-auto pr-1">
               {[
-                { id: 'most-likely-to',    label: '👑 Most Likely To',      accent: '#4ECDC4' },
-                { id: 'who-said-that',     label: '🤔 Who Said That?',      accent: '#FFE66D' },
-                { id: 'situational',       label: '💭 Situational',         accent: '#6C5CE7' },
-                { id: 'this-or-that',      label: '🆚 This or That',        accent: '#A29BFE' },
-                { id: 'drawing',           label: '🎨 Pictionary Battle',   accent: '#C39BD3' },
-                { id: 'fill-in-the-blank', label: '✏️ Fill in the Blank',  accent: '#55EFC4' },
-                { id: 'draw-telephone',    label: '📞 Drawing in Chain',   accent: '#FF6B6B' },
-                { id: 'selfie-roast',      label: '📸 Draw on Friends',     accent: '#FD79A8' },
-                { id: 'caption',           label: '💬 Selfie Captions',     accent: '#FD79A8' },
-                { id: 'pmatch',            label: '🎭 Selfie Challenge',    accent: '#FDCB6E' },
-                { id: 'photoassoc',        label: '🎯 Prompt Match',        accent: '#A29BFE' },
-                { id: 'playlist',          label: '📋 Playlist',            accent: '#FDCB6E' },
-                { id: 'mixed',             label: '🎲 Mixed Pack',          accent: '#FDCB6E' },
+                ...PICKABLE_GAMES.filter(g => g.id !== 'mixed').map(g => ({ id: g.id, label: gameLabel(g.id), accent: g.accent })),
+                { id: 'playlist', label: '📋 Playlist', accent: '#FDCB6E' },
+                { id: 'mixed', label: gameLabel('mixed'), accent: '#FDCB6E', colSpan: true },
               ].map(g => (
                 <button
                   key={g.id}

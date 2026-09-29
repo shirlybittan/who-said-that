@@ -1,6 +1,7 @@
 const { randomUUID: uuidv4 } = require('crypto');
 const persistence = require('./persistence');
 const { issueHostKey } = require('./hostIdentity');
+const { GAME_IDS, STANDALONE_IDS } = require('./registry');
 
 const rooms = new Map();
 
@@ -38,8 +39,8 @@ const createRoom = (socketId, playerName = 'Host', gameType = 'most-likely-to', 
     isConnected: true
   };
 
-  const validGameTypes = ['who-said-that', 'most-likely-to', 'situational', 'this-or-that', 'mixed', 'drawing', 'fill-in-the-blank', 'selfie-roast', 'caption', 'pmatch', 'photoassoc', 'draw-telephone'];
-  const standaloneTypes = new Set(['drawing', 'fill-in-the-blank', 'selfie-roast', 'caption', 'pmatch', 'photoassoc', 'draw-telephone']);
+  const validGameTypes = GAME_IDS;
+  const standaloneTypes = STANDALONE_IDS;
   let resolvedGameType = gameType;
   let selectedSubGames = [];
 
@@ -430,8 +431,8 @@ const setGameOptions = (code, socketId, mode, totalRounds, gameType, mltRounds, 
   if (mode !== undefined) room.mode = mode;
   if (totalRounds !== undefined) room.totalRounds = totalRounds;
   
-  const validGameTypes = ['who-said-that', 'most-likely-to', 'situational', 'this-or-that', 'mixed', 'drawing', 'fill-in-the-blank', 'selfie-roast', 'caption', 'pmatch', 'photoassoc', 'draw-telephone'];
-  const standaloneTypes = new Set(['drawing', 'fill-in-the-blank', 'selfie-roast', 'caption', 'pmatch', 'photoassoc', 'draw-telephone']);
+  const validGameTypes = GAME_IDS;
+  const standaloneTypes = STANDALONE_IDS;
 
   if (gameType !== undefined) {
     if (Array.isArray(gameType)) {

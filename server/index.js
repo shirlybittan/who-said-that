@@ -28,6 +28,7 @@ const { renderDashboard } = require('./admin/dashboard');
 const log = require('./logger');
 const { hardenSocket } = require('./game/safeSocket');
 const { requireMinPlayers, clampRounds } = require('./game/rules');
+const { isGameId } = require('./game/registry');
 const { HOST_GRACE_MS, bindDisplay, noteHostOffline, resolveHost, withoutSecrets } = require('./game/hostIdentity');
 const { VOTE_SECS, startPhaseTimer, advanceCurrentPhase, togglePausePhase } = require('./game/phaseTimer');
 
@@ -2716,8 +2717,7 @@ io.on('connection', (socket) => {
     if (!room) return;
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
-    const validGameTypes = ['who-said-that', 'most-likely-to', 'situational', 'this-or-that', 'mixed', 'drawing', 'fill-in-the-blank', 'selfie-roast', 'caption', 'pmatch', 'photoassoc', 'selfie-beforeafter', 'draw-telephone'];
-    if (!validGameTypes.includes(newGameType)) return;
+    if (!isGameId(newGameType)) return;
 
     // Cancel any active timers before resetting state
     cancelAllTimers(room);

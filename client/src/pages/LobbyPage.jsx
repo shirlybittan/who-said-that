@@ -5,20 +5,15 @@ import { translations } from '../locales/translations';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
 
-const GAME_TYPES = [
-  { id: 'who-said-that',  emoji: '🤔', key: 'gameWst',    color: '#FFE66D',  dark: '#0D0D1A' },
-  { id: 'situational',    emoji: '🎭', key: 'gameSit',    color: '#A8E6CF',  dark: '#0D0D1A' },
-  { id: 'this-or-that',   emoji: '⚡', key: 'gameTot',    color: '#6C5CE7',  dark: '#F7F7F7' },
-  { id: 'most-likely-to', emoji: '👑', key: 'gameMlt',    color: '#4ECDC4',  dark: '#0D0D1A' },
-  { id: 'mixed',          emoji: '🎲', key: 'gameMixed',  color: '#FF8B94',  dark: '#0D0D1A' },
-  { id: 'drawing',        emoji: '🎨', key: 'gameDraw',   color: '#C39BD3',  dark: '#0D0D1A' },
-  { id: 'draw-telephone', emoji: '📞', key: 'gameDt',     color: '#FF6B6B',  dark: '#0D0D1A' },
-  { id: 'selfie-roast',   emoji: '📸', key: 'gameSelfie', color: '#FD79A8',  dark: '#0D0D1A' },
-  { id: 'caption',        emoji: '💬', key: 'gameCaption',color: '#FD79A8',  dark: '#0D0D1A' },
-  { id: 'pmatch',         emoji: '🎭', key: 'gamePmatch', color: '#FDCB6E',  dark: '#0D0D1A' },
-  { id: 'photoassoc',     emoji: '🎯', key: 'gamePhotoassoc', color: '#A29BFE', dark: '#0D0D1A' },
-  { id: 'fill-in-the-blank', emoji: '✏️', key: 'gameFitb', color: '#55EFC4', dark: '#0D0D1A' },
-];
+import { PICKABLE_GAMES, gameName, startGame } from '../games/registry';
+
+// Readable text colour on a game's accent background.
+const textOn = (hex) => {
+  const n = parseInt(hex.slice(1), 16);
+  const lum = (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255;
+  return lum > 0.55 ? '#0D0D1A' : '#F7F7F7';
+};
+const GAME_TYPES = PICKABLE_GAMES.map(g => ({ id: g.id, emoji: g.icon, color: g.accent, dark: textOn(g.accent) }));
 
 export default function LobbyPage() {
   const { state } = useGame();
@@ -43,7 +38,6 @@ export default function LobbyPage() {
   const tSit = translations[state.lang].situational;
   const tTot = translations[state.lang].tot;
   const tMixed = translations[state.lang].mixed;
-  const tHome = translations[state.lang].home;
   const tDraw = translations[state.lang].draw;
   const tDt = translations[state.lang].dt;
   const isMlt = state.gameType === 'most-likely-to';
@@ -55,36 +49,12 @@ export default function LobbyPage() {
 
   const handleStartGame = () => {
     if (state.players.filter(p => p.isPlaying).length < 3) return alert('Need at least 3 players to start!');
-    sounds.click();
-    if (isMlt) {
-      socket.emit('mlt:start', {
-        code: state.roomCode,
-        rounds: state.mlt.totalRounds,
-      });
-    } else if (isDraw) {
-      socket.emit('draw:start', { code: state.roomCode, rounds: state.totalRounds });
-      return;
-    } else if (state.gameType === 'draw-telephone') {
-      socket.emit('dt:start', { code: state.roomCode });
-      return;
-    } else if (state.gameType === 'pmatch' || state.gameType === 'photoassoc') {
-      socket.emit('photovote:start', { code: state.roomCode, subType: state.gameType, rounds: state.totalRounds });
-      return;
-    } else if (state.gameType === 'fill-in-the-blank') {
-      socket.emit('fitb:start', { code: state.roomCode, rounds: state.totalRounds });
-      return;
-    } else if (state.gameType === 'selfie-roast') {
-      socket.emit('selfie:start', { code: state.roomCode, rounds: 3 });
-      return;
-    } else if (state.gameType === 'caption') {
-      socket.emit('caption:start', { code: state.roomCode, rounds: 3 });
-      return;
-    } else {
-      if (state.gameType === 'who-said-that' && state.mode === 'custom' && (!state.customQuestions || state.customQuestions.length < state.totalRounds)) {
-        return alert(t.needCustom.replace('{count}', state.totalRounds));
-      }
-      socket.emit('start_game', { code: state.roomCode, rounds: state.totalRounds });
+    if (state.gameType === 'who-said-that' && state.mode === 'custom' && (!state.customQuestions || state.customQuestions.length < state.totalRounds)) {
+      return alert(t.needCustom.replace('{count}', state.totalRounds));
     }
+    sounds.click();
+    const rounds = isMlt ? state.mlt.totalRounds : state.totalRounds;
+    startGame(socket, state.gameType, { code: state.roomCode, rounds });
   };
 
   const handleOptionsChange = (option, value) => {
@@ -136,7 +106,7 @@ export default function LobbyPage() {
           className="text-xs px-3 py-1 rounded-full font-['Nunito'] font-bold uppercase tracking-wider border"
           style={{ backgroundColor: `${activeType.color}20`, color: activeType.color, borderColor: `${activeType.color}60` }}
         >
-          {activeType.emoji} {tHome[activeType.key] || activeType.id}
+          {activeType.emoji} {gameName(activeType.id, state.lang)}
         </span>
       </div>
 
