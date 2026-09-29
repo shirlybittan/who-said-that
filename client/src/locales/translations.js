@@ -200,6 +200,9 @@ export const translations = {
       bestAnswer: "Best Answer ⭐",
     },
     tot: {
+      voteOne: "vote",
+      noVote: "You didn’t vote this round.",
+      againstCrowd: "You went against the crowd!",
       gameLabel: "This or That",
       gameLabelShort: "⚡ This or That",
       gameDesc: "Pick a side — see who agrees!",
@@ -473,6 +476,9 @@ export const translations = {
       bestAnswer: "Meilleure réponse ⭐",
     },
     tot: {
+      voteOne: "vote",
+      noVote: "Tu n’as pas voté cette manche.",
+      againstCrowd: "Tu es allé à contre-courant !",
       gameLabel: "Ceci ou Cela",
       gameLabelShort: "⚡ Ceci ou Cela",
       gameDesc: "Choisissez un camp — voyez qui est d'accord !",
@@ -746,6 +752,9 @@ export const translations = {
       bestAnswer: "התשובה הטובה ביותר ⭐"
     },
     tot: {
+      voteOne: "הצבעה",
+      noVote: "לא הצבעת בסבב הזה.",
+      againstCrowd: "הלכת נגד הזרם!",
       gameLabel: "זה או זה",
       gameLabelShort: "⚡ זה או זה",
       gameDesc: "בחר צד — נראה מי מסכים!",

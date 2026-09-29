@@ -12,6 +12,12 @@ describe('round timer', () => {
     expect(timerActionFor('caption:vote_received', {})).toBeNull();
   });
 
+  it('results and end events clear the timer at once', () => {
+    for (const ev of ['tot:results', 'mlt:results', 'round_ended', 'all_votes_in', 'caption:round_results', 'dt:end']) {
+      expect(timerActionFor(ev, {})).toEqual({ type: 'ROUND_TIMER_CLEAR' });
+    }
+  });
+
   it('infers the total from the first tick when the server does not send one', () => {
     let t = tick(initialRoundTimer, 'mlt:timer', { secondsLeft: 30 });
     t = tick(t, 'mlt:timer', { secondsLeft: 29 });

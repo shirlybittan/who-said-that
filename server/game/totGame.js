@@ -124,6 +124,8 @@ function createTotGame({ mergeToGlobalScores }) {
         choice:   room.tot.votesA[p.id] ? 'a' : room.tot.votesB[p.id] ? 'b' : null,
       }));
 
+      // Kept so a phone that refreshes during results can restore them (P2-37).
+      room.tot.lastResults = { a: room.tot.a, b: room.tot.b, countA, countB, pctA, pctB, majorityChoice: tieRound ? null : majorityChoice, voteDetails, scores: { ...room.tot.scores }, players: connectedPlayers.map(p => ({ id: p.id, name: p.name, color: p.color })) };
       io.to(code).emit('tot:results', {
         a:              room.tot.a,
         b:              room.tot.b,

@@ -104,6 +104,17 @@ export const getRouteForPhase = (phase, snapshot) => {
   }
 };
 
+// A refresh after voting (or during results) must come back to 'voted' /
+// the results, not to live buttons whose vote the server drops (P2-37).
+const totRestoreExtras = (room, playerId) => {
+  const tot = room.tot || {};
+  const extras = [];
+  const myChoice = tot.votesA?.[playerId] ? 'a' : tot.votesB?.[playerId] ? 'b' : null;
+  if (myChoice) extras.push({ type: 'TOT_MARK_VOTED', payload: { choice: myChoice } });
+  if (tot.roundState === 'results' && tot.lastResults) extras.push({ type: 'TOT_SET_RESULTS', payload: tot.lastResults });
+  return extras;
+};
+
 const buildClassicRestore = (room, playerId) => {
   const phase = room.phase;
 
@@ -209,7 +220,7 @@ const buildClassicRestore = (room, playerId) => {
         round: room.currentRound,
         totalRounds: room.totalRounds,
       },
-    }];
+    }, ...totRestoreExtras(room, playerId)];
   }
 
   if (phase === 'totEnd') {

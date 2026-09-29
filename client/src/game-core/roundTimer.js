@@ -21,8 +21,12 @@ export const TIMER_PAUSE_EVENTS = {
 // without a final 0 tick — e.g. everyone voted early) unless it is paused.
 export const STALE_AFTER_MS = 2500;
 
+// Results / end events: the countdown is over even if its last tick wasn't 0.
+const TIMER_STOP_EVENTS = /(:results$|round_results|round_ended|all_votes_in|game_over|game_ended|:end$|intro:update|game:intro)/;
+
 /** Store action for an incoming socket event, or null when it isn't timer-related. */
 export function timerActionFor(event, data) {
+  if (TIMER_STOP_EVENTS.test(event)) return { type: 'ROUND_TIMER_CLEAR' };
   if (TIMER_TICK_EVENTS.has(event)) {
     const secondsLeft = Math.max(0, Number(data?.secondsLeft) || 0);
     return { type: 'ROUND_TIMER_TICK', payload: { secondsLeft, total: Number(data?.total) || null, paused: !!data?.paused, source: event } };
