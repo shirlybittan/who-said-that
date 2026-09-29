@@ -1,4 +1,5 @@
 import React from 'react';
+import WaitingFor from '../game-core/player/WaitingFor';
 
 /**
  * MiniGameWrapper — enforces a unified Input → Confirm → Waiting lifecycle
@@ -58,6 +59,7 @@ export default function MiniGameWrapper({
           <p className="text-[#4ECDC4] font-['Nunito'] text-sm text-center animate-pulse">
             ✓ {waitingMessage}
           </p>
+          <WaitingFor />
           {onEditResponse && (
           <button
             onClick={onEditResponse}

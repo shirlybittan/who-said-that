@@ -1,5 +1,6 @@
 import React, { createContext, useReducer, useContext } from 'react';
 import { initialRoundTimer, roundTimerReducer } from '../game-core/roundTimer';
+import { initialRoundProgress, roundProgressReducer } from '../game-core/roundProgress';
 import { createGameSlice } from './createGameSlice';
 
 // ─── Game slices (standard action handlers generated from factory) ────────────
@@ -231,6 +232,8 @@ const initialState = {
   phaseTimer: { secondsLeft: 60, active: false },
   // Canonical round timer fed by every server tick event (game-core/roundTimer.js).
   roundTimer: initialRoundTimer,
+  // Who has submitted in the current phase (game-core/roundProgress.js).
+  roundProgress: initialRoundProgress,
   roomConfig: { roundDurationSecs: 60, anonymousMode: false },
   caption: {
     phase: 'waiting',      // 'waiting' | 'photo' | 'writing' | 'voting' | 'results' | 'ended'
@@ -1009,6 +1012,9 @@ export const gameReducer = (state, action) => {
           paused: !!action.payload.paused,
         },
       };
+    case 'ROUND_PROGRESS':
+    case 'ROUND_PROGRESS_RESET':
+      return { ...state, roundProgress: roundProgressReducer(state.roundProgress, action) };
     case 'ROUND_TIMER_TICK':
     case 'ROUND_TIMER_PAUSED':
     case 'ROUND_TIMER_CLEAR':

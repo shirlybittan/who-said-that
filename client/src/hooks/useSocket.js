@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { buildJoinRestorePlan } from '../utils/rejoinState.js';
 import { phaseForEvent } from '../game-core/phaseEvents';
 import { timerActionFor } from '../game-core/roundTimer';
+import { progressActionFor } from '../game-core/roundProgress';
 
 export const useSocket = () => {
   const { state, dispatch } = useGame();
@@ -506,6 +507,9 @@ export const useSocket = () => {
       // Every server countdown feeds the one canonical round timer.
       const timerAction = timerActionFor(event, data);
       if (timerAction) dispatch(timerAction);
+      // ...and every 'X submitted' event feeds the one who-is-missing list.
+      const progressAction = progressActionFor(event, data);
+      if (progressAction) dispatch(progressAction);
     };
     socket.onAny(onAnyEvent);
 

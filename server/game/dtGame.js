@@ -791,7 +791,7 @@ function setupDtGame(io, socket, {
 
     const playingPlayers = getActivePlayers(room);
     const submittedCount = Object.keys(room.caption.photos).length;
-    io.to(code).emit('caption:photo_submitted', { playerId: player.id, submittedCount, totalCount: playingPlayers.length });
+    io.to(code).emit('caption:photo_submitted', { playerId: player.id, submittedCount, totalCount: playingPlayers.length, submittedPlayerIds: Object.keys(room.caption.photos) });
 
     // Auto-advance when all photos are in
     recheckRoom(io, room, code);
@@ -863,7 +863,7 @@ function setupDtGame(io, socket, {
 
     const writers = getActivePlayers(room);
     const submittedCount = Object.keys(room.caption.captions).length;
-    io.to(code).emit('caption:caption_submitted', { playerId: player.id, submittedCount, totalCount: writers.length });
+    io.to(code).emit('caption:caption_submitted', { playerId: player.id, submittedCount, totalCount: writers.length, submittedPlayerIds: Object.keys(room.caption.captions) });
 
     recheckRoom(io, room, code);
   });
@@ -1176,7 +1176,7 @@ function setupDtGame(io, socket, {
 
     const playingPlayers = getActivePlayers(room);
     const submittedCount = Object.keys(room.photoVote.photos).length;
-    io.to(code).emit('photovote:photo_submitted', { playerId: player.id, submittedCount, totalCount: playingPlayers.length });
+    io.to(code).emit('photovote:photo_submitted', { playerId: player.id, submittedCount, totalCount: playingPlayers.length, submittedPlayerIds: Object.keys(room.photoVote.photos) });
 
     recheckRoom(io, room, code);
   });
