@@ -206,12 +206,15 @@ const persistSoon = () => persistence.scheduleSave(rooms);
 const restoreRooms = (snapshot) => {
   if (!snapshot || typeof snapshot !== 'object') return 0;
   let count = 0;
-  for (const [rawCode, room] of Object.entries(snapshot)) {
+  for (let [rawCode, room] of Object.entries(snapshot)) {
     if (!room) continue;
     // Normalize the key + room.code to uppercase so getRoom(code) (which callers
     // uppercase) always matches, even if a snapshot ever held a mismatched key.
     const code = String(room.code || rawCode || '').toUpperCase();
     if (!code) continue;
+    // Older snapshots persisted helpers as {} — strip them so they can't be
+    // mistaken for live trackers (see persistence.stripRoomHelpers).
+    room = persistence.stripRoomHelpers(room);
     room.code = code;
     room.players = (room.players || []).map((p) => ({
       ...p,

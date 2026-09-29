@@ -132,7 +132,43 @@ function createVotingGame({
       };
 
       room._timers = room._timers || {};
+      game._attachManagers(io, room, code, 0).start();
+    },
 
+    /**
+     * Rebuild runtime helpers (phase/round managers, vote collector) that are
+     * not persisted. Safe to call any time; no-op when they already exist.
+     * Called lazily by host/vote handlers after a server restart.
+     */
+    rehydrate(io, room, code) {
+      const gameState = room[gameKey];
+      if (!gameState || gameState.phase === 'ended') return;
+      room._timers = room._timers || {};
+      if (!gameState._roundManager) game._attachManagers(io, room, code, gameState.round || 0);
+      if (!gameState._voteCollector && gameState.phase === phases[0]) {
+        gameState._voteCollector = game._createVoteCollector(io, room, code);
+        // Replay persisted votes without re-triggering side effects.
+        for (const [voterId, targetId] of Object.entries(gameState.votes || {})) {
+          gameState._voteCollector.castVote(voterId, targetId);
+        }
+      }
+    },
+
+    /** @private */
+    _createVoteCollector(io, room, code) {
+      return VoteCollector.create({
+        getExpectedCount: () => activePlayers(room).length,
+        allowSelfVote: scoreConfig.allowSelfVote || false,
+        onVote: (voterId, targetId) => {
+          room[gameKey].votes[voterId] = targetId;
+        },
+        onComplete: () => game.showResults(io, room, code),
+      });
+    },
+
+    /** @private Build and stash the phase/round managers; returns the round manager. */
+    _attachManagers(io, room, code, initialRound) {
+      const totalRounds = room[gameKey].totalRounds;
       const phaseManager = createPhaseManager({
         phases,
         onPhaseChange: (prev, next) => {
@@ -142,6 +178,7 @@ function createVotingGame({
 
       const roundManager = createRoundManager({
         totalRounds,
+        initialRound,
         onRoundStart: (round) => {
           room[gameKey].round = round;
           room[gameKey].prompt = getPrompt(room, round);
@@ -155,14 +192,7 @@ function createVotingGame({
           if (room[gameKey]._voteCollector) {
             room[gameKey]._voteCollector.reset();
           }
-          room[gameKey]._voteCollector = VoteCollector.create({
-            getExpectedCount: () => activePlayers(room).length,
-            allowSelfVote: scoreConfig.allowSelfVote || false,
-            onVote: (voterId, targetId) => {
-              room[gameKey].votes[voterId] = targetId;
-            },
-            onComplete: () => game.showResults(io, room, code),
-          });
+          room[gameKey]._voteCollector = game._createVoteCollector(io, room, code);
 
           if (onRoundStart) onRoundStart(io, room, code, round);
         },
@@ -174,8 +204,7 @@ function createVotingGame({
       // Stash managers for host-control handlers (skip, next_round, etc.)
       room[gameKey]._phaseManager = phaseManager;
       room[gameKey]._roundManager = roundManager;
-
-      roundManager.start();
+      return roundManager;
     },
 
     /**
@@ -280,6 +309,7 @@ function createVotingGame({
      * @returns {boolean} false if the game has ended
      */
     nextRound(io, room, code) {
+      game.rehydrate(io, room, code);
       const gameState = room[gameKey];
       if (!gameState?._roundManager) return false;
 
@@ -295,6 +325,7 @@ function createVotingGame({
      * Skip the current round without scoring, then advance.
      */
     skipRound(io, room, code) {
+      game.rehydrate(io, room, code);
       const gameState = room[gameKey];
       if (!gameState?._roundManager) return;
 

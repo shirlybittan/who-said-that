@@ -255,3 +255,42 @@ describe('createVotingGame — VoteCollector integration', () => {
     expect(Object.keys(room.test.votes).length).toBe(1);
   });
 });
+
+describe('rehydrate after a server restart (P0-02)', () => {
+  const { serializeRoom } = require('../../persistence');
+
+  test('nextRound works on a room restored without its managers', () => {
+    const game = makeGame();
+    const io = makeIo();
+    const live = makeRoom(2);
+    live.code = 'RH';
+    game.start(io, live, 'RH', { rounds: 3 });
+    game.showResults(io, live, 'RH');
+    // Simulate persist → restart → restore
+    const restored = JSON.parse(JSON.stringify(serializeRoom(live)));
+    restored.players.forEach(p => { p.isConnected = true; });
+    restored._timers = {};
+    expect(restored.test._roundManager).toBeUndefined();
+
+    expect(game.nextRound(io, restored, 'RH')).toBe(true);
+    expect(restored.test.round).toBe(2);
+    expect(restored.test._voteCollector).toBeDefined();
+    game.rehydrate(io, restored, 'RH'); // idempotent
+    expect(restored.test.round).toBe(2);
+  });
+
+  test('rehydrate replays persisted votes so the round can still complete', () => {
+    const game = makeGame();
+    const io = makeIo();
+    const live = makeRoom(2);
+    game.start(io, live, 'RV', { rounds: 2 });
+    live.test._voteCollector.castVote('p1', 'p2');
+    const restored = JSON.parse(JSON.stringify(serializeRoom(live)));
+    restored.players.forEach(p => { p.isConnected = true; });
+    restored._timers = {};
+    game.rehydrate(io, restored, 'RV');
+    expect(restored.test._voteCollector.hasVoted('p1')).toBe(true);
+    restored.test._voteCollector.castVote('p2', 'p1');
+    expect(restored.test.phase).toBe('results');
+  });
+});

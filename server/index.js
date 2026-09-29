@@ -1803,6 +1803,7 @@ io.on('connection', (socket) => {
     const player = findPlayer(room, socket.id);
     if (!player || !player.isConnected || !player.isPlaying) return;
 
+    mltGame.rehydrate(io, room, code); // helpers are not persisted across restarts
     const accepted = room.mlt._voteCollector?.castVote(player.id, targetPlayerId);
     if (!accepted) return;
     // room.mlt.votes[player.id] is kept in sync by VoteCollector's onVote callback

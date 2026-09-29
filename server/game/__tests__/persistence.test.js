@@ -94,3 +94,38 @@ describe('restart → rejoin', () => {
     expect(roomManager.getRoom('TESTX').players).toHaveLength(1); // no ghost duplicate
   });
 });
+
+describe('every runtime helper is stripped (P0-02)', () => {
+  const helper = () => ({ record() {}, castVote() {}, nextRound() {} });
+  const room = () => ({
+    code: 'H1',
+    phase: 'question',
+    players: [],
+    answers: [{ playerId: 'p1', text: 'hi' }],
+    _answerTracker: helper(),
+    mlt: { round: 2, votes: {}, _roundManager: helper(), _phaseManager: helper(), _voteCollector: helper() },
+    selfie: { votes: {}, _voteCollector: helper() },
+    caption: { votes: {}, _voteCollector: helper() },
+    photoVote: { votes: {}, _voteCollector: helper() },
+  });
+
+  test('serializeRoom drops helpers on the room and every slice', () => {
+    const s = JSON.parse(JSON.stringify(serializeRoom(room())));
+    expect(s._answerTracker).toBeUndefined();
+    expect(s.mlt._roundManager).toBeUndefined();
+    expect(s.mlt._phaseManager).toBeUndefined();
+    expect(s.selfie._voteCollector).toBeUndefined();
+    expect(s.caption._voteCollector).toBeUndefined();
+    expect(s.photoVote._voteCollector).toBeUndefined();
+    expect(s.answers).toHaveLength(1);
+    expect(s.mlt.round).toBe(2);
+  });
+
+  test('restoreRooms heals snapshots that persisted helpers as {}', () => {
+    roomManager.restoreRooms({ OLDX: { code: 'OLDX', players: [], _answerTracker: {}, mlt: { round: 1, _roundManager: {} } } });
+    const r = roomManager.getRoom('OLDX');
+    expect(r._answerTracker).toBeUndefined();
+    expect(r.mlt._roundManager).toBeUndefined();
+    expect(r.mlt.round).toBe(1);
+  });
+});
