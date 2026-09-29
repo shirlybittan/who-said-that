@@ -1340,7 +1340,10 @@ io.on('connection', (socket) => {
     const player = findPlayer(room, socket.id);
     if (!player || !player.isConnected || !player.isPlaying) return;
 
-    const clean = clampText(text, MAX_ANSWER); // bound stored answer length
+    const clean = clampText(typeof text === 'string' ? text.trim() : '', MAX_ANSWER); // bound stored answer length
+    // Blank answers are refused (the client disables Submit too); a player who
+    // never answers gets the timer's placeholder instead (AUDIT.md P2-09).
+    if (!clean) return;
 
     const existingAnswer = room.answers.find(a => a.playerId === player.id);
     if (existingAnswer) {
