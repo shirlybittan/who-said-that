@@ -2188,6 +2188,7 @@ io.on('connection', (socket) => {
         playingPlayers.forEach((p, i) => {
           room.draw.playerWords[p.id] = shuffled[i % shuffled.length];
           delete room.draw.submissions[p.id];
+          room.draw._submissionTracker?.remove(p.id); // must redraw before voting (P2-39)
           if (getPlayerSocket(p)) io.to(getPlayerSocket(p)).emit('draw:secret_word', { word: room.draw.playerWords[p.id], skipped: true });
         });
         const submittedCount = Object.keys(room.draw.submissions).length;
@@ -2197,6 +2198,7 @@ io.on('connection', (socket) => {
         const newWord = pickDrawWord();
         room.draw.playerWords[player.id] = newWord;
         delete room.draw.submissions[player.id];
+        room.draw._submissionTracker?.remove(player.id); // must redraw before voting (P2-39)
         socket.emit('draw:secret_word', { word: newWord, skipped: true });
         const submittedCount = Object.keys(room.draw.submissions).length;
         io.to(code).emit('draw:submission_received', { submittedCount, totalDrawers: playingPlayers.length, submittedPlayerIds: Object.keys(room.draw.submissions) });

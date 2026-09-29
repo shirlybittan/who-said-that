@@ -83,6 +83,8 @@ function create({ getExpectedIds, getExpectedCount, onComplete, onRecord }) {
     },
 
     has(playerId)    { return store.has(playerId); },
+    /** Drop a submission (e.g. the player got a new word and must redraw). */
+    remove(playerId) { return store.delete(playerId); },
     get(playerId)    { return store.get(playerId); },
     getAll()         { return [...store.values()]; },
     getPlayerIds()   { return [...store.keys()]; },

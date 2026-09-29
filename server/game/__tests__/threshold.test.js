@@ -36,3 +36,16 @@ describe('expected-ids completion (P2-01 / P2-02)', () => {
     expect(onComplete).not.toHaveBeenCalled();
   });
 });
+
+describe('SubmissionTracker.remove (P2-39)', () => {
+  test('a removed submission must be re-submitted before the phase completes', () => {
+    const onComplete = jest.fn();
+    const t = SubmissionTracker.create({ getExpectedIds: () => ['a', 'b'], onComplete });
+    t.record('a', 1);
+    t.remove('a');           // a got a new secret word
+    t.record('b', 1);
+    expect(onComplete).not.toHaveBeenCalled();
+    t.record('a', 2);
+    expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+});
