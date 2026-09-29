@@ -1913,13 +1913,14 @@ function CaptionHostPanel({ captionData, players }) {
   );
 }
 
-function SelfieHostPanel({ selfieData, players, onSkipToVote, onShowResults }) {
+function SelfieHostPanel({ selfieData, players, isFinal, onSkipToVote, onShowResults }) {
   const activePlayers = players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound);
   const roundLabel = selfieData.totalRounds > 1 ? ` — Round ${selfieData.round}/${selfieData.totalRounds}` : '';
   if (selfieData.phase === 'results') {
     return (
       <div className="flex flex-col items-center gap-8 w-full max-w-4xl" data-testid="host-question-screen">
-        <h1 className="text-4xl font-['Fredoka_One'] text-[#FD79A8]">{gameLabel('selfie-roast')} — Results{roundLabel}</h1>
+        {isFinal && <h1 className="text-5xl font-['Fredoka_One'] text-[#FFE66D]">🎉 Game Over!</h1>}
+        <h1 className="text-4xl font-['Fredoka_One'] text-[#FD79A8]">{gameLabel('selfie-roast')} — {isFinal ? 'Final Results' : `Results${roundLabel}`}</h1>
         <div className="w-full flex flex-col gap-3">
           {(selfieData.leaderboard || []).map((entry, i) => (
             <motion.div key={entry.playerId || entry.id || i} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }}
@@ -3912,7 +3913,7 @@ export default function HostPage() {
       case 'selfie-vote':
       case 'selfie-round-results':
       case 'selfie-results':
-        return <SelfieHostPanel selfieData={selfieData} players={players} onSkipToVote={() => socketRef.current?.emit('selfie:skip_to_vote', { code: gameInfo.code })} onShowResults={() => socketRef.current?.emit('selfie:show_results', { code: gameInfo.code })} />;
+        return <SelfieHostPanel selfieData={selfieData} players={players} isFinal={status === 'selfie-results'} onSkipToVote={() => socketRef.current?.emit('selfie:skip_to_vote', { code: gameInfo.code })} onShowResults={() => socketRef.current?.emit('selfie:show_results', { code: gameInfo.code })} />;
       case 'caption':
         return <CaptionHostPanel captionData={captionData} players={players} />;
       case 'caption-end':
