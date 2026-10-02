@@ -1,6 +1,7 @@
 import React from 'react';
 import HostGameLayout from '../../game-core/layouts/HostGameLayout';
 import { useHostGameFrame } from '../../game-core/hooks/useHostGameFrame';
+import { useHostT } from '../../game-core/hooks/useHostT';
 
 function MostLikelyToHostCenter({ prompt, roundLabel }) {
   return (
@@ -12,7 +13,8 @@ function MostLikelyToHostCenter({ prompt, roundLabel }) {
 }
 
 export default function MostLikelyToHostView({ state, socket, onOpenGamePicker, onOpenMainMenu, onSkipMiniGame }) {
-  const { frame, actions } = useHostGameFrame({ gameKey: 'most-likely-to', state, socket });
+  const t = useHostT();
+  const { frame, actions } = useHostGameFrame({ gameKey: 'most-likely-to', state, socket, context: { labels: t, lang: t.lang } });
 
   const handleCopyHostUrl = () => {
     if (!frame.roomCode) return;

@@ -1,11 +1,12 @@
 import { createEmptyHostFrame, createEmptyPlayerFrame } from '../types/gameFrame.contract';
 
-const getPromptText = (prompt) => (typeof prompt === 'object' ? (prompt?.en || prompt) : (prompt || ''));
+const getPromptText = (prompt, lang = 'en') => (typeof prompt === 'object' ? (prompt?.[lang] || prompt?.en || prompt) : (prompt || ''));
 
 export const mostLikelyToAdapter = {
-  selectHostFrame(state) {
+  selectHostFrame(state, context = {}) {
     const base = createEmptyHostFrame();
     const mlt = state?.mlt || {};
+    const labels = context.labels || {};
     const players = (state?.players || []).filter((player) => player.isPlaying && player.isConnected);
 
     return {
@@ -21,7 +22,7 @@ export const mostLikelyToAdapter = {
       progress: {
         current: mlt.voteCount || 0,
         total: mlt.totalVoters || 0,
-        label: 'votes in',
+        label: labels.votesInLower || 'votes in',
       },
       playerStatuses: players.map((player) => ({
         id: player.id,
@@ -29,10 +30,12 @@ export const mostLikelyToAdapter = {
         color: player.color,
         status: (mlt.votedPlayerIds || []).includes(player.id) ? 'voted' : 'waiting',
       })),
-      statusLabel: 'Voting',
+      statusLabel: labels.voting || 'Voting',
       paused: !!mlt.paused,
-      prompt: getPromptText(mlt.prompt),
-      roundLabel: `Round ${mlt.round || 0} of ${mlt.totalRounds || 0}`,
+      prompt: getPromptText(mlt.prompt, context.lang),
+      roundLabel: labels.roundOf
+        ? labels.roundOf.replace('{round}', mlt.round || 0).replace('{total}', mlt.totalRounds || 0)
+        : `Round ${mlt.round || 0} of ${mlt.totalRounds || 0}`,
     };
   },
 

@@ -1,9 +1,10 @@
 import { createEmptyHostFrame, createEmptyPlayerFrame } from '../types/gameFrame.contract';
 
 export const thisOrThatAdapter = {
-  selectHostFrame(state) {
+  selectHostFrame(state, context = {}) {
     const base = createEmptyHostFrame();
     const tot = state?.tot || {};
+    const labels = context.labels || {};
     const players = (state?.players || []).filter((p) => p.isPlaying && p.isConnected);
 
     return {
@@ -19,7 +20,7 @@ export const thisOrThatAdapter = {
       progress: {
         current: tot.voteCount || 0,
         total: tot.totalVoters || 0,
-        label: 'votes in',
+        label: labels.votesInLower || 'votes in',
       },
       playerStatuses: players.map((p) => ({
         id: p.id,
@@ -27,10 +28,12 @@ export const thisOrThatAdapter = {
         color: p.color,
         status: (tot.votedPlayerIds || []).includes(p.id) ? 'voted' : 'waiting',
       })),
-      statusLabel: 'Voted',
+      statusLabel: labels.voted || 'Voted',
       paused: !!tot.paused,
       prompt: tot.question || '',
-      roundLabel: `Round ${tot.round || 0} of ${tot.totalRounds || 0}`,
+roundLabel: labels.roundOf
+        ? labels.roundOf.replace('{round}', tot.round || 0).replace('{total}', tot.totalRounds || 0)
+        : `Round ${tot.round || 0} of ${tot.totalRounds || 0}`,
       // ToT-specific extras passed to center content
       a: tot.a || '',
       b: tot.b || '',

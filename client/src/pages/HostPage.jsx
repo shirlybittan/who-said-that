@@ -10,11 +10,10 @@ import LangSwitcher from '../components/shell/LangSwitcher';
 import VoteCoin from '../components/game/VoteCoin';
 import ReplayCanvas from '../components/game/ReplayCanvas';
 import { PICKABLE_GAMES, PLAYLIST_GAMES, getGame, gameLabel, gameName, gameRules, startGame } from '../games/registry';
-import { useGame } from '../store/gameStore.jsx';
-import { translations } from '../locales/translations';
 import MostLikelyToHostView from '../games/most-likely-to/HostView.jsx';
 import ThisOrThatHostView from '../games/this-or-that/HostView.jsx';
 import useSingleFlight from '../game-core/hooks/useSingleFlight';
+import { useHostT, fmt, votesLabel } from '../game-core/hooks/useHostT';
 import { TIMER_STOP_EVENTS } from '../game-core/roundTimer';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
@@ -30,13 +29,7 @@ const COLORS = ['#FF6B6B', '#4ECDC4', '#FFE66D', '#A8E6CF', '#FF8B94', '#6C5CE7'
 // ─── TV i18n ─────────────────────────────────────────────────────────────────
 // The TV follows the header LangSwitcher (gameStore `lang`). `t` is the `host`
 // namespace plus `t.lang`, so panels can also pass the language to the registry.
-function useHostT() {
-  const { state } = useGame();
-  const lang = translations[state.lang] ? state.lang : 'en';
-  return { ...translations.en.host, ...translations[lang].host, lang };
-}
-const fmt = (s, vars = {}) => String(s).replace(/\{(\w+)\}/g, (m, k) => (vars[k] !== undefined ? vars[k] : m));
-const votesLabel = (t, n) => fmt(n === 1 ? t.voteOne : t.voteMany, { n });
+// (useHostT / fmt / votesLabel live in game-core so the game HostViews share them.)
 // Localized prompt objects ({en, fr, he}) fall back to English.
 const localPrompt = (p, lang) => (typeof p === 'object' ? (p?.[lang] || p?.en || p) : (p || ''));
 
