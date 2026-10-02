@@ -83,15 +83,15 @@ export default function MostLikelyToResultsPage() {
                   </span>
                   {usedJoker && <span className="text-sm">🔥</span>}
                 </div>
-                <div className="text-right">
+                <div className="text-end">
                   <span className={`font-['Fredoka_One'] text-2xl ${isMajority ? 'text-[#FFE66D]' : 'text-white'}`}>
                     {player.count}
                   </span>
-                  <span className="text-gray-400 text-sm ml-1 font-['Nunito']">
+                  <span className="text-gray-400 text-sm ms-1 font-['Nunito']">
                     {player.count === 1 ? t.vote : t.votes}
                   </span>
                   {player.pct > 0 && (
-                    <span className="text-gray-500 text-xs ml-2 font-['Nunito']">({player.pct}%)</span>
+                    <span className="text-gray-500 text-xs ms-2 font-['Nunito']">({player.pct}%)</span>
                   )}
                 </div>
               </div>
@@ -170,7 +170,7 @@ export default function MostLikelyToResultsPage() {
                       className="flex items-center gap-3"
                       variants={{ hidden: { opacity: 0, x: -14 }, show: { opacity: 1, x: 0, transition: { duration: 0.28 } } }}
                     >
-                      <span className="text-gray-500 text-sm font-['Nunito'] w-4 text-right">{i + 1}</span>
+                      <span className="text-gray-500 text-sm font-['Nunito'] w-4 text-end">{i + 1}</span>
                       <span className="text-xs w-3" style={{ color: rankSign.color }}>{rankSign.label}</span>
                       <div
                         className="w-7 h-7 rounded-full flex items-center justify-center text-black font-bold text-xs flex-shrink-0"
@@ -191,7 +191,7 @@ export default function MostLikelyToResultsPage() {
                             transition={{ duration: 0.6, delay: 1.4 + i * 0.08, ease: 'easeOut' }}
                           />
                         </div>
-                        <span className={`font-['Fredoka_One'] text-base w-6 text-right ${isTop ? 'text-[#FFE66D]' : 'text-white'}`}>
+                        <span className={`font-['Fredoka_One'] text-base w-6 text-end ${isTop ? 'text-[#FFE66D]' : 'text-white'}`}>
                           {pts}
                         </span>
                       </div>

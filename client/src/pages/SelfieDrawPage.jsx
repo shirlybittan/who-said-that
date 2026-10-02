@@ -226,13 +226,13 @@ export default function SelfieDrawPage() {
         {/* Fullscreen toggle */}
         <button
           onClick={toggleFullscreen}
-          className="absolute top-2 left-2 z-20 w-8 h-8 rounded-lg bg-black/60 text-white flex items-center justify-center text-sm hover:bg-black/80 transition"
+          className="absolute top-2 start-2 z-20 w-8 h-8 rounded-lg bg-black/60 text-white flex items-center justify-center text-sm hover:bg-black/80 transition"
           title={isFullscreen ? t.exitFullscreen : t.enterFullscreen}
         >
           {isFullscreen ? '⤡' : '⤢'}
         </button>
         {hasConfirmed && (
-          <div className="absolute top-2 right-2 bg-black/70 text-white text-xs font-['Nunito'] px-2 py-1 rounded-lg">
+          <div className="absolute top-2 end-2 bg-black/70 text-white text-xs font-['Nunito'] px-2 py-1 rounded-lg">
             {t.submittedKeepDrawing}
           </div>
         )}

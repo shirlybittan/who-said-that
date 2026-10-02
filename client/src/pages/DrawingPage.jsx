@@ -317,14 +317,14 @@ export default function DrawingPage() {
             {/* Fullscreen toggle */}
             <button
               onClick={toggleFullscreen}
-              className="absolute top-2 left-2 z-10 bg-black/60 hover:bg-black/80 text-white rounded-lg px-2 py-1 text-base leading-none transition"
+              className="absolute top-2 start-2 z-10 bg-black/60 hover:bg-black/80 text-white rounded-lg px-2 py-1 text-base leading-none transition"
               title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
             >
               {isFullscreen ? '⤡' : '⤢'}
             </button>
 
             {draw.hasSubmitted && (
-              <div className="absolute top-2 right-2 bg-black/70 text-white text-xs font-['Nunito'] px-2 py-1 rounded-lg">
+              <div className="absolute top-2 end-2 bg-black/70 text-white text-xs font-['Nunito'] px-2 py-1 rounded-lg">
                 {t.keepDrawing}
               </div>
             )}
@@ -595,7 +595,7 @@ export default function DrawingPage() {
                   </div>
                 </div>
                 {r.playerId === playerId && (
-                  <div className="flex items-center pr-3">
+                  <div className="flex items-center pe-3">
                     <span className="text-xs text-[#C39BD3] font-['Nunito']">you</span>
                   </div>
                 )}

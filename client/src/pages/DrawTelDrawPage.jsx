@@ -403,7 +403,7 @@ export default function DrawTelDrawPage() {
                   <button
                     onClick={toggleFullscreen}
                     aria-label={isFullscreen ? t.exitFullscreen : t.fullscreen}
-                    className="absolute top-2 left-2 z-20 bg-black/50 p-2 rounded-lg text-white hover:bg-black/80 transition pointer-events-auto"
+                    className="absolute top-2 start-2 z-20 bg-black/50 p-2 rounded-lg text-white hover:bg-black/80 transition pointer-events-auto"
                   >
                     {isFullscreen ? '↙️' : '↗️'}
                   </button>
