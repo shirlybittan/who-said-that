@@ -4,7 +4,7 @@ import { socket } from '../socket';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
 import SelfieCapture from '../components/game/SelfieCapture.jsx';
-import { uploadPhoto } from '../utils/photoUpload.js';
+import { uploadPhoto, submitPhoto } from '../utils/photoUpload.js';
 import { translations } from '../locales/translations';
 
 export default function PhotoVotePhotoPage() {
@@ -21,7 +21,7 @@ export default function PhotoVotePhotoPage() {
   const handleSubmit = async (photoData) => {
     sounds.answer?.();
     const toSend = await uploadPhoto(photoData, { roomCode: state.roomCode, playerId: state.playerId, uploadToken: state.uploadToken });
-    socket.emit('photovote:submit_photo', { code: state.roomCode, photoData: toSend });
+    await submitPhoto(socket, 'photovote:submit_photo', { code: state.roomCode, photoData: toSend });
     dispatch({ type: 'PHOTOVOTE_MARK_PHOTO_SUBMITTED' });
     dispatch({ type: 'SAVED_SELFIE_STORED', payload: photoData });
   };

@@ -174,6 +174,9 @@ app.get('/admin', adminAuth, (req, res) => {
 // ─── Presigned upload URL endpoint ───────────────────────────────────────────
 // Returns a short-lived PUT URL so clients upload photos directly to cloud
 // storage without routing binary data through the Node.js event loop.
+// Lets phones skip the presign call (and a logged 503) when storage is off (P3-04).
+app.get('/api/upload-config', (req, res) => res.json({ enabled: storageConfigured() }));
+
 app.post('/api/upload-photo-url', async (req, res) => {
   if (!storageConfigured()) {
     return res.status(503).json({ error: 'Storage not configured — use base64 flow' });

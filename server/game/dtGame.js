@@ -96,12 +96,14 @@ function setupDtGame(io, socket, {
     });
   });
 
-  socket.on('selfie:submit_photo', ({ code, photoData }) => {
+  socket.on('selfie:submit_photo', ({ code, photoData }, ack) => {
+    // Ack so the phone knows its photo landed (AUDIT.md P3-16).
+    const done = (ok) => { if (typeof ack === 'function') ack({ ok }); };
     const room = getRoom(code);
-    if (!room) return;
+    if (!room) return done(false);
 
     // ── Validate: accept either a cloud storage HTTPS URL or a Base64 data URI ──
-    if (!photoData || typeof photoData !== 'string') return;
+    if (!photoData || typeof photoData !== 'string') return done(false);
     // Only accept cloud URLs from the configured public storage domain to prevent
     // arbitrary external URL injection (tracking pixels, unexpected resources).
     const cloudBase = storageConfigured() ? getPublicBaseUrl() : null;
@@ -111,15 +113,15 @@ function setupDtGame(io, socket, {
     const isBase64 = photoData.startsWith('data:image/jpeg;base64,') ||
                      photoData.startsWith('data:image/png;base64,')  ||
                      photoData.startsWith('data:image/webp;base64,');
-    if (!isCloudUrl && !isBase64) return;
+    if (!isCloudUrl && !isBase64) return done(false);
     // Enforce size cap only on Base64 (cloud URLs are just short strings)
-    if (isBase64 && photoData.length > 2 * 1024 * 1024) return;
+    if (isBase64 && photoData.length > 2 * 1024 * 1024) return done(false);
 
     // Handle DT selfie collection phase
     if (room.phase === 'dt' && room.dt.phase === 'selfie') {
       const player = findPlayer(room, socket.id);
-      if (!player || !player.isPlaying || !player.isConnected) return;
-      if (room.dt.selfiePhotos?.[player.id]) return; // already submitted
+      if (!player || !player.isPlaying || !player.isConnected) return done(false);
+      if (room.dt.selfiePhotos?.[player.id]) return done(true); // already submitted
 
       if (!room.playerPhotos) room.playerPhotos = {};
       room.playerPhotos[player.id] = photoData;
@@ -133,15 +135,15 @@ function setupDtGame(io, socket, {
       io.to(code).emit('dt:photo_received', { photoCount, totalPhotographers: playingPlayers.length, submittedPlayerIds });
 
       recheckRoom(io, room, code);
-      return;
+      return done(true);
     }
 
-    if (room.phase !== 'selfie') return;
+    if (room.phase !== 'selfie') return done(false);
     // Allow normal photo phase OR drawing phase (for retakes where photo was cleared)
-    if (room.selfie.phase !== 'photo' && room.selfie.phase !== 'drawing') return;
+    if (room.selfie.phase !== 'photo' && room.selfie.phase !== 'drawing') return done(false);
     const player = findPlayer(room, socket.id);
-    if (!player || !player.isPlaying || !player.isConnected) return;
-    if (room.selfie.photos[player.id]) return; // already submitted (or not a retake)
+    if (!player || !player.isPlaying || !player.isConnected) return done(false);
+    if (room.selfie.photos[player.id]) return done(true); // already submitted (or not a retake)
 
     // Validation already performed above (cloud URL or Base64 check)
     room.selfie.photos[player.id] = photoData;
@@ -183,7 +185,7 @@ function setupDtGame(io, socket, {
           promptTemplate: room.selfie.promptTemplate,
         });
       }
-      return;
+      return done(true);
     }
 
     const playingPlayers = getActivePlayers(room);
@@ -191,6 +193,7 @@ function setupDtGame(io, socket, {
     io.to(code).emit('selfie:photo_received', { photoCount, totalPhotographers: playingPlayers.length, submittedPlayerIds: Object.keys(room.selfie.photos) });
 
     recheckRoom(io, room, code);
+    done(true);
   });
 
   const assignSelfieDrawers = (io, room, code) => {
@@ -771,15 +774,17 @@ function setupDtGame(io, socket, {
     });
   });
 
-  socket.on('caption:submit_photo', ({ code, photoData }) => {
+  socket.on('caption:submit_photo', ({ code, photoData }, ack) => {
+    // Ack so the phone knows its photo landed (AUDIT.md P3-16).
+    const done = (ok) => { if (typeof ack === 'function') ack({ ok }); };
     const room = getRoom(code);
-    if (!room || room.phase !== 'caption' || room.caption.phase !== 'photo') return;
+    if (!room || room.phase !== 'caption' || room.caption.phase !== 'photo') return done(false);
     const player = findPlayer(room, socket.id);
-    if (!player || !player.isPlaying || !player.isConnected) return;
-    if (room.caption.photos[player.id]) return; // already submitted
+    if (!player || !player.isPlaying || !player.isConnected) return done(false);
+    if (room.caption.photos[player.id]) return done(true); // already submitted
 
     // Validate: accept cloud storage URL (from configured domain only) or Base64 data URI
-    if (!photoData || typeof photoData !== 'string') return;
+    if (!photoData || typeof photoData !== 'string') return done(false);
     const cloudBase = storageConfigured() ? getPublicBaseUrl() : null;
     const isCloudUrl = cloudBase
       ? (photoData.startsWith(cloudBase + '/') && /\.(jpg|jpeg|png|webp)(\?.*)?$/i.test(photoData))
@@ -787,8 +792,8 @@ function setupDtGame(io, socket, {
     const isBase64 = photoData.startsWith('data:image/jpeg;base64,') ||
                      photoData.startsWith('data:image/png;base64,')  ||
                      photoData.startsWith('data:image/webp;base64,');
-    if (!isCloudUrl && !isBase64) return;
-    if (isBase64 && photoData.length > 2 * 1024 * 1024) return;
+    if (!isCloudUrl && !isBase64) return done(false);
+    if (isBase64 && photoData.length > 2 * 1024 * 1024) return done(false);
 
     room.caption.photos[player.id] = photoData;
     // Persist photo for reuse across selfie-based mini games
@@ -801,6 +806,7 @@ function setupDtGame(io, socket, {
 
     // Auto-advance when all photos are in
     recheckRoom(io, room, code);
+    done(true);
   });
 
   function startCaptionWritingPhase(io, room, code) {
@@ -1158,15 +1164,17 @@ function setupDtGame(io, socket, {
     });
   });
 
-  socket.on('photovote:submit_photo', ({ code, photoData }) => {
+  socket.on('photovote:submit_photo', ({ code, photoData }, ack) => {
+    // Ack so the phone knows its photo landed (AUDIT.md P3-16).
+    const done = (ok) => { if (typeof ack === 'function') ack({ ok }); };
     const room = getRoom(code);
-    if (!room || room.phase !== 'photovote' || room.photoVote.phase !== 'photo') return;
+    if (!room || room.phase !== 'photovote' || room.photoVote.phase !== 'photo') return done(false);
     const player = findPlayer(room, socket.id);
-    if (!player || !player.isPlaying || !player.isConnected) return;
-    if (room.photoVote.photos[player.id]) return;
+    if (!player || !player.isPlaying || !player.isConnected) return done(false);
+    if (room.photoVote.photos[player.id]) return done(true);
 
     // Validate: accept cloud storage URL (from configured domain only) or Base64 data URI
-    if (!photoData || typeof photoData !== 'string') return;
+    if (!photoData || typeof photoData !== 'string') return done(false);
     const cloudBasePv = storageConfigured() ? getPublicBaseUrl() : null;
     const isCloudUrlPv = cloudBasePv
       ? (photoData.startsWith(cloudBasePv + '/') && /\.(jpg|jpeg|png|webp)(\?.*)?$/i.test(photoData))
@@ -1174,8 +1182,8 @@ function setupDtGame(io, socket, {
     const isBase64Pv = photoData.startsWith('data:image/jpeg;base64,') ||
                        photoData.startsWith('data:image/png;base64,')  ||
                        photoData.startsWith('data:image/webp;base64,');
-    if (!isCloudUrlPv && !isBase64Pv) return;
-    if (isBase64Pv && photoData.length > 2 * 1024 * 1024) return;
+    if (!isCloudUrlPv && !isBase64Pv) return done(false);
+    if (isBase64Pv && photoData.length > 2 * 1024 * 1024) return done(false);
 
     room.photoVote.photos[player.id] = photoData;
     // Persist photo for reuse across selfie-based mini games
@@ -1187,6 +1195,7 @@ function setupDtGame(io, socket, {
     io.to(code).emit('photovote:photo_submitted', { playerId: player.id, submittedCount, totalCount: playingPlayers.length, submittedPlayerIds: Object.keys(room.photoVote.photos) });
 
     recheckRoom(io, room, code);
+    done(true);
   });
 
   function resolvePhotoVotePrompt(promptObj, playingPlayers) {
