@@ -5,7 +5,7 @@ import { translations } from '../locales/translations';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
-import { CANVAS_W, CANVAS_H, redrawCanvas } from '../utils/canvasUtils';
+import { CANVAS_W, CANVAS_H, redrawCanvas, fitStrokes } from '../utils/canvasUtils';
 import { saveStrokes, loadStrokes, clearStrokes, clearRoomStrokes } from '../utils/strokeAutosave';
 import { useFullscreen } from '../hooks/useFullscreen';
 import ReplayCanvas from '../components/game/ReplayCanvas';
@@ -152,7 +152,7 @@ export default function DrawingPage() {
       saveStrokes(autosaveKeyRef.current, strokesRef.current);
       // Auto-update submission when player keeps drawing after first submit
       if (draw.hasSubmitted && draw.phase === 'drawing') {
-        socket.emit('draw:submit', { code: roomCode, strokes: strokesRef.current });
+        socket.emit('draw:submit', { code: roomCode, strokes: fitStrokes(strokesRef.current) });
       }
     }
     curStroke.current = null;
@@ -194,7 +194,7 @@ export default function DrawingPage() {
     const canvas = canvasRef.current;
     if (canvas) redrawCanvas(canvas, strokesRef.current);
     if (draw.hasSubmitted && draw.phase === 'drawing') {
-      socket.emit('draw:submit', { code: roomCode, strokes: strokesRef.current });
+      socket.emit('draw:submit', { code: roomCode, strokes: fitStrokes(strokesRef.current) });
     }
   };
 
@@ -215,7 +215,7 @@ export default function DrawingPage() {
 
   const handleSubmit = () => {
     if (draw.phase !== 'drawing') return;
-    socket.emit('draw:submit', { code: roomCode, strokes: strokesRef.current });
+    socket.emit('draw:submit', { code: roomCode, strokes: fitStrokes(strokesRef.current) });
     if (!draw.hasSubmitted) dispatch({ type: 'DRAW_MARK_SUBMITTED' });
   };
 
@@ -231,7 +231,7 @@ export default function DrawingPage() {
   useEffect(() => {
     if (draw.phase === 'drawing' && draw.secondsLeft <= 1 && autoSubmittedRoundRef.current !== draw.round) {
       autoSubmittedRoundRef.current = draw.round;
-      socket.emit('draw:submit', { code: roomCode, strokes: strokesRef.current });
+      socket.emit('draw:submit', { code: roomCode, strokes: fitStrokes(strokesRef.current) });
       if (!draw.hasSubmitted) dispatch({ type: 'DRAW_MARK_SUBMITTED' });
       markConfirmed();
     }
