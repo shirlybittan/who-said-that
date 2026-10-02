@@ -48,12 +48,20 @@ export default function MiniGameWrapper({
   // input/textarea inside the wrapper (canvas phases have none → never empty).
   const fieldsetRef = useRef(null);
   const [domEmpty, setDomEmpty] = useState(false);
+  // This effect runs after every render (a field can be reset without an input
+  // event), so it must only set state on a real change: a same-value setState
+  // can still schedule a render, which re-runs the effect — under a stream of
+  // timer ticks that nested loop hit "Maximum update depth exceeded" (P2-44).
+  const domEmptyRef = useRef(false);
   useLayoutEffect(() => {
     if (typeof value === 'string') return undefined;
     const el = fieldsetRef.current;
     const read = () => {
       const field = el?.querySelector('textarea, input[type=text], input:not([type])');
-      setDomEmpty(!!field && field.value.trim().length === 0);
+      const next = !!field && field.value.trim().length === 0;
+      if (next === domEmptyRef.current) return;
+      domEmptyRef.current = next;
+      setDomEmpty(next);
     };
     read();
     el?.addEventListener('input', read);

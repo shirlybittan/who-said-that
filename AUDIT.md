@@ -765,7 +765,7 @@ Not fixed on this branch — none blocks a game from being played start to finis
 | ID | Status | Note |
 |----|--------|------|
 | P2-42 | ❓ open question | MLT "allow self-vote" option: self-votes are always allowed. Needs a product decision (keep the option, or remove it). |
-| P2-44 | ⚠ not reproduced | `Maximum update depth exceeded` seen once on one phone in a playlist; not seen again in any later full run. |
+| P2-44 | ✅ fixed | (this commit) | Root cause: `MiniGameWrapper`'s empty check (an effect after every render) called `setDomEmpty` with an unchanged value, which still scheduled a nested render — 20 timer ticks cost 30 renders. It now sets state only on a real change (vitest: 20 ticks → 20 renders). |
 | P2-38 | ◐ partial | Draw, ToT and voting timers resume after a restart (as before); other phases do not restart their timer, but the TV's ⏭ Continue (now on every timed phase) moves them on. |
 | P2-04 | ⏳ not re-tested | TV refresh keeps host control (regression test); the WST "Round x of y" restore was not re-checked. |
 | P2-25 | ⏳ todo | No client guard for very long strokes (server silently truncates at 300 points / 500 strokes). |
