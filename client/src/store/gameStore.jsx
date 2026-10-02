@@ -1029,8 +1029,6 @@ export const gameReducer = (state, action) => {
     case 'ROUND_TIMER_PAUSED':
     case 'ROUND_TIMER_CLEAR':
       return { ...state, roundTimer: roundTimerReducer(state.roundTimer, action) };
-    case 'PHASE_TIMER_STOP':
-      return { ...state, phaseTimer: { secondsLeft: 0, active: false } };
     case 'SET_ROOM_CONFIG':
       return { ...state, roomConfig: { ...state.roomConfig, ...action.payload } };
     // ─── Caption actions ─────────────────────────────────────────────────────
