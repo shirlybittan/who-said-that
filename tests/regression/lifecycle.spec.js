@@ -102,3 +102,14 @@ test('a TV refresh mid-question keeps the round counter', async ({ browser }) =>
     await expect(table.tv.locator('body')).not.toContainText(/Round 0/i);
   } finally { await table.close(); }
 });
+
+test('an unsent answer survives a refresh', async ({ browser }) => {
+  const table = await openTable(browser, 3);
+  try {
+    await toQuestion(table);
+    const [alice] = table.phones;
+    await alice.getByTestId('player-answer-input').fill('half-typed thought');
+    await alice.reload();
+    await expect(alice.getByTestId('player-answer-input')).toHaveValue('half-typed thought', { timeout: 10_000 });
+  } finally { await table.close(); }
+});
