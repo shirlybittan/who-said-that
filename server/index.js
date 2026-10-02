@@ -501,6 +501,42 @@ const advanceWstAnswerPhase = (io, room, code) => {
   }
 };
 
+// WST / Situational answering: who has answered (rebuilt after a restart).
+const createAnswerTracker = (io, room, code) => SubmissionTracker.create({
+  getExpectedIds: () => activePlayers(room).map(p => p.id),
+  onComplete: () => advanceWstAnswerPhase(io, room, code),
+});
+
+// The answer timer ran out: fill in drafts for anyone who didn't answer, then vote.
+const expireWstAnswering = (io, room, code) => {
+  if (room.phase !== 'question') return;
+  // Auto-submit fallback for any player who didn't answer in time.
+  // Push to room.answers BEFORE record() so that if onComplete fires
+  // synchronously inside record(), advanceWstAnswerPhase sees all answers.
+  activePlayers(room).forEach(p => {
+    if (!room._answerTracker?.has(p.id)) {
+      const draft = (room.answerDrafts || {})[p.id] || '';
+      const answerData = { playerId: p.id, playerName: p.name, text: draft || '...', votes: [] };
+      room.answers.push(answerData);
+      room._answerTracker?.record(p.id, answerData);
+    }
+  });
+  if (room.answers.length === 0) {
+    // No one answered — skip to next question or end
+    if (room.currentRound < room.totalRounds) {
+      room.currentRound++;
+      room.currentQuestionIndex++;
+      emitNextQuestion(io, room, code);
+    } else {
+      endClassicGame(io, room, code, room.answers);
+    }
+    return;
+  }
+  // advanceWstAnswerPhase may have already been triggered by onComplete inside
+  // the forEach above; the phase guard inside it prevents double execution.
+  advanceWstAnswerPhase(io, room, code);
+};
+
 // Emit the right 'new_question' event for a WST/Situational question
 const emitWstQuestion = (io, room, code) => {
   const q = room.questions[room.currentQuestionIndex];
@@ -518,10 +554,7 @@ const emitWstQuestion = (io, room, code) => {
   room.currentQuestion = questionText;
   room.answers = [];
   room.skipVotes = [];
-  room._answerTracker = SubmissionTracker.create({
-    getExpectedIds: () => activePlayers(room).map(p => p.id),
-    onComplete: () => advanceWstAnswerPhase(io, room, code),
-  });
+  room._answerTracker = createAnswerTracker(io, room, code);
 
   const roundDuration = room.roomConfig?.roundDurationSecs || 60;
 
@@ -536,34 +569,7 @@ const emitWstQuestion = (io, room, code) => {
   });
 
   // Server-side answer timer — auto-starts voting when time expires (handles disconnected players)
-  startAnswerTimer(io, room, code, roundDuration, () => {
-    if (room.phase !== 'question') return;
-    // Auto-submit fallback for any player who didn't answer in time.
-    // Push to room.answers BEFORE record() so that if onComplete fires
-    // synchronously inside record(), advanceWstAnswerPhase sees all answers.
-    activePlayers(room).forEach(p => {
-      if (!room._answerTracker?.has(p.id)) {
-        const draft = (room.answerDrafts || {})[p.id] || '';
-        const answerData = { playerId: p.id, playerName: p.name, text: draft || '...', votes: [] };
-        room.answers.push(answerData);
-        room._answerTracker?.record(p.id, answerData);
-      }
-    });
-    if (room.answers.length === 0) {
-      // No one answered — skip to next question or end
-      if (room.currentRound < room.totalRounds) {
-        room.currentRound++;
-        room.currentQuestionIndex++;
-        emitNextQuestion(io, room, code);
-      } else {
-        endClassicGame(io, room, code, room.answers);
-      }
-      return;
-    }
-    // advanceWstAnswerPhase may have already been triggered by onComplete inside
-    // the forEach above; the phase guard inside it prevents double execution.
-    advanceWstAnswerPhase(io, room, code);
-  });
+  startAnswerTimer(io, room, code, roundDuration, () => expireWstAnswering(io, room, code));
 };
 
 // Emit a This-or-That round prompt and start the countdown timer
@@ -713,8 +719,9 @@ totGame = createTotGame({ mergeToGlobalScores });
 // countdown for the current timed phase from the persisted remaining seconds so
 // the round keeps ticking and auto-advances on expiry — no game state is reset
 // (each onExpire is the same phase-guarded advance the live timer used). Phases
-// not covered (WST answering, fill-in-the-blank, draw-telephone) still advance
-// via the all-submit threshold or host controls, exactly as before.
+// not covered (fill-in-the-blank, draw-telephone: their timers live in the
+// per-connection handlers) still advance via the all-submit threshold or the
+// host's controls (⏭ Continue / skip), exactly as before.
 const resumeRoomTimers = (io, room) => {
   if (!room || !room.phase) return;
   const code = room.code;
@@ -741,6 +748,17 @@ const resumeRoomTimers = (io, room) => {
         onTick: (s) => { if (room.sit) room.sit.secondsLeft = s; },
         onExpire: () => closeSitVoting(io, room, code),
       });
+    } else if (room.phase === 'question') {
+      // WST / Situational answering (AUDIT.md P2-38): rebuild who has answered,
+      // then restart the countdown from the persisted remaining seconds.
+      room._answerTracker = createAnswerTracker(io, room, code);
+      (room.answers || []).forEach(a => room._answerTracker.record(a.playerId, a));
+      const secs = room.answerSecondsLeft ?? room.roomConfig?.roundDurationSecs ?? 60;
+      startAnswerTimer(io, room, code, Math.max(secs, 5), () => expireWstAnswering(io, room, code));
+    } else if (room.phase === 'mlt' && room.mlt?.roundState === 'voting') {
+      // MLT voting (P2-38): helpers + countdown only — votes are kept.
+      mltGame.rehydrate(io, room, code);
+      mltGame.resumeVotingTimer(io, room, code);
     } else if (room.phase === 'voting') {
       // WST per-answer voting — resume from the persisted remaining seconds.
       const secs = room.wstVotingSecondsLeft ?? 30;

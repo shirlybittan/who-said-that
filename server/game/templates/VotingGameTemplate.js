@@ -159,6 +159,36 @@ function createVotingGame({
       }
     },
 
+    /**
+     * After a server restart: restart the voting countdown from the persisted
+     * seconds left. Votes, round and prompt are untouched (AUDIT.md P2-38).
+     */
+    resumeVotingTimer(io, room, code) {
+      const gameState = room[gameKey];
+      if (!gameState || gameState.phase !== 'voting') return;
+      room._timers = room._timers || {};
+      gameState.paused = false;
+      game._startVotingTimer(io, room, code, Math.max(gameState.secondsLeft || votingSeconds, 5));
+    },
+
+    /** @private */
+    _startVotingTimer(io, room, code, countdown) {
+      const gameState = room[gameKey];
+      if (room._timers[gameKey]) room._timers[gameKey].cancel();
+      gameState.secondsLeft = countdown;
+      room._timers[gameKey] = TimerManager.create({
+        io,
+        code,
+        seconds: countdown,
+        tickEvent: EVENTS.TIMER(gameKey),
+        isActive: () => room[gameKey]?.phase === 'voting',
+        onTick: (s) => { gameState.secondsLeft = s; },
+        onPause: () => { gameState.paused = true; },
+        onResume: () => { gameState.paused = false; },
+        onExpire: () => game.showResults(io, room, code),
+      });
+    },
+
     /** @private */
     _createVoteCollector(io, room, code) {
       return VoteCollector.create({
@@ -238,17 +268,7 @@ function createVotingGame({
       const countdown = seconds || votingSeconds;
       gameState.secondsLeft = countdown;
 
-      room._timers[gameKey] = TimerManager.create({
-        io,
-        code,
-        seconds: countdown,
-        tickEvent: EVENTS.TIMER(gameKey),
-        isActive: () => room[gameKey]?.phase === 'voting',
-        onTick: (s) => { gameState.secondsLeft = s; },
-        onPause: () => { gameState.paused = true; },
-        onResume: () => { gameState.paused = false; },
-        onExpire: () => game.showResults(io, room, code),
-      });
+      game._startVotingTimer(io, room, code, countdown);
 
       io.to(code).emit(`${gameKey}:voting_started`, {
         players: activePlayers(room).map(p => ({ id: p.id, name: p.name, color: p.color })),
