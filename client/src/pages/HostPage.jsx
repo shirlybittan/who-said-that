@@ -3486,6 +3486,10 @@ export default function HostPage() {
           gameName: room.gameName || '',
         }));
       }
+      // ── WST / Situational round counter (every phase of a classic round) ──
+      if (room.currentRound) {
+        setQuestionData(prev => ({ ...prev, round: room.currentRound, totalRounds: room.totalRounds }));
+      }
       // ── WST answering phase ───────────────────────────────────────────────
       if (room.phase === 'question') {
         setQuestionData(prev => ({

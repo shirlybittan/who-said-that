@@ -91,3 +91,14 @@ test('a game can be hosted and played from a phone with no TV', async ({ browser
     await host.waitForURL(/\/question/, { timeout: 15_000 });
   } finally { await table.close(); }
 });
+
+test('a TV refresh mid-question keeps the round counter', async ({ browser }) => {
+  const table = await openTable(browser, 3);
+  try {
+    await toQuestion(table);
+    await expect(table.tv.locator('body')).toContainText(/Round 1/i);
+    await table.tv.reload();
+    await expect(table.tv.locator('body')).toContainText(/Round 1/i, { timeout: 10_000 });
+    await expect(table.tv.locator('body')).not.toContainText(/Round 0/i);
+  } finally { await table.close(); }
+});
