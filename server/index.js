@@ -949,6 +949,8 @@ io.on('connection', (socket) => {
       const validSubs = ['who-said-that', 'situational', 'this-or-that', 'drawing'];
       room.selectedSubGames = data.selectedSubGames.filter(s => validSubs.includes(s));
     }
+    // TV setup option for Most Likely To (AUDIT.md P2-42).
+    if (typeof roomConfig.mltAllowSelfVote === 'boolean') room.mlt.allowSelfVote = roomConfig.mltAllowSelfVote;
     if (room.gameType === 'mixed' && data.roundsPerSubGame) {
       room.mixedRoundsPerGame = Math.min(5, Math.max(1, parseInt(data.roundsPerSubGame, 10) || 1));
     }
@@ -1932,7 +1934,7 @@ io.on('connection', (socket) => {
         jokers,
         jokersThisRound: {},
         roundState:     'voting',
-        allowSelfVote:  true,
+        allowSelfVote:  room.mlt?.allowSelfVote !== false, // host option, kept across games
       },
     });
 
@@ -2034,7 +2036,7 @@ io.on('connection', (socket) => {
     // Re-create VoteCollector for the fresh question
     room.mlt._voteCollector = VoteCollector.create({
       getExpectedIds: () => activePlayers(room).map(p => p.id),
-      allowSelfVote:    true,
+      allowSelfVote:    room.mlt.allowSelfVote !== false,
       onVote:           (voterId, targetId) => { room.mlt.votes[voterId] = targetId; },
       onComplete:       () => mltGame.showResults(io, room, code),
     });
@@ -2046,6 +2048,7 @@ io.on('connection', (socket) => {
       totalRounds: room.mlt.totalRounds,
       players:     players.map(p => ({ id: p.id, name: p.name, color: p.color })),
       gameName:    room.gameName,
+      allowSelfVote: room.mlt.allowSelfVote !== false,
     });
     io.to(code).emit('mlt:question_changed', { currentPrompt: candidate });
 
@@ -2086,7 +2089,7 @@ io.on('connection', (socket) => {
       jokersThisRound: {},
       round:          0,
       totalRounds:    prevTotalRounds,
-      allowSelfVote:  true,
+      allowSelfVote:  room.mlt?.allowSelfVote !== false,
       paused:         false,
       secondsLeft:    30,
     };

@@ -2074,6 +2074,7 @@ function CreateRoomForm({ onSubmit, onBack }) {
   const [roundsPerSubGame, setRoundsPerSubGame] = React.useState(3);
   const [drawMode, setDrawMode] = React.useState('classic');
   const [roundDurationSecs, setRoundDurationSecs] = React.useState(60);
+  const [mltAllowSelfVote, setMltAllowSelfVote] = React.useState(true);
   const [queueItems, setQueueItems] = React.useState([
     { type: 'most-likely-to', rounds: 5 },
   ]);
@@ -2107,7 +2108,9 @@ function CreateRoomForm({ onSubmit, onBack }) {
   };
 
   const handleSubmit = () => {
-    const roomConfig = { roundDurationSecs };
+    const roomConfig = { roundDurationSecs, mltAllowSelfVote };
+    const hasMlt = gameType === 'most-likely-to' || (gameType === 'playlist' && queueItems.some(q => q.type === 'most-likely-to'));
+    if (!hasMlt) delete roomConfig.mltAllowSelfVote;
     if (gameType === 'playlist') {
       const firstGame = queueItems[0];
       onSubmit({ gameType: firstGame.type, gameName: gameName.trim(), rounds: firstGame.rounds, drawMode, roomConfig, gameQueue: queueItems });
@@ -2286,6 +2289,13 @@ function CreateRoomForm({ onSubmit, onBack }) {
             </button>
           ))}
         </div>
+
+        {(gameType === 'most-likely-to' || (gameType === 'playlist' && queueItems.some(q => q.type === 'most-likely-to'))) && (
+          <label className="flex items-center justify-between gap-3 mb-6 rounded-xl border-2 border-[#2D2D44] px-4 py-3 cursor-pointer" data-testid="mlt-allow-self-vote">
+            <span className="font-['Nunito'] text-sm text-gray-300">Most Likely To: players can vote for themselves</span>
+            <input type="checkbox" className="w-5 h-5 accent-[#4ECDC4]" checked={mltAllowSelfVote} onChange={(e) => setMltAllowSelfVote(e.target.checked)} />
+          </label>
+        )}
 
         <button
           onClick={handleSubmit}

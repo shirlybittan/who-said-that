@@ -124,7 +124,7 @@ const createRoom = (socketId, playerName = 'Host', gameType = 'most-likely-to', 
       jokersThisRound: {},
       round: 0,
       totalRounds: 5,
-      allowSelfVote: false,
+      allowSelfVote: true, // MLT: players may vote for themselves unless the host turns it off
       paused: false,
       secondsLeft: 30,
     },
@@ -462,7 +462,7 @@ const setGameOptions = (code, socketId, mode, totalRounds, gameType, mltRounds, 
   }
   
   if (mltRounds !== undefined) room.mlt.totalRounds = mltRounds;
-  if (allowSelfVote !== undefined) room.mlt.allowSelfVote = allowSelfVote;
+  if (typeof allowSelfVote === 'boolean') room.mlt.allowSelfVote = allowSelfVote;
   return room;
 };
 

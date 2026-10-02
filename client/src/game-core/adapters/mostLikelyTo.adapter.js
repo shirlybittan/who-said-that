@@ -71,7 +71,8 @@ export const mostLikelyToAdapter = {
         paused: !!mlt.paused,
         total: 30,
       },
-      choices: mlt.players || [],
+      // With self-votes off (host option), your own name is not a choice.
+      choices: (mlt.players || []).filter((p) => mlt.allowSelfVote !== false || p.id !== state?.playerId),
       joker: {
         left: mlt.jokersLeft || 0,
         active: !!mlt.jokerActive,

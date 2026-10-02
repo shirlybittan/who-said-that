@@ -331,6 +331,14 @@ export default function LobbyPage() {
             </div>
           )}
 
+          {/* Most Likely To: self-vote option (AUDIT.md P2-42) */}
+          {isMlt && (
+            <label className="flex items-center justify-between gap-3 w-full max-w-sm rounded-lg border border-[#2D2D44] bg-[#0D0D1A] px-3 py-2 cursor-pointer" data-testid="lobby-allow-self-vote">
+              <span className="text-white font-['Nunito'] text-sm">{tMlt.allowSelfVote}</span>
+              <input type="checkbox" className="w-5 h-5 accent-[#4ECDC4]" checked={state.mlt.allowSelfVote !== false} onChange={(e) => handleOptionsChange('allowSelfVote', e.target.checked)} />
+            </label>
+          )}
+
           {/* This-or-That standalone rounds */}
           {isTot && (
             <div className="flex w-full max-w-sm">

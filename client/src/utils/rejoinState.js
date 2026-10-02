@@ -30,7 +30,7 @@ const getBaseRoomPayload = (room, playerId, isRejoin) => {
     globalScores: room.globalScores || {},
     mlt: {
       totalRounds: room.mlt?.totalRounds ?? 5,
-      allowSelfVote: room.mlt?.allowSelfVote ?? false,
+      allowSelfVote: room.mlt?.allowSelfVote !== false,
     },
   };
 };

@@ -48,7 +48,8 @@ const { EVENTS }     = require('../events');
  * @param {string[]} [opts.phases]       - Ordered phase list; defaults to ['voting', 'results']
  * @param {number}   opts.votingSeconds  - Voting countdown duration in seconds
  * @param {Function} opts.getPrompt      - (room, round) => string|object Returns prompt for each round
- * @param {object}   [opts.scoreConfig]  - Passed to calculateVotingScores ({ pointsPerVote, allowSelfVote })
+ * @param {object}   [opts.scoreConfig]  - Passed to calculateVotingScores ({ pointsPerVote, allowSelfVote }).
+ *                                        allowSelfVote may be a (room) => boolean for a per-room option.
  * @param {Function} [opts.onRoundStart] - (io, room, code, round) => void Custom round-start side-effects (e.g. emitting prompts to clients)
  * @param {Function} [opts.onResults]    - (io, room, code, resultsPayload) => void Override default results emit (e.g. customized scoring/majority mechanics)
  * @param {Function} [opts.onEnd]        - (io, room, code, leaderboard) => void Override default end emit (e.g. custom titles like "🔮 Top Predictor")
@@ -98,6 +99,10 @@ function createVotingGame({
   onEnd,
   getActivePlayers,
 }) {
+  const allowSelfVoteFor = (room) => (typeof scoreConfig.allowSelfVote === "function"
+    ? !!scoreConfig.allowSelfVote(room)
+    : !!scoreConfig.allowSelfVote);
+
   if (!gameKey) throw new Error('createVotingGame: gameKey is required');
   if (!votingSeconds) throw new Error('createVotingGame: votingSeconds is required');
   if (!getPrompt) throw new Error('createVotingGame: getPrompt is required');
@@ -158,7 +163,7 @@ function createVotingGame({
     _createVoteCollector(io, room, code) {
       return VoteCollector.create({
         getExpectedIds: () => activePlayers(room).map(p => p.id),
-        allowSelfVote: scoreConfig.allowSelfVote || false,
+        allowSelfVote: allowSelfVoteFor(room),
         onVote: (voterId, targetId) => {
           room[gameKey].votes[voterId] = targetId;
         },
@@ -279,7 +284,7 @@ function createVotingGame({
         calculateVotingScores({
           votes: gameState.votes,
           players,
-          config: scoreConfig,
+          config: { ...scoreConfig, allowSelfVote: allowSelfVoteFor(room) },
         });
 
       const resultsPayload = {

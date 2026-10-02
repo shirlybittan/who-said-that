@@ -595,6 +595,7 @@ export const gameReducer = (state, action) => {
           jokersLeft: action.payload.jokersLeft !== undefined ? action.payload.jokersLeft : state.mlt.jokersLeft,
           paused: false,
           gameName: action.payload.gameName !== undefined ? action.payload.gameName : state.mlt.gameName,
+          allowSelfVote: action.payload.allowSelfVote !== undefined ? action.payload.allowSelfVote : state.mlt.allowSelfVote,
         },
       };
     case 'MLT_QUESTION_CHANGED':
