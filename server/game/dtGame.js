@@ -679,6 +679,12 @@ function setupDtGame(io, socket, {
         } else if (dt.phase === 'prompting' && everyone(players, id => dt.prompts.some(pr => pr.authorId === id))) {
           if (dt.promptTimerRef) { clearTimeout(dt.promptTimerRef); dt.promptTimerRef = null; }
           startDtDrawingPhase(io, room, code, players);
+        } else if (dt.phase === 'drawing') {
+          // A drawer who left mid-turn: skip the turn now (P2-41).
+          const activeIds = new Set(players.map(p => p.id));
+          Object.entries({ ...(dt.activeTurns || {}) })
+            .filter(([drawerId]) => !activeIds.has(drawerId))
+            .forEach(([, promptId]) => autoSubmitDtTurn(io, room, code, promptId, { skipped: true }));
         } else if (dt.phase === 'guessing') {
           const activeIds = new Set(players.map(p => p.id));
           const pending = Object.entries(dt.chains || {})
@@ -1570,15 +1576,16 @@ function setupDtGame(io, socket, {
   };
 
   // Helper: called when a turn times out — submits empty/current strokes for that turn
-  const autoSubmitDtTurn = (io, room, code, promptId) => {
+  const autoSubmitDtTurn = (io, room, code, promptId, { skipped = false } = {}) => {
     if (room.phase !== 'dt') return; // game ended during the grace window
     const chain = room.dt.chains[promptId];
     if (!chain || chain.phase !== 'drawing') return;
     const drawerEntry = Object.entries(room.dt.activeTurns).find(([, pid]) => pid === promptId);
     if (!drawerEntry) return;
     const [drawerId] = drawerEntry;
+    if (chain.timerRef) { clearInterval(chain.timerRef); chain.timerRef = null; }
     // Add an empty drawing step if the player never submitted
-    chain.drawingSteps.push({ playerId: drawerId, strokes: [], submittedAt: Date.now(), autoSubmitted: true });
+    chain.drawingSteps.push({ playerId: drawerId, strokes: [], submittedAt: Date.now(), autoSubmitted: true, ...(skipped ? { skipped: true } : {}) });
     // Free the player's active turn slot
     delete room.dt.activeTurns[drawerId];
     // Give them any pending turn
@@ -1621,6 +1628,13 @@ function setupDtGame(io, socket, {
 
     room.dt.activeTurns[drawerId] = promptId;
     const drawerPlayer = room.players.find(p => p.id === drawerId);
+
+    // A player who has left can't draw: skip their turn now instead of running
+    // a full turn timer for every chain they are in (AUDIT.md P2-41).
+    if (!getActivePlayers(room).some(p => p.id === drawerId)) {
+      autoSubmitDtTurn(io, room, code, promptId, { skipped: true });
+      return;
+    }
     const existingStrokes = buildCombinedStrokes(chain);
 
     if (drawerPlayer?.socketId) {
