@@ -2314,13 +2314,14 @@ const TIMED_PHASES = ['selfie-photo', 'selfie-voting', 'caption-photo', 'caption
 
 // ─── Host control bar (creator only) ─────────────────────────────────────────
 
-function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onTogglePhasePause, status, isRoomCreator, players, mlt, votingData, fitbData, photoVoteData, captionData, isMixedMode, onStart, onMltPauseResume, onMltChangeQuestion, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, onNewGame, onPlayAgain, onNewPartyPack, gameQueue, queueIndex, onSelfieNextRound, onSelfieSkipQuestion, onShowSelfieResults, onFitbChangeQuestion, onFitbSkipToVote, onFitbShowResults, onFitbNextRound, onPhotoVoteChangeQuestion, onPhotoVoteSkipToResults, onPhotoVoteNextRound, onCaptionChangeQuestion, onCaptionSkipToVoting, onCaptionSkipToResults, onCaptionNextRound, onAnswerPauseResume, answerPaused, onFitbPauseResume, dtData, onDtPauseResume }) {
+function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onTogglePhasePause, status, isRoomCreator, players, mlt, votingData, fitbData, photoVoteData, captionData, isMixedMode, onStart, onMltPauseResume, onMltChangeQuestion, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, onNewGame, onPlayAgain, onNewPartyPack, gameQueue, queueIndex, onSelfieNextRound, onSelfieSkipQuestion, onShowSelfieResults, onFitbChangeQuestion, onFitbSkipToVote, onFitbShowResults, onFitbNextRound, onPhotoVoteChangeQuestion, onPhotoVoteSkipToResults, onPhotoVoteNextRound, onCaptionChangeQuestion, onCaptionSkipToVoting, onCaptionSkipToResults, onCaptionNextRound, onAnswerPauseResume, answerPaused, onFitbPauseResume, dtData, onDtPauseResume, selfieData, onSelfiePauseResume, onSelfieSkipToVote, onDtSkipToReveal }) {
   // One advance per click: a double-click must not skip content (AUDIT.md P1-01).
   const guard = useSingleFlight(1000);
   onMltNext = guard(onMltNext); onNextRound = guard(onNextRound); onSkipQuestion = guard(onSkipQuestion);
   onTotNext = guard(onTotNext); onSitNext = guard(onSitNext); onNextAnswer = guard(onNextAnswer);
   onDrawSkipToVote = guard(onDrawSkipToVote); onDrawShowResults = guard(onDrawShowResults); onDrawNextRound = guard(onDrawNextRound);
   onNextQueueGame = guard(onNextQueueGame); onSelfieNextRound = guard(onSelfieNextRound); onShowSelfieResults = guard(onShowSelfieResults);
+  onSelfieSkipToVote = guard(onSelfieSkipToVote); onDtSkipToReveal = guard(onDtSkipToReveal);
   onFitbSkipToVote = guard(onFitbSkipToVote); onFitbShowResults = guard(onFitbShowResults); onFitbNextRound = guard(onFitbNextRound);
   onPhotoVoteSkipToResults = guard(onPhotoVoteSkipToResults); onPhotoVoteNextRound = guard(onPhotoVoteNextRound);
   onCaptionSkipToVoting = guard(onCaptionSkipToVoting); onCaptionSkipToResults = guard(onCaptionSkipToResults); onCaptionNextRound = guard(onCaptionNextRound);
@@ -2452,6 +2453,9 @@ function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onToggleP
   } else if (status === 'drawing') {
     controls = (
       <div className="flex gap-3">
+        <button onClick={onDrawSkipToVote} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#C39BD3] text-[#C39BD3] hover:bg-[#C39BD3]/10 active:scale-95 transition">
+          🗳 Skip to Vote
+        </button>
         <button onClick={onDrawNewWord} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FFE66D] text-[#FFE66D] hover:bg-[#FFE66D]/10 active:scale-95 transition">
           🔄 New Word
         </button>
@@ -2623,6 +2627,16 @@ function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onToggleP
   } else if (status === 'selfie') {
     controls = (
       <div className="flex gap-3">
+        {selfieData?.phase === 'drawing' && (
+          <>
+            <button onClick={onSelfiePauseResume} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FFE66D] text-[#FFE66D] bg-[#FFE66D]/10 hover:bg-[#FFE66D]/20 active:scale-95 transition">
+              {selfieData?.paused ? '▶ Resume' : '⏸ Pause'}
+            </button>
+            <button onClick={onSelfieSkipToVote} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FD79A8] text-[#FD79A8] hover:bg-[#FD79A8]/10 active:scale-95 transition">
+              🗳 Skip to Vote
+            </button>
+          </>
+        )}
         <button onClick={onSelfieSkipQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FD79A8] hover:text-[#FD79A8] active:scale-95 transition">
           🔄 Change Question
         </button>
@@ -2668,6 +2682,11 @@ function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onToggleP
         <button onClick={onDtPauseResume} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FFE66D] text-[#FFE66D] bg-[#FFE66D]/10 hover:bg-[#FFE66D]/20 active:scale-95 transition">
           {isPaused ? '▶ Resume' : '⏸ Pause'}
         </button>
+        {status === 'dt-guessing' && (
+          <button onClick={onDtSkipToReveal} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#4ECDC4] text-[#4ECDC4] hover:bg-[#4ECDC4]/10 active:scale-95 transition">
+            ⏭ Skip to Reveal
+          </button>
+        )}
         <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
           🔀 Skip Mini Game
         </button>
@@ -3187,9 +3206,11 @@ export default function HostPage() {
       setSelfieData(prev => ({ ...prev, photoCount, totalPhotographers, submittedPlayerIds: submittedPlayerIds || prev.submittedPlayerIds }));
     });
     sock.on('selfie:drawing_phase', (data) => {
-      setSelfieData(prev => ({ ...prev, phase: 'drawing', drawingCount: 0, totalDrawers: data.totalDrawers || 0, drawnPlayerIds: [], promptTemplate: data.promptTemplate || '' }));
+      setSelfieData(prev => ({ ...prev, phase: 'drawing', paused: false, drawingCount: 0, totalDrawers: data.totalDrawers || 0, drawnPlayerIds: [], promptTemplate: data.promptTemplate || '' }));
       setStatus('selfie'); // Ensure host shows selfie panel even when photo phase was skipped
     });
+    sock.on('selfie:paused', () => setSelfieData(prev => ({ ...prev, paused: true })));
+    sock.on('selfie:resumed', () => setSelfieData(prev => ({ ...prev, paused: false })));
     sock.on('selfie:prompt_updated', (data) => {
       setSelfieData(prev => ({ ...prev, promptTemplate: data.promptTemplate || prev.promptTemplate }));
     });
@@ -3731,6 +3752,9 @@ export default function HostPage() {
   const handleSkipQuestion = () => socketRef.current?.emit('skip_question', { code: gameInfo.code });
   const handleSelfieNextRound = () => socketRef.current?.emit('selfie:next_round', { code: gameInfo.code });
   const handleSelfieSkipQuestion = () => socketRef.current?.emit('selfie:skip_question', { code: gameInfo.code });
+  const handleSelfiePauseResume = () => socketRef.current?.emit(selfieData.paused ? 'selfie:resume' : 'selfie:pause', { code: gameInfo.code });
+  const handleSelfieSkipToVote = () => socketRef.current?.emit('selfie:skip_to_vote', { code: gameInfo.code });
+  const handleDtSkipToReveal = () => socketRef.current?.emit('dt:skip_to_reveal', { code: gameInfo.code });
   const handleSkipMiniGame = () => {
     if (isTransitioning) return;
     setIsTransitioning(true);
@@ -4211,6 +4235,10 @@ export default function HostPage() {
         answerPaused={!!phaseTimer?.paused}
         dtData={dtData}
         onDtPauseResume={handleDtPauseResume}
+        selfieData={selfieData}
+        onSelfiePauseResume={handleSelfiePauseResume}
+        onSelfieSkipToVote={handleSelfieSkipToVote}
+        onDtSkipToReveal={handleDtSkipToReveal}
       />}
     </div>
   );

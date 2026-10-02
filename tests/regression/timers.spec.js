@@ -1,7 +1,7 @@
 // Timer expiry: nobody submits → the game still advances; the host can end a
 // timed phase early with Continue; the shell timer is the only timer shown.
 import { test, expect } from '@playwright/test';
-import { openTable, createRoom, joinRoom, startFromTv } from './helpers.js';
+import { openTable, createRoom, joinRoom, startFromTv, autoStep } from './helpers.js';
 
 async function startGame(table, game) {
   const code = await createRoom(table.tv, game, { rounds: 3 });
@@ -40,5 +40,19 @@ test('Caption: the host Continue ends the photo phase once 2 photos are in', asy
     }
     await table.tv.locator('button', { hasText: '⏭ Continue' }).click();
     await table.phones[0].waitForURL(/\/caption-write/, { timeout: 15_000 });
+  } finally { await table.close(); }
+});
+
+test('Drawing: the TV can skip straight to the vote once two drawings are in', async ({ browser }) => {
+  test.setTimeout(120_000);
+  const table = await openTable(browser, 3);
+  try {
+    await startGame(table, 'drawing');
+    await table.phones[0].waitForURL(/\/draw/, { timeout: 15_000 });
+    await table.phones[0].getByTestId('game-timer').waitFor();
+    for (const p of table.phones.slice(0, 2)) await autoStep(p);
+    await expect(table.tv.locator('body')).toContainText('2/3');
+    await table.tv.locator('button', { hasText: '🗳 Skip to Vote' }).click();
+    await expect(table.phones[0].locator('body')).toContainText(/Vote for the best drawing/i, { timeout: 10_000 });
   } finally { await table.close(); }
 });
