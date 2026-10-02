@@ -57,3 +57,35 @@ test('a non-host cannot advance, and a double advance only moves once', async ()
   expect(advances).toEqual(['next']);
   [tv, ...players.map((p) => p.s)].forEach((s) => s.close());
 });
+
+test('a rejoin during WST voting does not reveal who wrote which answer (P2-36)', async () => {
+  const tv = await connect();
+  tv.emit('create_room', { playerName: 'Screen Cast', gameType: 'who-said-that', hostIsPlaying: false });
+  const { code } = await once(tv, 'room_created');
+  const players = [];
+  for (const name of ['A', 'B', 'C']) {
+    const s = await connect();
+    s.emit('join_room', { code, playerName: name, playerId: null });
+    const j = await once(s, 'join_success');
+    players.push({ s, id: j.playerId, name });
+  }
+  const intro = once(tv, 'game:intro');
+  tv.emit('start_game', { code, rounds: 3 });
+  await intro;
+  const q = once(tv, 'new_question');
+  tv.emit('intro:start_now', { code });
+  await q;
+  const voting = once(tv, 'voting_started', 10000);
+  players.forEach((p, i) => p.s.emit('submit_answer', { code, text: `answer ${i}` }));
+  await voting;
+
+  players[0].s.close();
+  const again = await connect();
+  again.emit('join_room', { code, playerName: 'A', playerId: players[0].id });
+  const { room } = await once(again, 'join_success');
+  const others = room.answers.filter((a) => a.text !== 'answer 0');
+  expect(others).toHaveLength(2);
+  others.forEach((a) => { expect(a.playerId).toBeUndefined(); expect(a.playerName).toBeUndefined(); });
+  expect(room).not.toHaveProperty('playerPhotos');
+  [tv, again, ...players.slice(1).map((p) => p.s)].forEach((s) => s.close());
+});

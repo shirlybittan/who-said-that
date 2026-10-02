@@ -266,6 +266,7 @@ const mergeToGlobalScores = (io, room, scores) => {
 // internal Node.js Timeout objects have circular prototype chains.
 
 // Never send the host key to clients (only the creator receives it, once).
+const { roomForPlayer } = require('./game/clientView');
 const sanitizeRoomForClient = (room) => withoutSecrets(TimerManager.sanitizeForClient(room));
 
 // Re-evaluate who hosts the room and tell everyone if it changed.
@@ -920,7 +921,7 @@ io.on('connection', (socket) => {
       refreshHost(io, room);
       const uploadToken = issueUploadToken(room.code, player.id);
       socket.emit('join_success', {
-        room: sanitizeRoomForClient(room),
+        room: roomForPlayer(sanitizeRoomForClient(room), player.id),
         playerId: player.id,
         isRejoin: true,
         uploadToken,
@@ -980,7 +981,7 @@ io.on('connection', (socket) => {
       refreshHost(io, room);
       const uploadToken = issueUploadToken(room.code, player.id);
       socket.emit('join_success', {
-        room: sanitizeRoomForClient(room),
+        room: roomForPlayer(sanitizeRoomForClient(room), player.id),
         playerId: player.id,
         isRejoin,
         uploadToken,
@@ -1033,7 +1034,7 @@ io.on('connection', (socket) => {
       touchRoom(room.code);
       const uploadToken = issueUploadToken(room.code, player.id);
       socket.emit('join_success', {
-        room: sanitizeRoomForClient(room),
+        room: roomForPlayer(sanitizeRoomForClient(room), player.id),
         playerId: player.id,
         isRejoin: true,
         uploadToken,
