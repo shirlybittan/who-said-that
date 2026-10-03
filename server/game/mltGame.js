@@ -135,8 +135,8 @@ function createMltGame({ mergeToGlobalScores }) {
     getActivePlayers,
     // Prompt is stored as room.mlt.prompts[round - 1] by the mlt:start handler.
     getPrompt: (room, round) => room.mlt.prompts[round - 1],
-    // VoteCollector: allow self-vote (MLT players can vote for themselves)
-    scoreConfig: { allowSelfVote: true },
+    // Self-votes follow the room option (on unless the host turned it off).
+    scoreConfig: { allowSelfVote: (room) => room.mlt?.allowSelfVote !== false },
 
     // ── Round lifecycle ────────────────────────────────────────────────────
     onRoundStart(io, room, code, round) {
@@ -152,6 +152,7 @@ function createMltGame({ mergeToGlobalScores }) {
         totalRounds: room.mlt.totalRounds,
         players:     players.map(p => ({ id: p.id, name: p.name, color: p.color })),
         gameName:    room.gameName,
+        allowSelfVote: room.mlt.allowSelfVote !== false,
         // jokersLeft is only broadcast on round 1; subsequent updates come
         // via individual mlt:joker_state events when a joker is spent.
         ...(round === 1 ? { jokersLeft: 2 } : {}),

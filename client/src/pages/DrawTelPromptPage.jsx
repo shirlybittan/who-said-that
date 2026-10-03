@@ -116,7 +116,7 @@ export default function DrawTelPromptPage() {
                 }
               }}
             />
-            <span className="absolute right-3 bottom-3 text-xs text-gray-600 font-['Nunito']">
+            <span className="absolute end-3 bottom-3 text-xs text-gray-600 font-['Nunito']">
               {promptText.length}/150
             </span>
           </div>

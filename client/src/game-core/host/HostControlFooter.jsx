@@ -1,7 +1,9 @@
 import React from 'react';
 import useSingleFlight from '../hooks/useSingleFlight';
+import { useHostT } from '../hooks/useHostT';
 
 export default function HostControlFooter({ paused, onPauseToggle, onChangeQuestion, onNextRound, resultsVisible, onSkipMiniGame }) {
+  const t = useHostT();
   const guard = useSingleFlight(1000);
   onNextRound = guard(onNextRound);
   onSkipMiniGame = guard(onSkipMiniGame);
@@ -10,20 +12,20 @@ export default function HostControlFooter({ paused, onPauseToggle, onChangeQuest
       <div className="flex gap-3 flex-wrap justify-center">
         {resultsVisible && onNextRound ? (
           <button onClick={onNextRound} className="px-8 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#6C5CE7] text-[#6C5CE7] bg-[#6C5CE7]/10 hover:bg-[#6C5CE7]/20 active:scale-95 transition">
-            Next Round →
+            {t.nextRoundArrow}
           </button>
         ) : (
           <>
             <button onClick={onPauseToggle} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FFE66D] text-[#FFE66D] bg-[#FFE66D]/10 hover:bg-[#FFE66D]/20 active:scale-95 transition">
-              {paused ? '▶ Resume' : '⏸ Pause'}
+              {paused ? t.resume : t.pause}
             </button>
             <button onClick={onChangeQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#4ECDC4] hover:text-[#4ECDC4] active:scale-95 transition">
-              🔄 Change Question
+              {t.changeQuestion}
             </button>
           </>
         )}
         <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-          🔀 Skip Mini Game
+          {t.skipMiniGame}
         </button>
       </div>
     </div>

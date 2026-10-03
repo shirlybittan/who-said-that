@@ -145,7 +145,7 @@ export default function LobbyPage() {
         </div>
       )}
 
-      <div className="bg-[#1A1A2E] rounded-2xl w-full max-w-md border border-[#2D2D44] p-4 mb-8 text-left h-full flex flex-col justify-between">
+      <div className="bg-[#1A1A2E] rounded-2xl w-full max-w-md border border-[#2D2D44] p-4 mb-8 text-start h-full flex flex-col justify-between">
          <h3 className="text-xl font-bold mb-4 font-['Fredoka_One'] text-[#FF6B6B]">{t.players} ({state.players?.filter(p => p.isPlaying).length || 0})</h3>
          <div className="flex flex-wrap gap-3">
           <AnimatePresence>
@@ -157,7 +157,7 @@ export default function LobbyPage() {
                animate={{ opacity: 1, scale: 1 }}
                exit={{ opacity: 0, scale: 0.7 }}
                transition={{ type: 'spring', stiffness: 400, damping: 22 }}
-               className="flex items-center space-x-2 bg-black bg-opacity-30 rounded-full px-3 py-2 border border-gray-800"
+               className="flex items-center gap-2 bg-black bg-opacity-30 rounded-full px-3 py-2 border border-gray-800"
              >
                <div className="w-8 h-8 rounded-full flex items-center justify-center text-black font-bold border-2 border-white shadow-sm" style={{ backgroundColor: p.color }}>
                  {p.name.charAt(0).toUpperCase()}
@@ -168,7 +168,7 @@ export default function LobbyPage() {
                {state.isHost && p.id !== state.playerId && (
                  <button
                    onClick={() => socket.emit('kick_player', { code: state.roomCode, targetPlayerId: p.id })}
-                   className="ml-2 text-red-500 hover:text-red-700 text-xs font-bold px-2 py-1 rounded bg-black border border-red-500 hover:bg-red-900 transition"
+                   className="ms-2 text-red-500 hover:text-red-700 text-xs font-bold px-2 py-1 rounded bg-black border border-red-500 hover:bg-red-900 transition"
                  >
                    {t.kick}
                  </button>
@@ -180,7 +180,7 @@ export default function LobbyPage() {
       </div>
 
       {state.isHost && hostKey && (
-        <div data-testid="show-on-tv" className="bg-[#1A1A2E] rounded-2xl w-full max-w-md border border-[#4ECDC4]/40 p-4 mb-4 text-left">
+        <div data-testid="show-on-tv" className="bg-[#1A1A2E] rounded-2xl w-full max-w-md border border-[#4ECDC4]/40 p-4 mb-4 text-start">
           <p className="font-['Fredoka_One'] text-[#4ECDC4] mb-1">📺 Show on a TV (optional)</p>
           <p className="text-xs text-gray-400 font-['Nunito'] mb-2">Open this link on a TV or laptop to display the game. You stay the host on this phone.</p>
           <input readOnly value={tvUrl} onFocus={(e) => e.target.select()} className="w-full p-2 rounded-lg bg-[#0D0D1A] border border-[#2D2D44] text-xs text-gray-300 font-mono" />
@@ -188,7 +188,7 @@ export default function LobbyPage() {
       )}
 
       {state.isHost && (
-        <div className="bg-[#1A1A2E] rounded-2xl w-full max-w-md border border-[#2D2D44] p-4 mb-32 text-left">
+        <div className="bg-[#1A1A2E] rounded-2xl w-full max-w-md border border-[#2D2D44] p-4 mb-32 text-start">
            <h3 className="text-lg font-bold mb-2 font-['Fredoka_One'] text-[#A8E6CF]">
              {isMlt ? '✨ Custom MLT Prompts' : t.customQuestions} ({state.customQuestions?.length || 0})
            </h3>
@@ -197,7 +197,7 @@ export default function LobbyPage() {
                Add your own "Who is most likely to..." prompts — they'll be used first.
              </p>
            )}
-           <div className="max-h-32 overflow-y-auto mb-4 space-y-2 pr-2">       
+           <div className="max-h-32 overflow-y-auto mb-4 space-y-2 pe-2">       
              {state.customQuestions?.length > 0 ? state.customQuestions.map(q => (
                <p key={q.id} className="bg-[#0D0D1A] p-2 rounded-md text-sm border border-[#2D2D44] font-['Nunito'] text-gray-300">
                  {q.text}
@@ -215,7 +215,7 @@ export default function LobbyPage() {
                />
                <button type="submit" disabled={!customQuestion.trim()} className="bg-[#A8E6CF] text-black px-4 py-2 rounded-lg font-bold hover:bg-[#85e1b8] transition">{t.addBtn}</button>
              </div>
-             <label className="flex items-center space-x-2 text-sm text-gray-300 font-['Nunito'] pl-1">
+             <label className="flex items-center gap-2 text-sm text-gray-300 font-['Nunito'] ps-1">
                <input
                  type="checkbox"
                  checked={saveToBank}
@@ -308,7 +308,7 @@ export default function LobbyPage() {
 
           {/* WST / Situational / Mixed options */}
           {isWstLike && (
-            <div className="flex space-x-4 w-full max-w-sm">
+            <div className="flex gap-4 w-full max-w-sm">
               <select
                 value={state.mode}
                 onChange={(e) => handleOptionsChange('mode', e.target.value)}
@@ -329,6 +329,14 @@ export default function LobbyPage() {
                 <option value={5}>5 {t.rounds}</option>
               </select>
             </div>
+          )}
+
+          {/* Most Likely To: self-vote option (AUDIT.md P2-42) */}
+          {isMlt && (
+            <label className="flex items-center justify-between gap-3 w-full max-w-sm rounded-lg border border-[#2D2D44] bg-[#0D0D1A] px-3 py-2 cursor-pointer" data-testid="lobby-allow-self-vote">
+              <span className="text-white font-['Nunito'] text-sm">{tMlt.allowSelfVote}</span>
+              <input type="checkbox" className="w-5 h-5 accent-[#4ECDC4]" checked={state.mlt.allowSelfVote !== false} onChange={(e) => handleOptionsChange('allowSelfVote', e.target.checked)} />
+            </label>
           )}
 
           {/* This-or-That standalone rounds */}

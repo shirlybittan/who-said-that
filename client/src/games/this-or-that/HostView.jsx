@@ -1,14 +1,17 @@
 import React from 'react';
 import HostGameLayout from '../../game-core/layouts/HostGameLayout';
 import { useHostGameFrame } from '../../game-core/hooks/useHostGameFrame';
+import { useHostT, votesLabel } from '../../game-core/hooks/useHostT';
+import { gameLabel } from '../registry';
 
 // ─── Center content: voting view ─────────────────────────────────────────────
 
 function TotVotingCenter({ prompt, roundLabel, a, b }) {
+  const t = useHostT();
   return (
     <div className="w-full flex flex-col items-center gap-6">
       <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">
-        ⚡ This or That · {roundLabel}
+        {gameLabel('this-or-that', t.lang)} · {roundLabel}
       </p>
       <div
         className="w-full bg-[#1A1A2E] border-2 border-[#6C5CE7] rounded-3xl p-8 text-center"
@@ -35,16 +38,17 @@ function TotVotingCenter({ prompt, roundLabel, a, b }) {
 // ─── Center content: results view ────────────────────────────────────────────
 
 function TotResultsCenter({ prompt, roundLabel, a, b, pctA, pctB, countA, countB, majorityChoice }) {
+  const t = useHostT();
   const isTie = majorityChoice === null;
   return (
     <div className="w-full flex flex-col items-center gap-6">
       <div className="text-center">
         <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest mb-2">
-          Results · {roundLabel}
+          {t.results || 'Results'} · {roundLabel}
         </p>
         <h2 className="text-2xl font-['Fredoka_One'] text-[#FFE66D]">{prompt}</h2>
         {isTie && (
-          <p className="mt-2 text-lg font-['Fredoka_One'] text-[#4ECDC4]">🤝 It's a tie!</p>
+          <p className="mt-2 text-lg font-['Fredoka_One'] text-[#4ECDC4]">{t.itsATie}</p>
         )}
       </div>
       <div className="flex gap-6 w-full">
@@ -64,7 +68,7 @@ function TotResultsCenter({ prompt, roundLabel, a, b, pctA, pctB, countA, countB
             <p className="font-['Fredoka_One'] text-xl text-white text-center">{label}</p>
             <p className="text-5xl font-['Fredoka_One'] text-[#FFE66D]">{pct}%</p>
             <p className="text-sm font-['Nunito'] text-gray-400">
-              {count} vote{count !== 1 ? 's' : ''}
+              {votesLabel(t, count)}
             </p>
             <div className="w-full bg-[#2D2D44] rounded-full h-3">
               <div
@@ -72,7 +76,7 @@ function TotResultsCenter({ prompt, roundLabel, a, b, pctA, pctB, countA, countB
                 style={{ width: `${pct}%`, backgroundColor: isMajority ? '#6C5CE7' : '#4ECDC4' }}
               />
             </div>
-            {isMajority && <p className="text-[#6C5CE7] font-['Fredoka_One'] text-sm">✓ Majority</p>}
+            {isMajority && <p className="text-[#6C5CE7] font-['Fredoka_One'] text-sm">{t.majorityCheck}</p>}
           </div>
         ))}
       </div>
@@ -83,7 +87,8 @@ function TotResultsCenter({ prompt, roundLabel, a, b, pctA, pctB, countA, countB
 // ─── Main host view ───────────────────────────────────────────────────────────
 
 export default function ThisOrThatHostView({ state, socket, onOpenGamePicker, onOpenMainMenu, onSkipMiniGame }) {
-  const { frame, actions } = useHostGameFrame({ gameKey: 'this-or-that', state, socket });
+  const t = useHostT();
+  const { frame, actions } = useHostGameFrame({ gameKey: 'this-or-that', state, socket, context: { labels: t, lang: t.lang } });
 
   const handleCopyHostUrl = () => {
     if (!frame.roomCode) return;

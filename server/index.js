@@ -52,15 +52,9 @@ const { words: drawWordBank, prompts: drawPrompts } = require('./questions/drawi
 const { selfiePrompts } = require('./questions/selfie');
 const { isConfigured: storageConfigured, createPresignedUpload, getPublicBaseUrl } = require('./storage/photoStorage');
 
-// Fisher-Yates shuffle (unbiased, unlike .sort(() => Math.random() - 0.5))
-const fisherYatesShuffle = (arr) => {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-};
+// Unbiased shuffle (server/game/shuffle.js).
+const { fisherYatesShuffle } = require('./game/shuffle');
+const { recentDistinct } = require('./game/recent');
 
 // Select `count` items from `pool`, preferring items not in `history`.
 // History is trimmed so at most 70% of the pool is excluded, ensuring there's
@@ -174,6 +168,9 @@ app.get('/admin', adminAuth, (req, res) => {
 // ─── Presigned upload URL endpoint ───────────────────────────────────────────
 // Returns a short-lived PUT URL so clients upload photos directly to cloud
 // storage without routing binary data through the Node.js event loop.
+// Lets phones skip the presign call (and a logged 503) when storage is off (P3-04).
+app.get('/api/upload-config', (req, res) => res.json({ enabled: storageConfigured() }));
+
 app.post('/api/upload-photo-url', async (req, res) => {
   if (!storageConfigured()) {
     return res.status(503).json({ error: 'Storage not configured — use base64 flow' });
@@ -266,6 +263,7 @@ const mergeToGlobalScores = (io, room, scores) => {
 // internal Node.js Timeout objects have circular prototype chains.
 
 // Never send the host key to clients (only the creator receives it, once).
+const { roomForPlayer } = require('./game/clientView');
 const sanitizeRoomForClient = (room) => withoutSecrets(TimerManager.sanitizeForClient(room));
 
 // Re-evaluate who hosts the room and tell everyone if it changed.
@@ -497,6 +495,42 @@ const advanceWstAnswerPhase = (io, room, code) => {
   }
 };
 
+// WST / Situational answering: who has answered (rebuilt after a restart).
+const createAnswerTracker = (io, room, code) => SubmissionTracker.create({
+  getExpectedIds: () => activePlayers(room).map(p => p.id),
+  onComplete: () => advanceWstAnswerPhase(io, room, code),
+});
+
+// The answer timer ran out: fill in drafts for anyone who didn't answer, then vote.
+const expireWstAnswering = (io, room, code) => {
+  if (room.phase !== 'question') return;
+  // Auto-submit fallback for any player who didn't answer in time.
+  // Push to room.answers BEFORE record() so that if onComplete fires
+  // synchronously inside record(), advanceWstAnswerPhase sees all answers.
+  activePlayers(room).forEach(p => {
+    if (!room._answerTracker?.has(p.id)) {
+      const draft = (room.answerDrafts || {})[p.id] || '';
+      const answerData = { playerId: p.id, playerName: p.name, text: draft || '...', votes: [] };
+      room.answers.push(answerData);
+      room._answerTracker?.record(p.id, answerData);
+    }
+  });
+  if (room.answers.length === 0) {
+    // No one answered — skip to next question or end
+    if (room.currentRound < room.totalRounds) {
+      room.currentRound++;
+      room.currentQuestionIndex++;
+      emitNextQuestion(io, room, code);
+    } else {
+      endClassicGame(io, room, code, room.answers);
+    }
+    return;
+  }
+  // advanceWstAnswerPhase may have already been triggered by onComplete inside
+  // the forEach above; the phase guard inside it prevents double execution.
+  advanceWstAnswerPhase(io, room, code);
+};
+
 // Emit the right 'new_question' event for a WST/Situational question
 const emitWstQuestion = (io, room, code) => {
   const q = room.questions[room.currentQuestionIndex];
@@ -514,10 +548,7 @@ const emitWstQuestion = (io, room, code) => {
   room.currentQuestion = questionText;
   room.answers = [];
   room.skipVotes = [];
-  room._answerTracker = SubmissionTracker.create({
-    getExpectedIds: () => activePlayers(room).map(p => p.id),
-    onComplete: () => advanceWstAnswerPhase(io, room, code),
-  });
+  room._answerTracker = createAnswerTracker(io, room, code);
 
   const roundDuration = room.roomConfig?.roundDurationSecs || 60;
 
@@ -532,34 +563,7 @@ const emitWstQuestion = (io, room, code) => {
   });
 
   // Server-side answer timer — auto-starts voting when time expires (handles disconnected players)
-  startAnswerTimer(io, room, code, roundDuration, () => {
-    if (room.phase !== 'question') return;
-    // Auto-submit fallback for any player who didn't answer in time.
-    // Push to room.answers BEFORE record() so that if onComplete fires
-    // synchronously inside record(), advanceWstAnswerPhase sees all answers.
-    activePlayers(room).forEach(p => {
-      if (!room._answerTracker?.has(p.id)) {
-        const draft = (room.answerDrafts || {})[p.id] || '';
-        const answerData = { playerId: p.id, playerName: p.name, text: draft || '...', votes: [] };
-        room.answers.push(answerData);
-        room._answerTracker?.record(p.id, answerData);
-      }
-    });
-    if (room.answers.length === 0) {
-      // No one answered — skip to next question or end
-      if (room.currentRound < room.totalRounds) {
-        room.currentRound++;
-        room.currentQuestionIndex++;
-        emitNextQuestion(io, room, code);
-      } else {
-        endClassicGame(io, room, code, room.answers);
-      }
-      return;
-    }
-    // advanceWstAnswerPhase may have already been triggered by onComplete inside
-    // the forEach above; the phase guard inside it prevents double execution.
-    advanceWstAnswerPhase(io, room, code);
-  });
+  startAnswerTimer(io, room, code, roundDuration, () => expireWstAnswering(io, room, code));
 };
 
 // Emit a This-or-That round prompt and start the countdown timer
@@ -709,8 +713,9 @@ totGame = createTotGame({ mergeToGlobalScores });
 // countdown for the current timed phase from the persisted remaining seconds so
 // the round keeps ticking and auto-advances on expiry — no game state is reset
 // (each onExpire is the same phase-guarded advance the live timer used). Phases
-// not covered (WST answering, fill-in-the-blank, draw-telephone) still advance
-// via the all-submit threshold or host controls, exactly as before.
+// not covered (fill-in-the-blank, draw-telephone: their timers live in the
+// per-connection handlers) still advance via the all-submit threshold or the
+// host's controls (⏭ Continue / skip), exactly as before.
 const resumeRoomTimers = (io, room) => {
   if (!room || !room.phase) return;
   const code = room.code;
@@ -737,6 +742,17 @@ const resumeRoomTimers = (io, room) => {
         onTick: (s) => { if (room.sit) room.sit.secondsLeft = s; },
         onExpire: () => closeSitVoting(io, room, code),
       });
+    } else if (room.phase === 'question') {
+      // WST / Situational answering (AUDIT.md P2-38): rebuild who has answered,
+      // then restart the countdown from the persisted remaining seconds.
+      room._answerTracker = createAnswerTracker(io, room, code);
+      (room.answers || []).forEach(a => room._answerTracker.record(a.playerId, a));
+      const secs = room.answerSecondsLeft ?? room.roomConfig?.roundDurationSecs ?? 60;
+      startAnswerTimer(io, room, code, Math.max(secs, 5), () => expireWstAnswering(io, room, code));
+    } else if (room.phase === 'mlt' && room.mlt?.roundState === 'voting') {
+      // MLT voting (P2-38): helpers + countdown only — votes are kept.
+      mltGame.rehydrate(io, room, code);
+      mltGame.resumeVotingTimer(io, room, code);
     } else if (room.phase === 'voting') {
       // WST per-answer voting — resume from the persisted remaining seconds.
       const secs = room.wstVotingSecondsLeft ?? 30;
@@ -920,7 +936,7 @@ io.on('connection', (socket) => {
       refreshHost(io, room);
       const uploadToken = issueUploadToken(room.code, player.id);
       socket.emit('join_success', {
-        room: sanitizeRoomForClient(room),
+        room: roomForPlayer(sanitizeRoomForClient(room), player.id),
         playerId: player.id,
         isRejoin: true,
         uploadToken,
@@ -949,6 +965,8 @@ io.on('connection', (socket) => {
       const validSubs = ['who-said-that', 'situational', 'this-or-that', 'drawing'];
       room.selectedSubGames = data.selectedSubGames.filter(s => validSubs.includes(s));
     }
+    // TV setup option for Most Likely To (AUDIT.md P2-42).
+    if (typeof roomConfig.mltAllowSelfVote === 'boolean') room.mlt.allowSelfVote = roomConfig.mltAllowSelfVote;
     if (room.gameType === 'mixed' && data.roundsPerSubGame) {
       room.mixedRoundsPerGame = Math.min(5, Math.max(1, parseInt(data.roundsPerSubGame, 10) || 1));
     }
@@ -978,7 +996,7 @@ io.on('connection', (socket) => {
       refreshHost(io, room);
       const uploadToken = issueUploadToken(room.code, player.id);
       socket.emit('join_success', {
-        room: sanitizeRoomForClient(room),
+        room: roomForPlayer(sanitizeRoomForClient(room), player.id),
         playerId: player.id,
         isRejoin,
         uploadToken,
@@ -1031,7 +1049,7 @@ io.on('connection', (socket) => {
       touchRoom(room.code);
       const uploadToken = issueUploadToken(room.code, player.id);
       socket.emit('join_success', {
-        room: sanitizeRoomForClient(room),
+        room: roomForPlayer(sanitizeRoomForClient(room), player.id),
         playerId: player.id,
         isRejoin: true,
         uploadToken,
@@ -1932,7 +1950,7 @@ io.on('connection', (socket) => {
         jokers,
         jokersThisRound: {},
         roundState:     'voting',
-        allowSelfVote:  true,
+        allowSelfVote:  room.mlt?.allowSelfVote !== false, // host option, kept across games
       },
     });
 
@@ -2034,7 +2052,7 @@ io.on('connection', (socket) => {
     // Re-create VoteCollector for the fresh question
     room.mlt._voteCollector = VoteCollector.create({
       getExpectedIds: () => activePlayers(room).map(p => p.id),
-      allowSelfVote:    true,
+      allowSelfVote:    room.mlt.allowSelfVote !== false,
       onVote:           (voterId, targetId) => { room.mlt.votes[voterId] = targetId; },
       onComplete:       () => mltGame.showResults(io, room, code),
     });
@@ -2046,6 +2064,7 @@ io.on('connection', (socket) => {
       totalRounds: room.mlt.totalRounds,
       players:     players.map(p => ({ id: p.id, name: p.name, color: p.color })),
       gameName:    room.gameName,
+      allowSelfVote: room.mlt.allowSelfVote !== false,
     });
     io.to(code).emit('mlt:question_changed', { currentPrompt: candidate });
 
@@ -2086,7 +2105,7 @@ io.on('connection', (socket) => {
       jokersThisRound: {},
       round:          0,
       totalRounds:    prevTotalRounds,
-      allowSelfVote:  true,
+      allowSelfVote:  room.mlt?.allowSelfVote !== false,
       paused:         false,
       secondsLeft:    30,
     };
@@ -2161,7 +2180,7 @@ io.on('connection', (socket) => {
 
     if (drawMode === 'secret') {
       // Assign each player a unique word
-      const shuffled = [...drawWordBank].sort(() => Math.random() - 0.5);
+      const shuffled = fisherYatesShuffle(drawWordBank);
       playingPlayers.forEach((p, i) => {
         room.draw.playerWords[p.id] = shuffled[i % shuffled.length];
       });
@@ -2204,7 +2223,7 @@ io.on('connection', (socket) => {
     if (room.draw.mode === 'secret') {
       if (isHostAction) {
         // Host: give ALL players a new secret word
-        const shuffled = [...drawWordBank].sort(() => Math.random() - 0.5);
+        const shuffled = fisherYatesShuffle(drawWordBank);
         playingPlayers.forEach((p, i) => {
           room.draw.playerWords[p.id] = shuffled[i % shuffled.length];
           delete room.draw.submissions[p.id];
@@ -2366,7 +2385,7 @@ io.on('connection', (socket) => {
     if (room.draw.mode === 'secret') {
       room.draw.word = null;
       if (!room.draw.playerWords) room.draw.playerWords = {};
-      const shuffledNext = [...drawWordBank].sort(() => Math.random() - 0.5);
+      const shuffledNext = fisherYatesShuffle(drawWordBank);
       nextPlayingPlayers.forEach((p, i) => { room.draw.playerWords[p.id] = shuffledNext[i % shuffledNext.length]; });
       io.to(code).emit('draw:round_start', { word: null, round: room.draw.round, totalRounds: room.draw.totalRounds, timeLimit: room.draw.timeLimit, players, mode: 'secret' });
       nextPlayingPlayers.forEach(p => {
@@ -2400,9 +2419,8 @@ io.on('connection', (socket) => {
     // per-session used questions for fine-grained deduplication within a session
     if (!room.promptHistory) room.promptHistory = { mlt: [], fitb: [], caption: [], pmatch: [], photoassoc: [] };
     const sessionUsed = room.fitb.usedQuestions || [];
-    const allUsed = [...new Set([...room.promptHistory.fitb, ...sessionUsed])];
     const maxExclude = Math.floor(fitbQuestions.length * 0.7);
-    const recentUsed = allUsed.slice(-maxExclude);
+    const recentUsed = recentDistinct([...room.promptHistory.fitb, ...sessionUsed], maxExclude);
     const unused = fitbQuestions.filter(q => !recentUsed.includes(q));
     const pool = unused.length > 0 ? unused : fitbQuestions;
     const q = pool[Math.floor(Math.random() * pool.length)];
@@ -2563,7 +2581,7 @@ io.on('connection', (socket) => {
       onComplete: () => resolveFitbVoting(io, room, code),
     });
     // Shuffle answers so order doesn't reveal authorship
-    const shuffled = [...room.fitb.answers].sort(() => Math.random() - 0.5);
+    const shuffled = fisherYatesShuffle(room.fitb.answers);
     room.fitb.answers = shuffled;
     const playingPlayers = getActivePlayers(room);
     // Send anonymous answers (no author info) + tell each player which index is theirs

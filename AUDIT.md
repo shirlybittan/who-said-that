@@ -758,20 +758,29 @@ Status of each finding as it is fixed (Phase 4). "Verified by" names the scenari
 | **Phase 5 — regression safety net** | | | |
 | Suite | ✅ added | (see below) | `npm run test:regression`: happy path per game (11), playlist of every game, refresh / leave / late join / TV refresh / phone host, timer expiry, server robustness |
 
-### 10.1 Remaining / open items
+### 10.1 Follow-up fixes
 
-Not fixed on this branch — none blocks a game from being played start to finish.
+The items that were still open at the end of the first pass.
 
-| ID | Status | Note |
-|----|--------|------|
-| P2-42 | ❓ open question | MLT "allow self-vote" option: self-votes are always allowed. Needs a product decision (keep the option, or remove it). |
-| P2-44 | ✅ fixed | 8d33af2 | Root cause: `MiniGameWrapper`'s empty check (an effect after every render) called `setDomEmpty` with an unchanged value, which still scheduled a nested render — 20 timer ticks cost 30 renders. It now sets state only on a real change (vitest: 20 ticks → 20 renders). |
-| P2-38 | ◐ partial | Draw, ToT and voting timers resume after a restart (as before); other phases do not restart their timer, but the TV's ⏭ Continue (now on every timed phase) moves them on. |
-| P2-04 | ⏳ not re-tested | TV refresh keeps host control (regression test); the WST "Round x of y" restore was not re-checked. |
-| P2-25 | ⏳ todo | No client guard for very long strokes (server silently truncates at 300 points / 500 strokes). |
-| P2-30 | ◐ partial | TV now has Pause + Continue for every timed phase; dedicated "skip to reveal" (DT) buttons are not added. |
-| P2-36 | ⏳ todo | `join_success` / resync still sends the full room (answer authorship during voting, player photo bank). The host key is stripped. |
-| P2-41 | ⏳ todo | A DT player who leaves still costs one turn timer per chain step. |
-| P3-01, P3-04, P3-09, P3-16 | ⏳ todo | Draft kept on refresh; silent 503 without storage; RTL logical classes; photo submit ack. |
-| P3-19 | ⏳ todo | Dead code (ThisOrThatPage, GameRoundShell, ActionController, VotingArea, AnimatedPage, old MiniGameWrapper, `config/hostControls.js`, TotPanel) — left in place; removal needs its own careful pass with the tests. |
-| TV i18n | ⏳ todo | The TV (HostPage) is still mostly English; phones are translated. |
+| ID | Status | Commit | Verified by |
+|----|--------|--------|-------------|
+| P2-44 | ✅ fixed | 8d33af2 | `MiniGameWrapper`'s empty check (an effect after every render) set state with an unchanged value, which still scheduled a nested render: 20 timer ticks cost 30 renders. It now sets state only on a real change (vitest: 20 ticks → 20 renders). |
+| P2-42 | ✅ fixed | d805023 | Q answered: make the option work. TV setup + phone-host lobby toggle; server honours it in the vote collector and scoring; phones hide their own name when off (jest + Playwright `options.spec`) |
+| P2-30 | ✅ fixed | f387f0f | TV: 🗳 Skip to Vote (Drawing, Draw on Friends), ⏸ Pause (Draw on Friends drawing), ⏭ Skip to Reveal (Draw Telephone) (Playwright: Drawing skip) |
+| P2-04 | ✅ fixed | 9c565ba | TV refresh mid-question keeps "Round 1" (Playwright lifecycle) |
+| P2-36 | ✅ fixed | 2f2bf02 | A phone's resync carries no other authors during answering/voting and no photo bank (jest `clientView` + Playwright rejoin during voting) |
+| P2-41 | ✅ fixed | 24a624b | A Draw Telephone player who leaves has their turns skipped at once (socket run: guessing starts without waiting; full DT game passes) |
+| P2-25 | ✅ fixed | b1f15df | Strokes over 300 points are resampled to fit instead of truncated (vitest `fitStrokes`) |
+| P3-01 | ✅ fixed | 67b4076 | Typed WST answer survives a refresh (Playwright lifecycle) |
+| P3-04, P3-16 | ✅ fixed | bf522c9 | No presign call / 503 without storage; photo submits are acknowledged, refusal or silence → "Upload failed" + retry; fetch deadlines (vitest + all photo games pass) |
+| TV i18n | ✅ fixed | 7ebe631, 0c2e0fe | TV (HostPage, MLT and ToT screens) follows the TV language in fr/he; English unchanged (regression suite) |
+| P3-09 | ✅ fixed | 7ebe631, b87b914 | Logical direction classes on the TV and phone screens |
+| P3-19 | ✅ fixed | 5ff24ca | 13 unused files removed (1,428 lines) |
+| P2-38 | ◐ mostly | 5e2ab84 | WST/Situational answering and MLT voting timers now restart after a restart (checked with a real restart mid-phase). Fill in the Blank and Draw Telephone timers live in per-connection handlers and still don't restart; those phases advance on submissions or the TV's ⏭ Continue / skip. |
+
+### 10.2 Still open
+
+- **P2-38 (rest):** Fill in the Blank and Draw Telephone timers after a server restart (see above).
+- **Trivia stub:** `games/trivia` and its adapter are an unrouted game stub with no server side. Kept, per "never delete a game"; decide whether to build it or drop it.
+- **Question content:** the TV and phone UI are translated, but the Most Likely To / This or That question banks only have English text.
+- **Situational voting** identifies answers by their author's id in the live `sit:voting_started` event (a design choice of that mode, not changed).

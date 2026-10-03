@@ -68,7 +68,8 @@ npm run test:regression           # multiplayer regression suite (Playwright, 1 
 | `tests/regression/playlist.spec.js` | One playlist containing every game, advanced with "▶ Next" to the final party scoreboard (slow). `PLAYLIST=pmatch,caption` to shorten it. |
 | `tests/regression/lifecycle.spec.js` | Refresh mid-round, a player leaving for good, late joiners, TV refresh / view-only screens, hosting from a phone. |
 | `tests/regression/timers.spec.js` | Timer expiry advances the game; the host's Continue; one timer on screen. |
-| `tests/regression/server-robustness.spec.js` | Malformed socket payloads can't crash the server; host-only advance guards. |
+| `tests/regression/server-robustness.spec.js` | Malformed socket payloads can't crash the server; host-only advance guards; a rejoin never reveals answer authors. |
+| `tests/regression/options.spec.js` | Host options that change the rules (Most Likely To "vote for themselves"). |
 
 Run one file with `npm run test:regression -- lifecycle`.
 
@@ -108,7 +109,7 @@ Every game gets the **intro screen, the round timer, the confirm button, the "wa
 
 ### 4. TV (host screen)
 
-- **Panel.** Add a panel for your statuses in `client/src/pages/HostPage.jsx`.
+- **Panel.** Add a panel for your statuses in `client/src/pages/HostPage.jsx`. TV text comes from the `host` namespace via `useHostT()` (`client/src/game-core/hooks/useHostT.js`), so it follows the TV's language switcher.
 - **Timed phases.** Add their `phase` labels to `TIMED_PHASES`, so the control bar shows the countdown with Pause / Continue.
 - **End status.** Add your end status to `END_STATUSES`, which gives the Game Over controls, "▶ Next", and the party scoreboard.
 

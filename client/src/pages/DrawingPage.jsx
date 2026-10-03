@@ -5,7 +5,7 @@ import { translations } from '../locales/translations';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
-import { CANVAS_W, CANVAS_H, redrawCanvas } from '../utils/canvasUtils';
+import { CANVAS_W, CANVAS_H, redrawCanvas, fitStrokes } from '../utils/canvasUtils';
 import { saveStrokes, loadStrokes, clearStrokes, clearRoomStrokes } from '../utils/strokeAutosave';
 import { useFullscreen } from '../hooks/useFullscreen';
 import ReplayCanvas from '../components/game/ReplayCanvas';
@@ -152,7 +152,7 @@ export default function DrawingPage() {
       saveStrokes(autosaveKeyRef.current, strokesRef.current);
       // Auto-update submission when player keeps drawing after first submit
       if (draw.hasSubmitted && draw.phase === 'drawing') {
-        socket.emit('draw:submit', { code: roomCode, strokes: strokesRef.current });
+        socket.emit('draw:submit', { code: roomCode, strokes: fitStrokes(strokesRef.current) });
       }
     }
     curStroke.current = null;
@@ -194,7 +194,7 @@ export default function DrawingPage() {
     const canvas = canvasRef.current;
     if (canvas) redrawCanvas(canvas, strokesRef.current);
     if (draw.hasSubmitted && draw.phase === 'drawing') {
-      socket.emit('draw:submit', { code: roomCode, strokes: strokesRef.current });
+      socket.emit('draw:submit', { code: roomCode, strokes: fitStrokes(strokesRef.current) });
     }
   };
 
@@ -215,7 +215,7 @@ export default function DrawingPage() {
 
   const handleSubmit = () => {
     if (draw.phase !== 'drawing') return;
-    socket.emit('draw:submit', { code: roomCode, strokes: strokesRef.current });
+    socket.emit('draw:submit', { code: roomCode, strokes: fitStrokes(strokesRef.current) });
     if (!draw.hasSubmitted) dispatch({ type: 'DRAW_MARK_SUBMITTED' });
   };
 
@@ -231,7 +231,7 @@ export default function DrawingPage() {
   useEffect(() => {
     if (draw.phase === 'drawing' && draw.secondsLeft <= 1 && autoSubmittedRoundRef.current !== draw.round) {
       autoSubmittedRoundRef.current = draw.round;
-      socket.emit('draw:submit', { code: roomCode, strokes: strokesRef.current });
+      socket.emit('draw:submit', { code: roomCode, strokes: fitStrokes(strokesRef.current) });
       if (!draw.hasSubmitted) dispatch({ type: 'DRAW_MARK_SUBMITTED' });
       markConfirmed();
     }
@@ -317,14 +317,14 @@ export default function DrawingPage() {
             {/* Fullscreen toggle */}
             <button
               onClick={toggleFullscreen}
-              className="absolute top-2 left-2 z-10 bg-black/60 hover:bg-black/80 text-white rounded-lg px-2 py-1 text-base leading-none transition"
+              className="absolute top-2 start-2 z-10 bg-black/60 hover:bg-black/80 text-white rounded-lg px-2 py-1 text-base leading-none transition"
               title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
             >
               {isFullscreen ? '⤡' : '⤢'}
             </button>
 
             {draw.hasSubmitted && (
-              <div className="absolute top-2 right-2 bg-black/70 text-white text-xs font-['Nunito'] px-2 py-1 rounded-lg">
+              <div className="absolute top-2 end-2 bg-black/70 text-white text-xs font-['Nunito'] px-2 py-1 rounded-lg">
                 {t.keepDrawing}
               </div>
             )}
@@ -595,7 +595,7 @@ export default function DrawingPage() {
                   </div>
                 </div>
                 {r.playerId === playerId && (
-                  <div className="flex items-center pr-3">
+                  <div className="flex items-center pe-3">
                     <span className="text-xs text-[#C39BD3] font-['Nunito']">you</span>
                   </div>
                 )}

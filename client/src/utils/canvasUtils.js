@@ -71,3 +71,23 @@ export function redrawOverlay(canvas, strokes) {
   // eraserColor omitted → destination-out (cuts through to reveal the selfie)
   strokes.forEach(s => drawStroke(ctx, s));
 }
+
+// The server keeps at most this many points per stroke (server/game/limits.js)
+// and silently cut longer strokes short (AUDIT.md P2-25).
+export const MAX_STROKE_POINTS = 300;
+
+/**
+ * Fit strokes to the server's per-stroke point cap before sending: a longer
+ * stroke is resampled evenly (first and last points kept), so the whole line
+ * arrives — slightly smoothed — instead of being truncated.
+ */
+export function fitStrokes(strokes, max = MAX_STROKE_POINTS) {
+  if (!Array.isArray(strokes)) return [];
+  return strokes.map((s) => {
+    const pts = s?.points;
+    if (!Array.isArray(pts) || pts.length <= max) return s;
+    const step = (pts.length - 1) / (max - 1);
+    const points = Array.from({ length: max }, (_, i) => pts[Math.round(i * step)]);
+    return { ...s, points };
+  });
+}

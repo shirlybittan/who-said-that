@@ -4,7 +4,7 @@ import { useGame } from '../store/gameStore.jsx';
 import { translations } from '../locales/translations';
 import { socket } from '../socket';
 import { useSounds } from '../hooks/useSounds';
-import { CANVAS_W, CANVAS_H, drawStroke, redrawOverlay } from '../utils/canvasUtils';
+import { CANVAS_W, CANVAS_H, drawStroke, redrawOverlay, fitStrokes } from '../utils/canvasUtils';
 import { useFullscreen } from '../hooks/useFullscreen';
 import { saveStrokes, loadStrokes, clearStrokes } from '../utils/strokeAutosave';
 import MiniGameWrapper from '../components/MiniGameWrapper.jsx';
@@ -102,7 +102,7 @@ export default function SelfieDrawPage() {
 
   const handleSubmit = () => {
     sounds.answer?.();
-    socket.emit('selfie:submit_drawing', { code: state.roomCode, strokes: strokesRef.current });
+    socket.emit('selfie:submit_drawing', { code: state.roomCode, strokes: fitStrokes(strokesRef.current) });
     if (!selfie.hasSubmittedDrawing) {
       dispatch({ type: 'SELFIE_MARK_DRAWING_SUBMITTED' });
     }
@@ -122,7 +122,7 @@ export default function SelfieDrawPage() {
       strokesRef.current.push({ ...curStroke.current, points: [...curStroke.current.points] });
       setStrokeCount(strokesRef.current.length);
       if (hasConfirmed) {
-        socket.emit('selfie:submit_drawing', { code: state.roomCode, strokes: strokesRef.current });
+        socket.emit('selfie:submit_drawing', { code: state.roomCode, strokes: fitStrokes(strokesRef.current) });
       }
     }
     curStroke.current = null;
@@ -133,7 +133,7 @@ export default function SelfieDrawPage() {
     setStrokeCount(strokesRef.current.length);
     redrawOverlay(canvasRef.current, strokesRef.current);
     if (hasConfirmed) {
-      socket.emit('selfie:submit_drawing', { code: state.roomCode, strokes: strokesRef.current });
+      socket.emit('selfie:submit_drawing', { code: state.roomCode, strokes: fitStrokes(strokesRef.current) });
     }
   };
 
@@ -150,7 +150,7 @@ export default function SelfieDrawPage() {
   useEffect(() => {
     const onDrawingEnding = () => {
       if (!hasConfirmed) {
-        socket.emit('selfie:submit_drawing', { code: state.roomCode, strokes: strokesRef.current });
+        socket.emit('selfie:submit_drawing', { code: state.roomCode, strokes: fitStrokes(strokesRef.current) });
         dispatch({ type: 'SELFIE_MARK_DRAWING_SUBMITTED' });
         markConfirmed();
       }
@@ -226,13 +226,13 @@ export default function SelfieDrawPage() {
         {/* Fullscreen toggle */}
         <button
           onClick={toggleFullscreen}
-          className="absolute top-2 left-2 z-20 w-8 h-8 rounded-lg bg-black/60 text-white flex items-center justify-center text-sm hover:bg-black/80 transition"
+          className="absolute top-2 start-2 z-20 w-8 h-8 rounded-lg bg-black/60 text-white flex items-center justify-center text-sm hover:bg-black/80 transition"
           title={isFullscreen ? t.exitFullscreen : t.enterFullscreen}
         >
           {isFullscreen ? '⤡' : '⤢'}
         </button>
         {hasConfirmed && (
-          <div className="absolute top-2 right-2 bg-black/70 text-white text-xs font-['Nunito'] px-2 py-1 rounded-lg">
+          <div className="absolute top-2 end-2 bg-black/70 text-white text-xs font-['Nunito'] px-2 py-1 rounded-lg">
             {t.submittedKeepDrawing}
           </div>
         )}
@@ -275,7 +275,7 @@ export default function SelfieDrawPage() {
                 data-testid="selfie-fullscreen-submit"
                 onClick={() => {
                   // After the first submit this re-sends the current drawing (update).
-                  if (hasConfirmed) socket.emit('selfie:submit_drawing', { code: state.roomCode, strokes: strokesRef.current });
+                  if (hasConfirmed) socket.emit('selfie:submit_drawing', { code: state.roomCode, strokes: fitStrokes(strokesRef.current) });
                   else if (strokeCount > 0) confirm();
                 }}
                 disabled={!hasConfirmed && strokeCount === 0}

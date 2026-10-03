@@ -7,6 +7,7 @@ const { buildMiniGameSnapshot } = require('./miniGameSnapshot');
 const { shuffleAnswers } = require('./gameLogic');
 const { sanitizeStrokes } = require('./limits');
 const { getActivePlayers, admitLateJoiners } = require('./players');
+const { fisherYatesShuffle, shuffleInPlace } = require('./shuffle');
 const { requireMinPlayers, clampRounds } = require('./rules');
 const { PHOTO_SECS, VOTE_SECS, startPhaseTimer } = require('./phaseTimer');
 const log = require('../logger');
@@ -96,12 +97,14 @@ function setupDtGame(io, socket, {
     });
   });
 
-  socket.on('selfie:submit_photo', ({ code, photoData }) => {
+  socket.on('selfie:submit_photo', ({ code, photoData }, ack) => {
+    // Ack so the phone knows its photo landed (AUDIT.md P3-16).
+    const done = (ok) => { if (typeof ack === 'function') ack({ ok }); };
     const room = getRoom(code);
-    if (!room) return;
+    if (!room) return done(false);
 
     // ── Validate: accept either a cloud storage HTTPS URL or a Base64 data URI ──
-    if (!photoData || typeof photoData !== 'string') return;
+    if (!photoData || typeof photoData !== 'string') return done(false);
     // Only accept cloud URLs from the configured public storage domain to prevent
     // arbitrary external URL injection (tracking pixels, unexpected resources).
     const cloudBase = storageConfigured() ? getPublicBaseUrl() : null;
@@ -111,15 +114,15 @@ function setupDtGame(io, socket, {
     const isBase64 = photoData.startsWith('data:image/jpeg;base64,') ||
                      photoData.startsWith('data:image/png;base64,')  ||
                      photoData.startsWith('data:image/webp;base64,');
-    if (!isCloudUrl && !isBase64) return;
+    if (!isCloudUrl && !isBase64) return done(false);
     // Enforce size cap only on Base64 (cloud URLs are just short strings)
-    if (isBase64 && photoData.length > 2 * 1024 * 1024) return;
+    if (isBase64 && photoData.length > 2 * 1024 * 1024) return done(false);
 
     // Handle DT selfie collection phase
     if (room.phase === 'dt' && room.dt.phase === 'selfie') {
       const player = findPlayer(room, socket.id);
-      if (!player || !player.isPlaying || !player.isConnected) return;
-      if (room.dt.selfiePhotos?.[player.id]) return; // already submitted
+      if (!player || !player.isPlaying || !player.isConnected) return done(false);
+      if (room.dt.selfiePhotos?.[player.id]) return done(true); // already submitted
 
       if (!room.playerPhotos) room.playerPhotos = {};
       room.playerPhotos[player.id] = photoData;
@@ -133,15 +136,15 @@ function setupDtGame(io, socket, {
       io.to(code).emit('dt:photo_received', { photoCount, totalPhotographers: playingPlayers.length, submittedPlayerIds });
 
       recheckRoom(io, room, code);
-      return;
+      return done(true);
     }
 
-    if (room.phase !== 'selfie') return;
+    if (room.phase !== 'selfie') return done(false);
     // Allow normal photo phase OR drawing phase (for retakes where photo was cleared)
-    if (room.selfie.phase !== 'photo' && room.selfie.phase !== 'drawing') return;
+    if (room.selfie.phase !== 'photo' && room.selfie.phase !== 'drawing') return done(false);
     const player = findPlayer(room, socket.id);
-    if (!player || !player.isPlaying || !player.isConnected) return;
-    if (room.selfie.photos[player.id]) return; // already submitted (or not a retake)
+    if (!player || !player.isPlaying || !player.isConnected) return done(false);
+    if (room.selfie.photos[player.id]) return done(true); // already submitted (or not a retake)
 
     // Validation already performed above (cloud URL or Base64 check)
     room.selfie.photos[player.id] = photoData;
@@ -183,7 +186,7 @@ function setupDtGame(io, socket, {
           promptTemplate: room.selfie.promptTemplate,
         });
       }
-      return;
+      return done(true);
     }
 
     const playingPlayers = getActivePlayers(room);
@@ -191,6 +194,7 @@ function setupDtGame(io, socket, {
     io.to(code).emit('selfie:photo_received', { photoCount, totalPhotographers: playingPlayers.length, submittedPlayerIds: Object.keys(room.selfie.photos) });
 
     recheckRoom(io, room, code);
+    done(true);
   });
 
   const assignSelfieDrawers = (io, room, code) => {
@@ -208,7 +212,7 @@ function setupDtGame(io, socket, {
 
     const photoOwnerIds = Object.keys(room.selfie.photos);
     // Shuffle photo owners so each drawer gets someone else's photo
-    const shuffled = [...photoOwnerIds].sort(() => Math.random() - 0.5);
+    const shuffled = fisherYatesShuffle(photoOwnerIds);
     // Create a derangement (no one draws their own photo)
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying && room.selfie.photos[p.id]);
     const drawerIds = playingPlayers.map(p => p.id);
@@ -221,7 +225,7 @@ function setupDtGame(io, socket, {
         if (drawerIds[i] === assignedOwners[i % assignedOwners.length]) { valid = false; break; }
       }
       if (valid) break;
-      assignedOwners.sort(() => Math.random() - 0.5);
+      shuffleInPlace(assignedOwners);
     }
 
     drawerIds.forEach((drawerId, i) => {
@@ -349,7 +353,7 @@ function setupDtGame(io, socket, {
       };
     });
     // Shuffle so drawer order is not obvious
-    submissions.sort(() => Math.random() - 0.5);
+    shuffleInPlace(submissions);
 
     io.to(code).emit('selfie:voting_started', {
       submissions,
@@ -679,6 +683,12 @@ function setupDtGame(io, socket, {
         } else if (dt.phase === 'prompting' && everyone(players, id => dt.prompts.some(pr => pr.authorId === id))) {
           if (dt.promptTimerRef) { clearTimeout(dt.promptTimerRef); dt.promptTimerRef = null; }
           startDtDrawingPhase(io, room, code, players);
+        } else if (dt.phase === 'drawing') {
+          // A drawer who left mid-turn: skip the turn now (P2-41).
+          const activeIds = new Set(players.map(p => p.id));
+          Object.entries({ ...(dt.activeTurns || {}) })
+            .filter(([drawerId]) => !activeIds.has(drawerId))
+            .forEach(([, promptId]) => autoSubmitDtTurn(io, room, code, promptId, { skipped: true }));
         } else if (dt.phase === 'guessing') {
           const activeIds = new Set(players.map(p => p.id));
           const pending = Object.entries(dt.chains || {})
@@ -765,15 +775,17 @@ function setupDtGame(io, socket, {
     });
   });
 
-  socket.on('caption:submit_photo', ({ code, photoData }) => {
+  socket.on('caption:submit_photo', ({ code, photoData }, ack) => {
+    // Ack so the phone knows its photo landed (AUDIT.md P3-16).
+    const done = (ok) => { if (typeof ack === 'function') ack({ ok }); };
     const room = getRoom(code);
-    if (!room || room.phase !== 'caption' || room.caption.phase !== 'photo') return;
+    if (!room || room.phase !== 'caption' || room.caption.phase !== 'photo') return done(false);
     const player = findPlayer(room, socket.id);
-    if (!player || !player.isPlaying || !player.isConnected) return;
-    if (room.caption.photos[player.id]) return; // already submitted
+    if (!player || !player.isPlaying || !player.isConnected) return done(false);
+    if (room.caption.photos[player.id]) return done(true); // already submitted
 
     // Validate: accept cloud storage URL (from configured domain only) or Base64 data URI
-    if (!photoData || typeof photoData !== 'string') return;
+    if (!photoData || typeof photoData !== 'string') return done(false);
     const cloudBase = storageConfigured() ? getPublicBaseUrl() : null;
     const isCloudUrl = cloudBase
       ? (photoData.startsWith(cloudBase + '/') && /\.(jpg|jpeg|png|webp)(\?.*)?$/i.test(photoData))
@@ -781,8 +793,8 @@ function setupDtGame(io, socket, {
     const isBase64 = photoData.startsWith('data:image/jpeg;base64,') ||
                      photoData.startsWith('data:image/png;base64,')  ||
                      photoData.startsWith('data:image/webp;base64,');
-    if (!isCloudUrl && !isBase64) return;
-    if (isBase64 && photoData.length > 2 * 1024 * 1024) return;
+    if (!isCloudUrl && !isBase64) return done(false);
+    if (isBase64 && photoData.length > 2 * 1024 * 1024) return done(false);
 
     room.caption.photos[player.id] = photoData;
     // Persist photo for reuse across selfie-based mini games
@@ -795,6 +807,7 @@ function setupDtGame(io, socket, {
 
     // Auto-advance when all photos are in
     recheckRoom(io, room, code);
+    done(true);
   });
 
   function startCaptionWritingPhase(io, room, code) {
@@ -887,7 +900,7 @@ function setupDtGame(io, socket, {
     });
     const captionList = Object.values(room.caption.captions).map(c => ({ id: c.id, text: c.text }));
     // Shuffle so order doesn't reveal authorship
-    captionList.sort(() => Math.random() - 0.5);
+    shuffleInPlace(captionList);
     const owner = room.players.find(p => p.id === room.caption.featuredOwnerId);
     io.to(code).emit('caption:voting_phase', {
       captions: captionList,
@@ -1061,7 +1074,7 @@ function setupDtGame(io, socket, {
     cancelAllTimers(room);
     const pvPlayers = getActivePlayers(room);
     const { pmatchPrompts } = require('../questions/pmatchPrompts');
-    const prompts = [...pmatchPrompts].sort(() => Math.random() - 0.5);
+    const prompts = fisherYatesShuffle(pmatchPrompts);
     room.phase = 'photovote';
     room.photoVote = { subType: 'pmatch', phase: 'photo', photos: {}, currentRound: 1, totalRounds: 5, prompts, currentPromptIndex: 0, votes: {}, scores: {} };
     const photoPhasePrompt = resolvePhotoVotePrompt(prompts[0], pvPlayers);
@@ -1152,15 +1165,17 @@ function setupDtGame(io, socket, {
     });
   });
 
-  socket.on('photovote:submit_photo', ({ code, photoData }) => {
+  socket.on('photovote:submit_photo', ({ code, photoData }, ack) => {
+    // Ack so the phone knows its photo landed (AUDIT.md P3-16).
+    const done = (ok) => { if (typeof ack === 'function') ack({ ok }); };
     const room = getRoom(code);
-    if (!room || room.phase !== 'photovote' || room.photoVote.phase !== 'photo') return;
+    if (!room || room.phase !== 'photovote' || room.photoVote.phase !== 'photo') return done(false);
     const player = findPlayer(room, socket.id);
-    if (!player || !player.isPlaying || !player.isConnected) return;
-    if (room.photoVote.photos[player.id]) return;
+    if (!player || !player.isPlaying || !player.isConnected) return done(false);
+    if (room.photoVote.photos[player.id]) return done(true);
 
     // Validate: accept cloud storage URL (from configured domain only) or Base64 data URI
-    if (!photoData || typeof photoData !== 'string') return;
+    if (!photoData || typeof photoData !== 'string') return done(false);
     const cloudBasePv = storageConfigured() ? getPublicBaseUrl() : null;
     const isCloudUrlPv = cloudBasePv
       ? (photoData.startsWith(cloudBasePv + '/') && /\.(jpg|jpeg|png|webp)(\?.*)?$/i.test(photoData))
@@ -1168,8 +1183,8 @@ function setupDtGame(io, socket, {
     const isBase64Pv = photoData.startsWith('data:image/jpeg;base64,') ||
                        photoData.startsWith('data:image/png;base64,')  ||
                        photoData.startsWith('data:image/webp;base64,');
-    if (!isCloudUrlPv && !isBase64Pv) return;
-    if (isBase64Pv && photoData.length > 2 * 1024 * 1024) return;
+    if (!isCloudUrlPv && !isBase64Pv) return done(false);
+    if (isBase64Pv && photoData.length > 2 * 1024 * 1024) return done(false);
 
     room.photoVote.photos[player.id] = photoData;
     // Persist photo for reuse across selfie-based mini games
@@ -1181,6 +1196,7 @@ function setupDtGame(io, socket, {
     io.to(code).emit('photovote:photo_submitted', { playerId: player.id, submittedCount, totalCount: playingPlayers.length, submittedPlayerIds: Object.keys(room.photoVote.photos) });
 
     recheckRoom(io, room, code);
+    done(true);
   });
 
   function resolvePhotoVotePrompt(promptObj, playingPlayers) {
@@ -1570,15 +1586,16 @@ function setupDtGame(io, socket, {
   };
 
   // Helper: called when a turn times out — submits empty/current strokes for that turn
-  const autoSubmitDtTurn = (io, room, code, promptId) => {
+  const autoSubmitDtTurn = (io, room, code, promptId, { skipped = false } = {}) => {
     if (room.phase !== 'dt') return; // game ended during the grace window
     const chain = room.dt.chains[promptId];
     if (!chain || chain.phase !== 'drawing') return;
     const drawerEntry = Object.entries(room.dt.activeTurns).find(([, pid]) => pid === promptId);
     if (!drawerEntry) return;
     const [drawerId] = drawerEntry;
+    if (chain.timerRef) { clearInterval(chain.timerRef); chain.timerRef = null; }
     // Add an empty drawing step if the player never submitted
-    chain.drawingSteps.push({ playerId: drawerId, strokes: [], submittedAt: Date.now(), autoSubmitted: true });
+    chain.drawingSteps.push({ playerId: drawerId, strokes: [], submittedAt: Date.now(), autoSubmitted: true, ...(skipped ? { skipped: true } : {}) });
     // Free the player's active turn slot
     delete room.dt.activeTurns[drawerId];
     // Give them any pending turn
@@ -1621,6 +1638,13 @@ function setupDtGame(io, socket, {
 
     room.dt.activeTurns[drawerId] = promptId;
     const drawerPlayer = room.players.find(p => p.id === drawerId);
+
+    // A player who has left can't draw: skip their turn now instead of running
+    // a full turn timer for every chain they are in (AUDIT.md P2-41).
+    if (!getActivePlayers(room).some(p => p.id === drawerId)) {
+      autoSubmitDtTurn(io, room, code, promptId, { skipped: true });
+      return;
+    }
     const existingStrokes = buildCombinedStrokes(chain);
 
     if (drawerPlayer?.socketId) {
@@ -2083,7 +2107,7 @@ function setupDtGame(io, socket, {
     room.dt.phase = 'reveal';
     room.dt.revealQueue = Object.keys(room.dt.chains);
     // Shuffle reveal order
-    room.dt.revealQueue.sort(() => Math.random() - 0.5);
+    shuffleInPlace(room.dt.revealQueue);
     room.dt.revealCurrentIndex = 0;
     room.dt.revealStep = 0;
 

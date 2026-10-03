@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
 import GamePageWrapper from '../components/GamePageWrapper.jsx';
 import SelfieCapture from '../components/game/SelfieCapture.jsx';
-import { uploadPhoto } from '../utils/photoUpload.js';
+import { uploadPhoto, submitPhoto } from '../utils/photoUpload.js';
 import { translations } from '../locales/translations';
 
 export default function CaptionPhotoPage() {
@@ -19,7 +19,7 @@ export default function CaptionPhotoPage() {
   const handleSubmit = async (photoData) => {
     sounds.answer?.();
     const toSend = await uploadPhoto(photoData, { roomCode: state.roomCode, playerId: state.playerId, uploadToken: state.uploadToken });
-    socket.emit('caption:submit_photo', { code: state.roomCode, photoData: toSend });
+    await submitPhoto(socket, 'caption:submit_photo', { code: state.roomCode, photoData: toSend });
     dispatch({ type: 'CAPTION_MARK_PHOTO_SUBMITTED' });
     dispatch({ type: 'SAVED_SELFIE_STORED', payload: photoData });
   };

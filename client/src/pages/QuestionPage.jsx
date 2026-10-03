@@ -7,11 +7,27 @@ import { useSounds } from '../hooks/useSounds';
 import MiniGameWrapper from '../components/MiniGameWrapper.jsx';
 import { useMiniGameLifecycle } from '../hooks/useMiniGameLifecycle.js';
 
+// A typed-but-unsent answer survives a refresh (AUDIT.md P3-01). Keyed by
+// question so a skipped question never inherits the previous draft.
+const draftKeyFor = (code, round, question) => (code && question
+  ? `wst-draft:${code}:${round}:${(typeof question === 'string' ? question : JSON.stringify(question)).slice(0, 80)}`
+  : null);
+const readDraft = (key) => { try { return (key && sessionStorage.getItem(key)) || ''; } catch { return ''; } };
+const writeDraft = (key, text) => {
+  try { if (!key) return; if (text) sessionStorage.setItem(key, text); else sessionStorage.removeItem(key); } catch { /* storage unavailable */ }
+};
+
 export default function QuestionPage() {
   const { state, dispatch } = useGame();
   const t = translations[state.lang].question;
   const tSit = translations[state.lang].situational;
-  const [answer, setAnswer] = useState('');
+  const draftKey = draftKeyFor(state.roomCode, state.currentRound, state.currentQuestion);
+  const [answer, setAnswer] = useState(() => readDraft(draftKey));
+  // After a refresh the question arrives a moment after mount: load its draft then.
+  useEffect(() => {
+    const saved = readDraft(draftKey);
+    if (saved) setAnswer((cur) => cur || saved);
+  }, [draftKey]);
   const [hasVotedSkip, setHasVotedSkip] = useState(false);
   const sounds = useSounds();
 
@@ -31,6 +47,7 @@ export default function QuestionPage() {
     const text = answer.trim() || t.fallbackAnswer;
     sounds.success();
     socket.emit('submit_answer', { code: state.roomCode, text });
+    writeDraft(draftKey, '');
     dispatch({ type: 'MARK_ANSWERED', payload: { myAnswer: text } });
   };
 
@@ -55,6 +72,7 @@ export default function QuestionPage() {
   const draftTimerRef = React.useRef(null);
   const handleAnswerChange = (newText) => {
     setAnswer(newText);
+    writeDraft(draftKey, newText);
     if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
     draftTimerRef.current = setTimeout(() => {
       socket.emit('answer_draft', { code: state.roomCode, text: newText });

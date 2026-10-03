@@ -4,7 +4,7 @@ import { useGame } from '../store/gameStore.jsx';
 import { translations } from '../locales/translations';
 import { socket } from '../socket';
 import { useSounds } from '../hooks/useSounds';
-import { CANVAS_W, CANVAS_H, redrawCanvas, redrawOverlay, drawStroke } from '../utils/canvasUtils';
+import { CANVAS_W, CANVAS_H, redrawCanvas, redrawOverlay, drawStroke, fitStrokes } from '../utils/canvasUtils';
 import { saveStrokes, loadStrokes, clearRoomStrokes } from '../utils/strokeAutosave';
 import { useFullscreen } from '../hooks/useFullscreen';
 import GamePageWrapper from '../components/GamePageWrapper.jsx';
@@ -113,7 +113,7 @@ export default function DrawTelDrawPage() {
     socket.emit('dt:submit_strokes', {
       code: roomCode,
       promptId: turn.promptId,
-      strokes: strokesRef.current,
+      strokes: fitStrokes(strokesRef.current),
     });
     dispatch({ type: 'DT_MARK_TURN_SUBMITTED' });
   }, [roomCode, turn?.promptId, sounds, dispatch]);
@@ -200,7 +200,7 @@ export default function DrawTelDrawPage() {
         socket.emit('dt:submit_strokes', {
           code: roomCode,
           promptId: turn.promptId,
-          strokes: strokesRef.current,
+          strokes: fitStrokes(strokesRef.current),
         });
       }
     }
@@ -215,7 +215,7 @@ export default function DrawTelDrawPage() {
       saveStrokes(autosaveKeyRef.current, strokesRef.current);
       redrawAll();
       if (hasConfirmed) {
-        socket.emit('dt:submit_strokes', { code: roomCode, promptId: turn.promptId, strokes: strokesRef.current });
+        socket.emit('dt:submit_strokes', { code: roomCode, promptId: turn.promptId, strokes: fitStrokes(strokesRef.current) });
       }
     }
   }, [redrawAll, sounds, hasConfirmed, roomCode, turn?.promptId]);
@@ -403,7 +403,7 @@ export default function DrawTelDrawPage() {
                   <button
                     onClick={toggleFullscreen}
                     aria-label={isFullscreen ? t.exitFullscreen : t.fullscreen}
-                    className="absolute top-2 left-2 z-20 bg-black/50 p-2 rounded-lg text-white hover:bg-black/80 transition pointer-events-auto"
+                    className="absolute top-2 start-2 z-20 bg-black/50 p-2 rounded-lg text-white hover:bg-black/80 transition pointer-events-auto"
                   >
                     {isFullscreen ? '↙️' : '↗️'}
                   </button>

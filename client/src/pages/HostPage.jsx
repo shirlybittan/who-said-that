@@ -13,6 +13,7 @@ import { PICKABLE_GAMES, PLAYLIST_GAMES, getGame, gameLabel, gameName, gameRules
 import MostLikelyToHostView from '../games/most-likely-to/HostView.jsx';
 import ThisOrThatHostView from '../games/this-or-that/HostView.jsx';
 import useSingleFlight from '../game-core/hooks/useSingleFlight';
+import { useHostT, fmt, votesLabel } from '../game-core/hooks/useHostT';
 import { TIMER_STOP_EVENTS } from '../game-core/roundTimer';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
@@ -22,8 +23,15 @@ const CLIENT_URL = (import.meta.env.VITE_CLIENT_URL || '').replace(/\/$/, '') ||
 
 const COLORS = ['#FF6B6B', '#4ECDC4', '#FFE66D', '#A8E6CF', '#FF8B94', '#6C5CE7', '#FFA07A', '#00CEC9'];
 
-// Game names/icons come from games/registry.js (single source of truth).
-const GAME_TYPE_LABELS = new Proxy({}, { get: (_, id) => (typeof id === 'string' ? gameLabel(id) : undefined) });
+// Game names/icons come from games/registry.js (single source of truth),
+// always called with the TV language: gameLabel(id, t.lang).
+
+// ─── TV i18n ─────────────────────────────────────────────────────────────────
+// The TV follows the header LangSwitcher (gameStore `lang`). `t` is the `host`
+// namespace plus `t.lang`, so panels can also pass the language to the registry.
+// (useHostT / fmt / votesLabel live in game-core so the game HostViews share them.)
+// Localized prompt objects ({en, fr, he}) fall back to English.
+const localPrompt = (p, lang) => (typeof p === 'object' ? (p?.[lang] || p?.en || p) : (p || ''));
 
 // ─── Shared sub-components ───────────────────────────────────────────────────
 
@@ -42,7 +50,7 @@ const PlayerAvatar = ({ player, size = 'md', status, subtitle }) => {
       animate={{ y: [0, -5, 0] }}
       transition={{ duration: 2.8 + floatDelay * 0.4, repeat: Infinity, ease: 'easeInOut', delay: floatDelay }}
     >
-      <div className={`relative ${sizes[size]} rounded-full flex items-center justify-center font-bold text-black flex-shrink-0 border-2 border-white/20 ${status ? 'after:absolute after:bottom-0 after:right-0 after:w-3 after:h-3 after:rounded-full after:border-2 after:border-[#0D0D1A] ' + statusDot : ''}`}
+      <div className={`relative ${sizes[size]} rounded-full flex items-center justify-center font-bold text-black flex-shrink-0 border-2 border-white/20 ${status ? 'after:absolute after:bottom-0 after:end-0 after:w-3 after:h-3 after:rounded-full after:border-2 after:border-[#0D0D1A] ' + statusDot : ''}`}
         style={{ backgroundColor: player.color || COLORS[0] }}>
         {player.name?.charAt(0).toUpperCase()}
       </div>
@@ -135,6 +143,7 @@ const ScoreList = ({ players, scores, prevScores }) => {
 // ─── Phase panels ─────────────────────────────────────────────────────────────
 
 function LobbyPanel({ gameInfo, players, joinUrl, onKickPlayer }) {
+  const t = useHostT();
   const activePlayers = players.filter(p => p.isPlaying);
   const spectators = players.filter(p => !p.isPlaying);
   return (
@@ -145,11 +154,11 @@ function LobbyPanel({ gameInfo, players, joinUrl, onKickPlayer }) {
           <QRCodeSVG value={joinUrl} size={180} />
         </div>
         <div className="text-center">
-          <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-1">Scan to join</p>
+          <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-1">{t.scanToJoin}</p>
           <p className="text-sm font-['Nunito'] text-gray-400 break-all">{joinUrl}</p>
         </div>
         <div className="text-center">
-          <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-1">or enter code</p>
+          <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-1">{t.orEnterCode}</p>
           <p className="text-5xl font-['Fredoka_One'] tracking-[0.2em] text-white" data-testid="host-lobby-pin">{gameInfo.code}</p>
         </div>
       </div>
@@ -158,21 +167,21 @@ function LobbyPanel({ gameInfo, players, joinUrl, onKickPlayer }) {
       <div className="flex flex-col gap-6 flex-1">
         {/* Game info */}
         <div className="bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
-          <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-2">Game Mode</p>
+          <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-2">{t.gameMode}</p>
           <p className="text-2xl font-['Fredoka_One'] text-[#FFE66D]">
-            {gameInfo.gameName || GAME_TYPE_LABELS[gameInfo.gameType] || '🎮 Party Pack'}
+            {gameInfo.gameName || (gameInfo.gameType ? gameLabel(gameInfo.gameType, t.lang) : '') || t.partyPack}
           </p>
           {gameInfo.gameName && (
-            <p className="text-sm font-['Nunito'] text-gray-400 mt-1">{GAME_TYPE_LABELS[gameInfo.gameType]}</p>
+            <p className="text-sm font-['Nunito'] text-gray-400 mt-1">{gameInfo.gameType ? gameLabel(gameInfo.gameType, t.lang) : undefined}</p>
           )}
         </div>
 
         {/* Player list */}
         <div className="flex-1 bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
           <div className="flex items-center justify-between mb-4">
-            <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest">Players</p>
+            <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest">{t.players}</p>
             <span className="text-xs bg-[#4ECDC4]/20 text-[#4ECDC4] px-2 py-0.5 rounded-full font-['Nunito'] font-bold">
-              {activePlayers.length} joined
+              {fmt(t.joinedCount, { n: activePlayers.length })}
             </span>
           </div>
           <div className="flex flex-wrap gap-4" data-testid="host-lobby-player-list">
@@ -182,8 +191,8 @@ function LobbyPanel({ gameInfo, players, joinUrl, onKickPlayer }) {
                 {onKickPlayer && (
                   <button
                     onClick={() => onKickPlayer(p.id)}
-                    title={`Kick ${p.name}`}
-                    className="text-xs font-['Nunito'] text-gray-500 hover:text-red-400 transition absolute -top-1 -right-1 bg-[#0D0D1A] border border-[#2D2D44] rounded-full w-5 h-5 flex items-center justify-center leading-none"
+                    title={fmt(t.kick, { name: p.name })}
+                    className="text-xs font-['Nunito'] text-gray-500 hover:text-red-400 transition absolute -top-1 -end-1 bg-[#0D0D1A] border border-[#2D2D44] rounded-full w-5 h-5 flex items-center justify-center leading-none"
                   >
                     ✕
                   </button>
@@ -191,12 +200,12 @@ function LobbyPanel({ gameInfo, players, joinUrl, onKickPlayer }) {
               </div>
             ))}
             {activePlayers.length === 0 && (
-              <p className="text-gray-500 font-['Nunito'] italic text-sm">Waiting for players...</p>
+              <p className="text-gray-500 font-['Nunito'] italic text-sm">{t.waitingForPlayers}</p>
             )}
           </div>
           {spectators.length > 0 && (
             <div className="mt-4 pt-4 border-t border-[#2D2D44]">
-              <p className="text-xs font-['Nunito'] text-gray-600 uppercase tracking-widest mb-2">Host / Spectators</p>
+              <p className="text-xs font-['Nunito'] text-gray-600 uppercase tracking-widest mb-2">{t.hostSpectators}</p>
               <div className="flex flex-wrap gap-3">
                 {spectators.map(p => (
                   <span key={p.id} className="text-xs font-['Nunito'] text-gray-500">{p.name}</span>
@@ -210,8 +219,8 @@ function LobbyPanel({ gameInfo, players, joinUrl, onKickPlayer }) {
         <div className="bg-[#FFE66D]/10 border border-[#FFE66D]/30 rounded-2xl p-4 text-center">
           <p className="text-[#FFE66D] font-['Fredoka_One'] text-lg">
             {activePlayers.length < 3
-              ? `Need ${3 - activePlayers.length} more player${3 - activePlayers.length !== 1 ? 's' : ''} to start`
-              : '✅ Ready to start — use the Start Game button below ↓'}
+              ? fmt(3 - activePlayers.length !== 1 ? t.needMoreMany : t.needMoreOne, { n: 3 - activePlayers.length })
+              : t.readyToStart}
           </p>
         </div>
       </div>
@@ -220,19 +229,20 @@ function LobbyPanel({ gameInfo, players, joinUrl, onKickPlayer }) {
 }
 
 function MltVotingPanel({ mlt, players, gameName }) {
-  const prompt = typeof mlt.prompt === 'object' ? (mlt.prompt?.en || mlt.prompt) : (mlt.prompt || '');
+  const t = useHostT();
+  const prompt = localPrompt(mlt.prompt, t.lang);
   return (
     <div className="flex flex-col items-center gap-8 w-full max-w-5xl">
       {/* Round info */}
       <div className="flex items-center gap-4">
-        <span className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">Round {mlt.round} of {mlt.totalRounds}</span>
+        <span className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">{fmt(t.roundOf, { round: mlt.round, total: mlt.totalRounds })}</span>
         {gameName && <span className="text-sm font-['Fredoka_One'] text-[#4ECDC4]">— {gameName}</span>}
       </div>
 
       {/* Prompt */}
       <div className="w-full bg-[#1A1A2E] border-2 border-[#4ECDC4] rounded-3xl p-10 text-center"
         style={{ boxShadow: '0 0 40px #4ECDC420' }}>
-        <p className="text-xs font-['Nunito'] text-[#4ECDC4] uppercase tracking-widest mb-4">Who is most likely to...</p>
+        <p className="text-xs font-['Nunito'] text-[#4ECDC4] uppercase tracking-widest mb-4">{t.whoMostLikely}</p>
         <h1 className="text-4xl md:text-5xl font-['Fredoka_One'] text-[#FFE66D] leading-tight">
           {prompt}
         </h1>
@@ -246,19 +256,19 @@ function MltVotingPanel({ mlt, players, gameName }) {
             <p className="text-4xl font-['Fredoka_One'] text-white">
               {mlt.voteCount}<span className="text-gray-500 text-2xl">/{mlt.totalVoters}</span>
             </p>
-            <p className="text-xs font-['Nunito'] text-gray-400 uppercase tracking-widest mt-1">votes in</p>
+            <p className="text-xs font-['Nunito'] text-gray-400 uppercase tracking-widest mt-1">{t.votesInLower}</p>
             <ProgressBar value={mlt.voteCount} total={mlt.totalVoters} color="#4ECDC4" />
           </div>
           {mlt.paused && (
             <div className="bg-[#6C5CE7]/20 border border-[#6C5CE7] rounded-xl px-4 py-2">
-              <p className="text-[#6C5CE7] font-['Fredoka_One']">⏸ Paused</p>
+              <p className="text-[#6C5CE7] font-['Fredoka_One']">{t.paused}</p>
             </div>
           )}
         </div>
 
         {/* Player chips */}
         <div className="flex-1 bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
-          <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-4">Voting</p>
+          <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-4">{t.voting}</p>
           <div className="flex flex-wrap gap-4 justify-center">
             {players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound).map(p => (
               <PlayerAvatar key={p.id} player={p} size="md" status={mlt.votedPlayerIds?.includes(p.id) ? 'voted' : 'waiting'} />
@@ -271,7 +281,8 @@ function MltVotingPanel({ mlt, players, gameName }) {
 }
 
 function MltResultsPanel({ mlt, players }) {
-  const prompt = typeof mlt.prompt === 'object' ? (mlt.prompt?.en || mlt.prompt) : (mlt.prompt || '');
+  const t = useHostT();
+  const prompt = localPrompt(mlt.prompt, t.lang);
   const maxCount = Math.max(...(mlt.results || []).map(r => r.count), 1);
   return (
     <div className="flex flex-col items-center gap-8 w-full max-w-4xl" data-testid="host-question-screen">
@@ -281,7 +292,7 @@ function MltResultsPanel({ mlt, players }) {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: 'easeOut' }}
       >
-        <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest mb-2">Results · Round {mlt.round}/{mlt.totalRounds}</p>
+        <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest mb-2">{fmt(t.resultsRound, { round: mlt.round, total: mlt.totalRounds })}</p>
         <h2 className="text-2xl font-['Fredoka_One'] text-[#FFE66D] leading-snug">"{prompt}"</h2>
       </motion.div>
 
@@ -314,7 +325,7 @@ function MltResultsPanel({ mlt, players }) {
                   <div className="flex items-center justify-between mb-1">
                     <span className="font-['Fredoka_One'] text-lg text-white flex items-center gap-2">
                       {r.name}
-                      {isMajority && <span className="text-[#4ECDC4] text-sm">👑 Majority</span>}
+                      {isMajority && <span className="text-[#4ECDC4] text-sm">{t.majorityCrown}</span>}
                     </span>
                     <motion.span
                       className="font-['Fredoka_One'] text-xl text-[#FFE66D]"
@@ -332,16 +343,16 @@ function MltResultsPanel({ mlt, players }) {
                       transition={{ duration: 0.9, ease: 'easeOut', delay: 0.2 + cardIdx * 0.15 }}
                     />
                   </div>
-                  <p className="text-xs font-['Nunito'] text-gray-500 mt-1">{r.count} vote{r.count !== 1 ? 's' : ''}</p>
+                  <p className="text-xs font-['Nunito'] text-gray-500 mt-1">{votesLabel(t, r.count)}</p>
                 </div>
               </div>
               {coins > 0 && (
-                <div className="flex flex-wrap gap-1.5 mt-3 pl-16">
+                <div className="flex flex-wrap gap-1.5 mt-3 ps-16">
                   {Array.from({ length: coins }).map((_, ci) => (
                     <VoteCoin key={ci} coinIndex={ci} cardIndex={cardIdx} isJoker={ci === 0 && (mlt.jokersUsed || []).includes(r.playerId)} />
                   ))}
                   {r.count > 10 && (
-                    <span className="text-xs font-['Fredoka_One'] text-gray-400 self-center ml-1">+{r.count - 10}</span>
+                    <span className="text-xs font-['Fredoka_One'] text-gray-400 self-center ms-1">+{r.count - 10}</span>
                   )}
                 </div>
               )}
@@ -358,7 +369,7 @@ function MltResultsPanel({ mlt, players }) {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, ease: 'easeOut', delay: 0.5 }}
         >
-          <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-4">Scores</p>
+          <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-4">{t.scores}</p>
           <ScoreList players={players.filter(p => p.isPlaying)} scores={mlt.scores} prevScores={mlt.prevScores} />
         </motion.div>
       )}
@@ -367,6 +378,7 @@ function MltResultsPanel({ mlt, players }) {
 }
 
 function MltEndPanel({ mlt }) {
+  const t = useHostT();
   return (
     <div className="flex flex-col items-center gap-8 w-full max-w-3xl">
       <motion.div
@@ -380,7 +392,7 @@ function MltEndPanel({ mlt }) {
           animate={{ rotate: [0, -10, 10, -10, 0], scale: [1, 1.2, 1] }}
           transition={{ duration: 0.8, delay: 0.3 }}
         >🎉</motion.p>
-        <h1 className="text-5xl font-['Fredoka_One'] text-[#FFE66D]">Game Over!</h1>
+        <h1 className="text-5xl font-['Fredoka_One'] text-[#FFE66D]">{t.gameOver}</h1>
         {mlt.gameName && <p className="text-xl font-['Nunito'] text-gray-400 mt-2">{mlt.gameName}</p>}
       </motion.div>
 
@@ -422,6 +434,7 @@ function MltEndPanel({ mlt }) {
 }
 
 function QuestionPanel({ questionData, players, paused = false, serverSecondsLeft }) {
+  const t = useHostT();
   const activePlayers = players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound);
   const computeSecondsLeft = () => {
     const elapsed = questionData.startedAt ? Math.floor((Date.now() - questionData.startedAt) / 1000) : 0;
@@ -454,10 +467,10 @@ function QuestionPanel({ questionData, players, paused = false, serverSecondsLef
     <div data-testid="host-question-screen" className="flex flex-col items-center gap-8 w-full max-w-5xl">
       <div className="flex items-center gap-4">
         <span className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">
-          Round {questionData.round} of {questionData.totalRounds}
+          {fmt(t.roundOf, { round: questionData.round, total: questionData.totalRounds })}
         </span>
         <span className="text-sm font-['Nunito'] text-gray-500 capitalize">
-          {questionData.type === 'situational' ? ' Situational' : '🤔 Who Said That?'}
+          {questionData.type === 'situational' ? ` ${gameName('situational', t.lang)}` : gameLabel('who-said-that', t.lang)}
         </span>
       </div>
       <TimerRing secondsLeft={secondsLeft} total={questionData.roundDuration || 60} paused={paused} size={100} />
@@ -469,7 +482,7 @@ function QuestionPanel({ questionData, players, paused = false, serverSecondsLef
             {questionData.target.name?.charAt(0).toUpperCase()}
           </div>
           <div>
-            <p className="text-xs font-['Nunito'] text-gray-400">This round is about</p>
+            <p className="text-xs font-['Nunito'] text-gray-400">{t.roundAbout}</p>
             <p className="font-['Fredoka_One'] text-[#A8E6CF] text-lg">{questionData.target.name}</p>
           </div>
         </div>
@@ -477,7 +490,7 @@ function QuestionPanel({ questionData, players, paused = false, serverSecondsLef
 
       <div className="w-full bg-[#1A1A2E] border-2 border-[#FFE66D]/50 rounded-3xl p-10 text-center"
         style={{ boxShadow: '0 0 40px #FFE66D15' }}>
-        <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-4">The Question</p>
+        <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-4">{t.theQuestion}</p>
         <h1 className="text-4xl md:text-5xl font-['Fredoka_One'] text-[#FFE66D] leading-snug">
           {questionData.text}
         </h1>
@@ -486,7 +499,7 @@ function QuestionPanel({ questionData, players, paused = false, serverSecondsLef
       {/* Answer progress */}
       <div className="w-full max-w-xl bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
         <div className="flex items-center justify-between mb-3">
-          <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">Answers submitted</p>
+          <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">{t.answersSubmitted}</p>
           <p className="text-2xl font-['Fredoka_One'] text-white">
             {questionData.answeredCount}<span className="text-gray-500">/{questionData.totalAnswerers || activePlayers.length}</span>
           </p>
@@ -510,6 +523,7 @@ function QuestionPanel({ questionData, players, paused = false, serverSecondsLef
 }
 
 function VotingPanel({ votingData, players, phaseTimer }) {
+  const t = useHostT();
   const current = votingData.answers?.[votingData.currentIndex];
   const authorId = current?.playerId;
   const activePlayers = players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound);
@@ -517,19 +531,19 @@ function VotingPanel({ votingData, players, phaseTimer }) {
     <div className="flex flex-col items-center gap-8 w-full max-w-4xl" data-testid="host-question-screen">
       <div className="flex items-center gap-3">
         <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">
-          Answer {votingData.currentIndex + 1} of {votingData.answers?.length || 0}
+          {fmt(t.answerOf, { n: votingData.currentIndex + 1, total: votingData.answers?.length || 0 })}
         </p>
       </div>
 
       <div className="text-center mb-2 w-full max-w-2xl">
-        <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest mb-2">🤔 Who wrote this?</p>
+        <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest mb-2">{t.whoWroteThis}</p>
         <div className="w-full bg-[#1A1A2E] border-2 border-[#6C5CE7]/60 rounded-3xl p-8 relative"
           style={{ boxShadow: '0 0 40px #6C5CE720' }}>
-          <span className="text-6xl text-[#6C5CE7]/20 font-['Fredoka_One'] absolute top-3 left-5 leading-none select-none">"</span>
+          <span className="text-6xl text-[#6C5CE7]/20 font-['Fredoka_One'] absolute top-3 start-5 leading-none select-none">"</span>
           <p className="text-4xl md:text-5xl font-['Fredoka_One'] text-white leading-snug relative z-10 [overflow-wrap:anywhere]">
             {current?.text || '...'}
           </p>
-          <span className="text-6xl text-[#6C5CE7]/20 font-['Fredoka_One'] absolute bottom-1 right-5 leading-none select-none rotate-180">"</span>
+          <span className="text-6xl text-[#6C5CE7]/20 font-['Fredoka_One'] absolute bottom-1 end-5 leading-none select-none rotate-180">"</span>
         </div>
       </div>
 
@@ -539,7 +553,7 @@ function VotingPanel({ votingData, players, phaseTimer }) {
           <div className="flex flex-col items-center justify-center bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5 flex-shrink-0 w-44">
             <TimerRing secondsLeft={phaseTimer.secondsLeft} paused={phaseTimer.paused} size={90} />
             {phaseTimer.paused && (
-              <p className="text-[#FFE66D] font-['Fredoka_One'] text-sm mt-2">⏸ Paused</p>
+              <p className="text-[#FFE66D] font-['Fredoka_One'] text-sm mt-2">{t.paused}</p>
             )}
           </div>
         )}
@@ -548,7 +562,7 @@ function VotingPanel({ votingData, players, phaseTimer }) {
         <div className="flex-1 bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5 flex flex-col justify-between">
           <div>
             <div className="flex items-center justify-between mb-3">
-              <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">Votes in</p>
+              <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">{t.votesIn}</p>
               <p className="text-2xl font-['Fredoka_One'] text-white">
                 {votingData.voteCount}<span className="text-gray-500">/{votingData.totalPlayers}</span>
               </p>
@@ -567,13 +581,14 @@ function VotingPanel({ votingData, players, phaseTimer }) {
 }
 
 function RoundEndPanel({ roundEndData, players }) {
+  const t = useHostT();
   const activePlayers = players.filter(p => p.isPlaying);
   return (
     <div className="flex flex-col lg:flex-row items-start gap-8 w-full max-w-5xl">
       {/* Left: Answer Summary */}
       <div className="flex-1 flex flex-col gap-4">
-        <h2 className="text-2xl font-['Fredoka_One'] text-[#FFE66D]">Answer Summary</h2>
-        <div className="flex flex-col gap-3 max-h-[60vh] overflow-y-auto pr-1">
+        <h2 className="text-2xl font-['Fredoka_One'] text-[#FFE66D]">{t.answerSummary}</h2>
+        <div className="flex flex-col gap-3 max-h-[60vh] overflow-y-auto pe-1">
           {(roundEndData.answers || []).map((ans, idx) => {
             const correct = (ans.votes || []).filter(v => v.votedForId === ans.playerId);
             const author = players.find(p => p.id === ans.playerId);
@@ -603,7 +618,7 @@ function RoundEndPanel({ roundEndData, players }) {
                     })}
                   </div>
                 ) : (
-                  <span className="text-xs font-['Nunito'] text-gray-500 italic">No one guessed correctly</span>
+                  <span className="text-xs font-['Nunito'] text-gray-500 italic">{t.noOneGuessed}</span>
                 )}
               </motion.div>
             );
@@ -614,13 +629,13 @@ function RoundEndPanel({ roundEndData, players }) {
       <div className="w-full lg:w-80 flex flex-col gap-4">
         <div className="text-center">
           <p className="text-5xl mb-2">🏆</p>
-          <h1 className="text-3xl font-['Fredoka_One'] text-[#4ECDC4]">Round Over!</h1>
+          <h1 className="text-3xl font-['Fredoka_One'] text-[#4ECDC4]">{t.roundOver}</h1>
         </div>
         <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
-          <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-4">Scoreboard</p>
+          <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-4">{t.scoreboard}</p>
           <ScoreList players={activePlayers} scores={roundEndData.scores} prevScores={roundEndData.prevScores} />
         </div>
-        <p className="text-sm font-['Nunito'] text-gray-500 italic text-center">Waiting for host to continue...</p>
+        <p className="text-sm font-['Nunito'] text-gray-500 italic text-center">{t.waitingHostContinue}</p>
       </div>
     </div>
   );
@@ -628,6 +643,7 @@ function RoundEndPanel({ roundEndData, players }) {
 
 // TV intro: game icon, name, rules, who's ready, countdown (server/game/intro.js).
 function IntroPanel({ intro }) {
+  const t = useHostT();
   const [now, setNow] = useState(Date.now());
   useEffect(() => { const id = setInterval(() => setNow(Date.now()), 250); return () => clearInterval(id); }, []);
   if (!intro) return null;
@@ -638,12 +654,12 @@ function IntroPanel({ intro }) {
   return (
     <div data-testid="host-intro" className="flex flex-col items-center gap-6 w-full max-w-3xl text-center">
       <p className="text-8xl">{game?.icon || '🎮'}</p>
-      <h1 className="text-6xl font-['Fredoka_One']" style={{ color: accent }}>{gameName(intro.gameType)}</h1>
-      <p className="text-2xl font-['Nunito'] text-gray-200 max-w-2xl leading-snug">{gameRules(intro.gameType)}</p>
+      <h1 className="text-6xl font-['Fredoka_One']" style={{ color: accent }}>{gameName(intro.gameType, t.lang)}</h1>
+      <p className="text-2xl font-['Nunito'] text-gray-200 max-w-2xl leading-snug">{gameRules(intro.gameType, t.lang)}</p>
       {countdown !== null ? (
         <p className="text-8xl font-['Fredoka_One']" style={{ color: accent }}>{countdown}</p>
       ) : (
-        <p className="text-lg font-['Nunito'] text-gray-400">Tap “I’m ready” on your phone · {readyIds.length}/{(intro.players || []).length} ready</p>
+        <p className="text-lg font-['Nunito'] text-gray-400">{fmt(t.tapReady, { ready: readyIds.length, total: (intro.players || []).length })}</p>
       )}
       <div className="flex flex-wrap justify-center gap-4">
         {(intro.players || []).map(p => (
@@ -658,13 +674,14 @@ const END_STATUSES = ['game-end', 'mlt-end', 'tot-end', 'draw-end', 'fitb-end', 
 
 // Running total across every game played in this room (playlist / mixed).
 function PartyScoreboard({ leaderboard, isFinal, onReset }) {
+  const t = useHostT();
   return (
     <div data-testid="party-scoreboard" className="w-full max-w-3xl mt-8 bg-[#1A1A2E] border-2 border-[#FFE66D]/40 rounded-2xl p-5">
       <div className="flex items-center justify-between mb-3">
-        <h2 className="font-['Fredoka_One'] text-2xl text-[#FFE66D]">{isFinal ? '🏆 Final Party Scoreboard' : '📊 Party Totals'}</h2>
+        <h2 className="font-['Fredoka_One'] text-2xl text-[#FFE66D]">{isFinal ? t.finalPartyScoreboard : t.partyTotals}</h2>
         {onReset && (
           <button onClick={onReset} className="px-4 py-1.5 rounded-xl text-sm font-['Fredoka_One'] border-2 border-[#FF6B6B]/60 text-[#FF6B6B] hover:bg-[#FF6B6B]/10 active:scale-95 transition">
-            🧹 Reset points
+            {t.resetPoints}
           </button>
         )}
       </div>
@@ -690,6 +707,7 @@ const pointsToScores = (leaderboard, scores) => (
 );
 
 function GameEndPanel({ gameEndData, players }) {
+  const t = useHostT();
   const activePlayers = players.filter(p => p.isPlaying);
   const sorted = [...activePlayers].sort((a, b) => (gameEndData.finalScores[b.id] || 0) - (gameEndData.finalScores[a.id] || 0));
   return (
@@ -705,7 +723,7 @@ function GameEndPanel({ gameEndData, players }) {
           animate={{ rotate: [0, -10, 10, -10, 0], scale: [1, 1.2, 1] }}
           transition={{ duration: 0.8, delay: 0.3 }}
         >🎉</motion.p>
-        <h1 className="text-5xl font-['Fredoka_One'] text-[#FFE66D]">Game Over!</h1>
+        <h1 className="text-5xl font-['Fredoka_One'] text-[#FFE66D]">{t.gameOver}</h1>
       </motion.div>
       <motion.div
         className="w-full flex flex-col gap-3"
@@ -742,12 +760,13 @@ function GameEndPanel({ gameEndData, players }) {
 }
 
 function TotPanel({ totData, players }) {
+  const t = useHostT();
   const activePlayers = players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound);
   if (totData.resultsVisible) {
     return (
       <div className="flex flex-col items-center gap-8 w-full max-w-4xl" data-testid="host-question-screen">
         <div className="text-center">
-          <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest mb-2">Results · Round {totData.round}/{totData.totalRounds}</p>
+          <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest mb-2">{fmt(t.resultsRound, { round: totData.round, total: totData.totalRounds })}</p>
           <h2 className="text-2xl font-['Fredoka_One'] text-[#FFE66D]">{totData.question}</h2>
         </div>
         <div className="flex gap-6 w-full">
@@ -761,12 +780,12 @@ function TotPanel({ totData, players }) {
                 : { background: '#1A1A2E', border: '1px solid #2D2D44' }}>
               <p className="font-['Fredoka_One'] text-xl text-white text-center">{label}</p>
               <p className="text-5xl font-['Fredoka_One'] text-[#FFE66D]">{pct}%</p>
-              <p className="text-sm font-['Nunito'] text-gray-400">{count} vote{count !== 1 ? 's' : ''}</p>
+              <p className="text-sm font-['Nunito'] text-gray-400">{votesLabel(t, count)}</p>
               <div className="w-full bg-[#2D2D44] rounded-full h-3">
                 <div className="h-3 rounded-full transition-all duration-700"
                   style={{ width: `${pct}%`, backgroundColor: isMajority ? '#6C5CE7' : '#4ECDC4' }} />
               </div>
-              {isMajority && <p className="text-[#6C5CE7] font-['Fredoka_One'] text-sm">✓ Majority</p>}
+              {isMajority && <p className="text-[#6C5CE7] font-['Fredoka_One'] text-sm">{t.majorityCheck}</p>}
             </div>
           ))}
         </div>
@@ -780,7 +799,7 @@ function TotPanel({ totData, players }) {
     <div className="flex flex-col items-center gap-8 w-full max-w-5xl">
       <div className="flex items-center gap-4">
         <span className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">
-          ⚡ This or That · Round {totData.round} of {totData.totalRounds}
+          {fmt(t.totRoundOf, { game: gameLabel('this-or-that', t.lang), round: totData.round, total: totData.totalRounds })}
         </span>
       </div>
       <h1 className="text-3xl md:text-4xl font-['Fredoka_One'] text-[#FFE66D] text-center leading-snug">
@@ -797,7 +816,7 @@ function TotPanel({ totData, players }) {
       </div>
       <div className="w-full max-w-xl bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
         <div className="flex items-center justify-between mb-3">
-          <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">Voted</p>
+          <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">{t.voted}</p>
           <p className="text-2xl font-['Fredoka_One'] text-white">
             {totData.voteCount}<span className="text-gray-500">/{totData.totalVoters}</span>
           </p>
@@ -814,12 +833,13 @@ function TotPanel({ totData, players }) {
 }
 
 function SitPanel({ sitData, players, phaseTimer }) {
+  const t = useHostT();
   const activePlayers = players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound);
   if (sitData.hasResults) {
     return (
       <div className="flex flex-col items-center gap-6 w-full max-w-4xl">
         <div className="text-center">
-          <p className="text-xs font-['Nunito'] text-gray-400 uppercase tracking-widest mb-2"> Situational · Results</p>
+          <p className="text-xs font-['Nunito'] text-gray-400 uppercase tracking-widest mb-2"> {fmt(t.gameResults, { game: gameName('situational', t.lang) })}</p>
           <h2 className="text-2xl font-['Fredoka_One'] text-[#A8E6CF] leading-snug">{sitData.question}</h2>
         </div>
         <motion.div
@@ -848,9 +868,9 @@ function SitPanel({ sitData, players, phaseTimer }) {
                     <div className="flex items-center justify-between mb-1">
                       <span className="font-['Fredoka_One'] text-base text-white">
                         {answer.authorName}
-                        {isWinner && <span className="text-[#A8E6CF] ml-2">🏆 Winner</span>}
+                        {isWinner && <span className="text-[#A8E6CF] ms-2">{t.winner}</span>}
                       </span>
-                      <span className="text-sm font-['Nunito'] text-gray-400">{answer.votes} vote{answer.votes !== 1 ? 's' : ''}</span>
+                      <span className="text-sm font-['Nunito'] text-gray-400">{votesLabel(t, answer.votes)}</span>
                     </div>
                     <p className="text-lg font-['Nunito'] text-gray-200">"{answer.text}"</p>
                   </div>
@@ -865,7 +885,7 @@ function SitPanel({ sitData, players, phaseTimer }) {
   return (
     <div className="flex flex-col items-center gap-8 w-full max-w-5xl">
       <div className="text-center">
-        <span className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest"> Situational</span>
+        <span className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest"> {gameName('situational', t.lang)}</span>
       </div>
       <div className="w-full bg-[#1A1A2E] border-2 border-[#A8E6CF]/50 rounded-3xl p-10 text-center"
         style={{ boxShadow: '0 0 40px #A8E6CF10' }}>
@@ -881,7 +901,7 @@ function SitPanel({ sitData, players, phaseTimer }) {
       <div className="w-full max-w-xl bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
         <div className="flex items-center justify-between mb-3">
           <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">
-            {sitData.votingStarted ? 'Votes in' : 'Answers submitted'}
+            {sitData.votingStarted ? t.votesIn : t.answersSubmitted}
           </p>
           <p className="text-2xl font-['Fredoka_One'] text-white">
             {sitData.voteCount}<span className="text-gray-500">/{sitData.totalVoters || activePlayers.length}</span>
@@ -903,6 +923,7 @@ function SitPanel({ sitData, players, phaseTimer }) {
 }
 
 function TotEndPanel({ totData }) {
+  const t = useHostT();
   return (
     <div className="flex flex-col items-center gap-8 w-full max-w-3xl">
       <motion.div
@@ -916,8 +937,8 @@ function TotEndPanel({ totData }) {
           animate={{ y: [0, -14, 0], scale: [1, 1.2, 1] }}
           transition={{ duration: 0.7, delay: 0.3, ease: 'easeOut' }}
         >⚡</motion.p>
-        <h1 className="text-5xl font-['Fredoka_One'] text-[#6C5CE7]">This or That!</h1>
-        <p className="text-xl font-['Nunito'] text-gray-400 mt-2">Final Results</p>
+        <h1 className="text-5xl font-['Fredoka_One'] text-[#6C5CE7]">{gameName('this-or-that', t.lang)}!</h1>
+        <p className="text-xl font-['Nunito'] text-gray-400 mt-2">{t.finalResults}</p>
       </motion.div>
       <motion.div
         className="w-full flex flex-col gap-3"
@@ -960,6 +981,7 @@ function TotEndPanel({ totData }) {
 // ─── Setup screens ────────────────────────────────────────────────────────────
 
 function DrawingHostPanel({ drawData, players, status }) {
+  const t = useHostT();
   const activePlayers = players.filter(p => p.isConnected && p.isPlaying);
   const isSecretMode = drawData.mode === 'secret';
   const isEndPhase = status === 'draw-end';
@@ -974,30 +996,30 @@ function DrawingHostPanel({ drawData, players, status }) {
       <div className="flex flex-col items-center gap-6 w-full max-w-xl">
         <motion.div className="text-center" initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }}>
           <p className="text-5xl mb-2">🎨</p>
-          <h1 className="text-4xl font-['Fredoka_One'] text-[#C39BD3]">{gameName('drawing')}</h1>
+          <h1 className="text-4xl font-['Fredoka_One'] text-[#C39BD3]">{gameName('drawing', t.lang)}</h1>
           <div className="flex items-center justify-center gap-2 mt-1">
             {isSecretMode
-              ? <span className="px-3 py-1 rounded-full bg-[#C39BD3]/20 text-[#C39BD3] text-xs font-['Nunito'] font-bold uppercase tracking-widest">✦ Secret Words</span>
-              : <span className="px-3 py-1 rounded-full bg-[#FFE66D]/20 text-[#FFE66D] text-xs font-['Nunito'] font-bold uppercase tracking-widest">Classic Mode</span>
+              ? <span className="px-3 py-1 rounded-full bg-[#C39BD3]/20 text-[#C39BD3] text-xs font-['Nunito'] font-bold uppercase tracking-widest">{t.secretWords}</span>
+              : <span className="px-3 py-1 rounded-full bg-[#FFE66D]/20 text-[#FFE66D] text-xs font-['Nunito'] font-bold uppercase tracking-widest">{t.classicMode}</span>
             }
           </div>
         </motion.div>
 
         {!isSecretMode && (
           <div className="w-full bg-[#1A1A2E] border-2 border-[#C39BD3]/40 rounded-2xl p-5 text-center">
-            <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-1">Word to draw</p>
+            <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-1">{t.wordToDraw}</p>
             <p className="text-3xl font-['Fredoka_One'] text-[#FFE66D]">{drawData.word || '...'}</p>
           </div>
         )}
         {isSecretMode && (
           <div className="w-full bg-[#1A1A2E] border-2 border-[#C39BD3]/40 rounded-2xl p-5 text-center">
-            <p className="text-sm font-['Nunito'] text-gray-400">Each player is drawing their own secret word 🤫</p>
+            <p className="text-sm font-['Nunito'] text-gray-400">{t.eachSecretWord}</p>
           </div>
         )}
 
         <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
           <div className="flex items-center justify-between mb-3">
-            <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">Drawings submitted</p>
+            <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">{t.drawingsSubmitted}</p>
             <p className="text-2xl font-['Fredoka_One'] text-white">
               {drawData.submittedCount}<span className="text-gray-500">/{total}</span>
             </p>
@@ -1009,7 +1031,7 @@ function DrawingHostPanel({ drawData, players, status }) {
 
         <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-4">
           <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-3 text-center">
-            Round {drawData.round}/{drawData.totalRounds}
+            {fmt(t.roundSlash, { round: drawData.round, total: drawData.totalRounds })}
           </p>
           <div className="flex flex-wrap gap-3 justify-center">
             {activePlayers.map(p => <PlayerAvatar key={p.id} player={p} size="sm" status={drawData.submittedPlayerIds?.includes(p.id) ? 'answered' : 'waiting'} />)}
@@ -1026,10 +1048,10 @@ function DrawingHostPanel({ drawData, players, status }) {
     return (
       <div className="flex flex-col items-center gap-6 w-full max-w-5xl">
         <motion.div className="text-center" initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }}>
-          <h1 className="text-4xl font-['Fredoka_One'] text-[#C39BD3]">🗳️ Vote for the Best!</h1>
+          <h1 className="text-4xl font-['Fredoka_One'] text-[#C39BD3]">{t.voteForBest}</h1>
           {isSecretMode
-            ? <p className="text-gray-400 font-['Nunito'] mt-1">✦ Secret Words — each player drew a different word</p>
-            : <p className="text-gray-400 font-['Nunito'] mt-1">Word: <span className="text-[#FFE66D] font-bold">{drawData.word}</span></p>
+            ? <p className="text-gray-400 font-['Nunito'] mt-1">{t.secretWordsEach}</p>
+            : <p className="text-gray-400 font-['Nunito'] mt-1">{t.wordLabel} <span className="text-[#FFE66D] font-bold">{drawData.word}</span></p>
           }
         </motion.div>
 
@@ -1056,7 +1078,7 @@ function DrawingHostPanel({ drawData, players, status }) {
           </div>
         ) : (
           <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-8 text-center">
-            <p className="text-gray-400 font-['Nunito']">Getting submissions ready...</p>
+            <p className="text-gray-400 font-['Nunito']">{t.gettingSubmissions}</p>
           </div>
         )}
 
@@ -1065,7 +1087,7 @@ function DrawingHostPanel({ drawData, players, status }) {
             value={drawData.voteCount}
             total={total}
             color="#C39BD3"
-            label="Votes in"
+            label={t.votesIn}
             sublabel={true}
           />
           <div className="flex flex-wrap gap-3 justify-center mt-4">
@@ -1085,10 +1107,10 @@ function DrawingHostPanel({ drawData, players, status }) {
     return (
       <div className="flex flex-col items-center gap-6 w-full max-w-3xl">
         <motion.div className="text-center" initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }}>
-          <h1 className="text-4xl font-['Fredoka_One'] text-[#FFE66D]">Round Results</h1>
+          <h1 className="text-4xl font-['Fredoka_One'] text-[#FFE66D]">{t.roundResults}</h1>
           {isSecretMode
-            ? <span className="mt-1 inline-block px-3 py-1 rounded-full bg-[#C39BD3]/20 text-[#C39BD3] text-sm font-['Nunito']">✦ Secret Words Mode</span>
-            : <p className="text-gray-400 font-['Nunito'] mt-1">Word: <span className="text-[#FFE66D] font-bold">{drawData.word}</span></p>
+            ? <span className="mt-1 inline-block px-3 py-1 rounded-full bg-[#C39BD3]/20 text-[#C39BD3] text-sm font-['Nunito']">{t.secretWordsMode}</span>
+            : <p className="text-gray-400 font-['Nunito'] mt-1">{t.wordLabel} <span className="text-[#FFE66D] font-bold">{drawData.word}</span></p>
           }
         </motion.div>
 
@@ -1113,7 +1135,7 @@ function DrawingHostPanel({ drawData, players, status }) {
                 {isSecretMode && r.word && <p className="text-[#FFE66D] font-['Nunito'] text-sm italic">"{r.word}"</p>}
               </div>
               <span className="text-[#4ECDC4] font-['Fredoka_One'] text-xl flex-shrink-0">
-                {r.votes} vote{r.votes !== 1 ? 's' : ''}
+                {votesLabel(t, r.votes)}
               </span>
             </motion.div>
           ))}
@@ -1141,8 +1163,8 @@ function DrawingHostPanel({ drawData, players, status }) {
       <div className="flex flex-col items-center gap-8 w-full max-w-3xl">
         <motion.div className="text-center" initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }}>
           <p className="text-6xl mb-3">🎨</p>
-          <h1 className="text-5xl font-['Fredoka_One'] text-[#C39BD3] mb-2">{gameName('drawing')}</h1>
-          <p className="text-2xl font-['Fredoka_One'] text-[#FFE66D]">Game Over!</p>
+          <h1 className="text-5xl font-['Fredoka_One'] text-[#C39BD3] mb-2">{gameName('drawing', t.lang)}</h1>
+          <p className="text-2xl font-['Fredoka_One'] text-[#FFE66D]">{t.gameOver}</p>
         </motion.div>
 
         {/* Podium */}
@@ -1162,7 +1184,7 @@ function DrawingHostPanel({ drawData, players, status }) {
                 <div className={`w-full rounded-t-xl ${podiumHeights[idx]} flex items-end justify-center pb-2`}
                   style={{ backgroundColor: podiumColors[idx] }}>
                   <span className="font-['Fredoka_One'] text-2xl text-white">
-                    {idx === 1 ? '1st' : idx === 0 ? '2nd' : '3rd'}
+                    {idx === 1 ? t.place1 : idx === 0 ? t.place2 : t.place3}
                   </span>
                 </div>
               </motion.div>
@@ -1198,13 +1220,14 @@ function DrawingHostPanel({ drawData, players, status }) {
   return (
     <div className="flex flex-col items-center gap-4">
       <p className="text-5xl">🎨</p>
-      <h1 className="text-4xl font-['Fredoka_One'] text-[#C39BD3]">{gameName('drawing')}</h1>
+      <h1 className="text-4xl font-['Fredoka_One'] text-[#C39BD3]">{gameName('drawing', t.lang)}</h1>
     </div>
   );
 }
 
 // ─── Draw Telephone Host Panel ───────────────────────────────────────────────
 function DtHostPanel({ dtData, players, status, onRevealNext, drawerTimers = {}, phaseTimer = null }) {
+  const t = useHostT();
   const { phase, promptsSubmittedCount, totalPrompts, totalChains, chainsCompletedCount, chainProgress, guessedCount, totalGuessers, reveal, leaderboard } = dtData;
 
   // Countdowns come from the server's phase_timer ticks (they used to be local
@@ -1220,13 +1243,13 @@ function DtHostPanel({ dtData, players, status, onRevealNext, drawerTimers = {},
       <div className="flex flex-col items-center gap-6 w-full max-w-lg">
         <motion.div className="text-center" initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }}>
           <p className="text-6xl mb-2">📞</p>
-          <h1 className="text-4xl font-['Fredoka_One'] text-[#FF6B6B]">Drawing in Chain</h1>
-          <p className="text-xl text-gray-300 font-['Nunito'] mt-1">Players are writing prompts…</p>
+          <h1 className="text-4xl font-['Fredoka_One'] text-[#FF6B6B]">{gameName('draw-telephone', t.lang)}</h1>
+          <p className="text-xl text-gray-300 font-['Nunito'] mt-1">{t.writingPrompts}</p>
         </motion.div>
         <TimerRing secondsLeft={promptSecs} total={phaseTimer?.total || dtData.promptTimeTotal || 60} paused={dtPaused} size={100} />
         <div className="w-full bg-[#1A1A2E] rounded-2xl p-6 border border-[#FF6B6B]/30">
           <div className="flex justify-between items-center mb-3">
-            <span className="text-gray-400 font-['Nunito']">Prompts submitted</span>
+            <span className="text-gray-400 font-['Nunito']">{t.promptsSubmitted}</span>
             <span className="text-[#FF6B6B] font-['Fredoka_One'] text-2xl">{promptsSubmittedCount}<span className="text-gray-500">/{totalPrompts}</span></span>
           </div>
           <ProgressBar value={promptsSubmittedCount} total={totalPrompts} color="#FF6B6B" />
@@ -1245,12 +1268,12 @@ function DtHostPanel({ dtData, players, status, onRevealNext, drawerTimers = {},
       <div className="flex flex-col items-center gap-6 w-full max-w-lg">
         <motion.div className="text-center" initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }}>
           <p className="text-6xl mb-2">📸</p>
-          <h1 className="text-4xl font-['Fredoka_One'] text-[#FF6B6B]">Smile for the Camera</h1>
-          <p className="text-xl text-gray-300 font-['Nunito'] mt-1">Take a selfie to start the chain...</p>
+          <h1 className="text-4xl font-['Fredoka_One'] text-[#FF6B6B]">{t.smileCamera}</h1>
+          <p className="text-xl text-gray-300 font-['Nunito'] mt-1">{t.takeSelfieChain}</p>
         </motion.div>
         <div className="w-full bg-[#1A1A2E] rounded-2xl p-6 border border-[#FF6B6B]/30">
           <div className="flex justify-between items-center mb-3">
-            <span className="text-gray-400 font-['Nunito']">Selfies submitted</span>
+            <span className="text-gray-400 font-['Nunito']">{t.selfiesSubmitted}</span>
             <span className="text-[#FF6B6B] font-['Fredoka_One'] text-2xl">{(dtData.submittedPlayerIds || []).length}<span className="text-gray-500">/{dtData.selfieTotalPhotographers || players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound).length}</span></span>
           </div>
           <ProgressBar value={(dtData.submittedPlayerIds || []).length} total={totalPrompts} color="#FF6B6B" />
@@ -1271,12 +1294,12 @@ function DtHostPanel({ dtData, players, status, onRevealNext, drawerTimers = {},
       <div className="flex flex-col items-center gap-6 w-full max-w-lg">
         <motion.div className="text-center" initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }}>
           <p className="text-6xl mb-2">🎨</p>
-          <h1 className="text-4xl font-['Fredoka_One'] text-[#FF6B6B]">Drawing Phase</h1>
-          <p className="text-gray-300 font-['Nunito'] mt-1">Each player draws the same prompt step-by-step</p>
+          <h1 className="text-4xl font-['Fredoka_One'] text-[#FF6B6B]">{t.drawingPhase}</h1>
+          <p className="text-gray-300 font-['Nunito'] mt-1">{t.drawingPhaseDesc}</p>
         </motion.div>
         <div className="w-full bg-[#1A1A2E] rounded-2xl p-5 border border-[#FF6B6B]/30">
           <div className="flex justify-between items-center mb-3">
-            <span className="text-gray-400 font-['Nunito']">Chains completed</span>
+            <span className="text-gray-400 font-['Nunito']">{t.chainsCompleted}</span>
             <span className="text-[#FF6B6B] font-['Fredoka_One'] text-2xl">{chainsCompletedCount}<span className="text-gray-500">/{totalChains}</span></span>
           </div>
           <ProgressBar value={chainsCompletedCount} total={totalChains} color="#FF6B6B" />
@@ -1289,7 +1312,7 @@ function DtHostPanel({ dtData, players, status, onRevealNext, drawerTimers = {},
                   <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: p.color }} />
                   <span className="text-white font-['Nunito'] text-sm flex-1">{p.name}</span>
                   <span className={`text-xs font-['Nunito'] px-2 py-0.5 rounded-full ${isDrawing ? 'bg-[#FF6B6B]/20 text-[#FF6B6B]' : 'bg-[#2D2D44] text-gray-500'}`}>
-                    {isDrawing ? `✏️ drawing${timerVal !== undefined ? ` (${timerVal}s)` : ''}` : '⏳ waiting'}
+                    {isDrawing ? `${t.dtDrawing}${timerVal !== undefined ? ` (${timerVal}s)` : ''}` : t.dtWaiting}
                   </span>
                 </div>
               );
@@ -1306,15 +1329,15 @@ function DtHostPanel({ dtData, players, status, onRevealNext, drawerTimers = {},
       <div className="flex flex-col items-center gap-6 w-full max-w-lg">
         <motion.div className="text-center" initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }}>
           <p className="text-6xl mb-2">🤔</p>
-          <h1 className="text-4xl font-['Fredoka_One'] text-[#FF6B6B]">Guessing Phase</h1>
-          <p className="text-gray-300 font-['Nunito'] mt-1">Each target player guesses the original prompt</p>
+          <h1 className="text-4xl font-['Fredoka_One'] text-[#FF6B6B]">{t.guessingPhase}</h1>
+          <p className="text-gray-300 font-['Nunito'] mt-1">{t.guessingPhaseDesc}</p>
         </motion.div>
         {phaseTimer && phaseTimer.active && (
           <TimerRing secondsLeft={phaseTimer.secondsLeft} total={60} paused={phaseTimer.paused} size={100} />
         )}
         <div className="w-full bg-[#1A1A2E] rounded-2xl p-6 border border-[#FF6B6B]/30 mt-3">
           <div className="flex justify-between items-center mb-3">
-            <span className="text-gray-400 font-['Nunito']">Guesses received</span>
+            <span className="text-gray-400 font-['Nunito']">{t.guessesReceived}</span>
             <span className="text-[#FF6B6B] font-['Fredoka_One'] text-2xl">{guessedCount}<span className="text-gray-500">/{totalGuessers}</span></span>
           </div>
           <ProgressBar value={guessedCount} total={totalGuessers} color="#FF6B6B" />
@@ -1340,8 +1363,8 @@ function DtHostPanel({ dtData, players, status, onRevealNext, drawerTimers = {},
       <div className="flex flex-col items-center gap-4 w-full max-w-3xl">
         {/* Header */}
         <div className="flex items-center justify-between w-full">
-          <span className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest">📞 Draw Telephone</span>
-          <span className="text-xs text-[#FF6B6B] font-['Nunito']">Chain {(promptIndex ?? 0) + 1} / {total}</span>
+          <span className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest">{t.dtHeader}</span>
+          <span className="text-xs text-[#FF6B6B] font-['Nunito']">{fmt(t.chainOf, { n: (promptIndex ?? 0) + 1, total })}</span>
         </div>
 
         {/* Step dots */}
@@ -1365,7 +1388,7 @@ function DtHostPanel({ dtData, players, status, onRevealNext, drawerTimers = {},
             >
               {/* Center: target chip + selfie */}
               <div className="bg-[#1A1A2E] rounded-2xl border-2 border-[#FF6B6B]/40 p-5 flex flex-col items-center gap-3 w-full max-w-md">
-                <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest text-center">Someone wrote a prompt about…</p>
+                <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest text-center">{t.someoneWrotePrompt}</p>
                 <div
                   className="inline-block px-5 py-2 rounded-2xl text-2xl font-['Fredoka_One']"
                   style={{ backgroundColor: targetColor || '#FF6B6B', color: '#fff' }}
@@ -1378,7 +1401,7 @@ function DtHostPanel({ dtData, players, status, onRevealNext, drawerTimers = {},
                   </div>
                 ) : (
                   <div className="rounded-xl bg-[#0D0D1A] border-2 border-[#2D2D44] w-full flex items-center justify-center" style={{ aspectRatio: '4/3' }}>
-                    <span className="text-gray-600 font-['Nunito']">No selfie</span>
+                    <span className="text-gray-600 font-['Nunito']">{t.noSelfie}</span>
                   </div>
                 )}
               </div>
@@ -1393,7 +1416,7 @@ function DtHostPanel({ dtData, players, status, onRevealNext, drawerTimers = {},
               initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }}
             >
               <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest text-center mb-3">
-                How it evolved… ({ds.length} drawing{ds.length !== 1 ? 's' : ''})
+                {fmt(ds.length !== 1 ? t.howEvolvedMany : t.howEvolvedOne, { n: ds.length })}
               </p>
               <div className={`grid gap-3 ${ds.length <= 2 ? 'grid-cols-2' : 'grid-cols-4'}`}>
                 {ds.map((d, i) => (
@@ -1404,7 +1427,7 @@ function DtHostPanel({ dtData, players, status, onRevealNext, drawerTimers = {},
                     <div className="p-2 flex items-center gap-1.5">
                       <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ backgroundColor: d.playerColor || '#C39BD3' }} />
                       <span className="text-sm text-gray-300 font-['Nunito'] truncate">{d.playerName}</span>
-                      <span className="text-sm text-gray-600 font-['Nunito'] ml-auto">#{i + 1}</span>
+                      <span className="text-sm text-gray-600 font-['Nunito'] ms-auto">#{i + 1}</span>
                     </div>
                   </div>
                 ))}
@@ -1422,31 +1445,31 @@ function DtHostPanel({ dtData, players, status, onRevealNext, drawerTimers = {},
               {/* Left: before/after + prompt + guess */}
               <div className="space-y-3">
                 <div className="bg-[#1A1A2E] rounded-2xl border-2 border-[#C39BD3]/40 p-4">
-                  <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest mb-2 text-center">Original → Final Drawing</p>
+                  <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest mb-2 text-center">{t.originalToFinal}</p>
                   <div className="flex gap-2">
                     <div className="flex-1">
                       <div className="rounded-lg overflow-hidden border border-[#C39BD3]/30" style={{ aspectRatio: '4/3' }}>
                         {originalSelfieData
-                          ? <img src={originalSelfieData} alt="Original" className="w-full h-full object-cover" draggable={false} />
-                          : <div className="w-full h-full bg-[#0D0D1A] flex items-center justify-center"><span className="text-gray-600 text-xs">No selfie</span></div>
+                          ? <img src={originalSelfieData} alt={t.original} className="w-full h-full object-cover" draggable={false} />
+                          : <div className="w-full h-full bg-[#0D0D1A] flex items-center justify-center"><span className="text-gray-600 text-xs">{t.noSelfie}</span></div>
                         }
                       </div>
-                      <p className="text-xs text-center text-gray-500 font-['Nunito'] mt-1">Original</p>
+                      <p className="text-xs text-center text-gray-500 font-['Nunito'] mt-1">{t.original}</p>
                     </div>
                     <div className="flex-1">
                       <div className="rounded-lg overflow-hidden border border-[#C39BD3]/30" style={{ aspectRatio: '4/3' }}>
                         <ReplayCanvas strokes={ds[ds.length - 1]?.strokes || []} photoData={originalSelfieData || null} cssWidth={240} />
                       </div>
-                      <p className="text-xs text-center text-gray-500 font-['Nunito'] mt-1">Final</p>
+                      <p className="text-xs text-center text-gray-500 font-['Nunito'] mt-1">{t.final}</p>
                     </div>
                   </div>
                 </div>
                 <div className="bg-[#1A1A2E] rounded-2xl border-2 border-[#FF6B6B]/30 p-4 text-center">
-                  <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest mb-1">Original prompt</p>
+                  <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest mb-1">{t.originalPrompt}</p>
                   <p className="text-xl font-['Fredoka_One'] text-[#FFE66D] leading-snug">"{finalText}"</p>
                   <div className="mt-2 pt-2 border-t border-[#2D2D44]">
                     <p className="text-xs text-gray-500 font-['Nunito'] mb-0.5">
-                      <span style={{ color: targetColor || '#A8E6CF' }}>{targetName}</span> guessed…
+                      <span style={{ color: targetColor || '#A8E6CF' }}>{targetName}</span> {t.guessed}
                     </p>
                     <p className="text-lg font-['Fredoka_One'] text-[#A8E6CF]">"{guessText || '…'}"</p>
                   </div>
@@ -1455,7 +1478,7 @@ function DtHostPanel({ dtData, players, status, onRevealNext, drawerTimers = {},
               {/* Right: countdown + vote tally + per-player status */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
-                  <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest">How close was the guess?</p>
+                  <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest">{t.howClose}</p>
                   <span
                     className="text-sm font-['Nunito'] tabular-nums"
                     style={{ color: hostVoteSecs <= 10 ? '#FF6B6B' : '#9CA3AF' }}
@@ -1466,18 +1489,18 @@ function DtHostPanel({ dtData, players, status, onRevealNext, drawerTimers = {},
                 <div className="bg-[#1A1A2E] rounded-xl border border-[#2D2D44] p-4 flex justify-around text-center">
                   <div>
                     <p className="text-3xl font-['Fredoka_One'] text-[#22C55E]">{correctCount ?? 0}</p>
-                    <p className="text-xs text-gray-500 font-['Nunito']">Correct</p>
+                    <p className="text-xs text-gray-500 font-['Nunito']">{t.correct}</p>
                   </div>
                   <div>
                     <p className="text-3xl font-['Fredoka_One'] text-[#EAB308]">{closeCount ?? 0}</p>
-                    <p className="text-xs text-gray-500 font-['Nunito']">Close</p>
+                    <p className="text-xs text-gray-500 font-['Nunito']">{t.close}</p>
                   </div>
                   <div>
                     <p className="text-3xl font-['Fredoka_One'] text-[#EF4444]">{wrongCount ?? 0}</p>
-                    <p className="text-xs text-gray-500 font-['Nunito']">Wrong</p>
+                    <p className="text-xs text-gray-500 font-['Nunito']">{t.wrong}</p>
                   </div>
                 </div>
-                <p className="text-xs text-gray-500 font-['Nunito'] text-center">{voteCount}/{totalVoters} voted</p>
+                <p className="text-xs text-gray-500 font-['Nunito'] text-center">{fmt(t.nVoted, { n: voteCount, total: totalVoters })}</p>
                 <div className="flex flex-wrap gap-2 justify-center">
                   {players.filter(p => p.isPlaying && p.isConnected && p.id !== reveal.targetPlayerId).map(p => (
                     <PlayerAvatar
@@ -1500,7 +1523,7 @@ function DtHostPanel({ dtData, players, status, onRevealNext, drawerTimers = {},
             onClick={onRevealNext}
             className="px-8 py-3 rounded-2xl font-['Fredoka_One'] text-xl text-white bg-[#FF6B6B] hover:bg-[#ff5252] transition mt-2"
           >
-            Next →
+            {t.nextArrow}
           </button>
         )}
       </div>
@@ -1514,8 +1537,8 @@ function DtHostPanel({ dtData, players, status, onRevealNext, drawerTimers = {},
       <div className="flex flex-col items-center gap-6 w-full max-w-lg">
         <motion.div className="text-center" initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }}>
           <p className="text-6xl mb-2">📞</p>
-          <h1 className="text-4xl font-['Fredoka_One'] text-[#FF6B6B]">Drawing in Chain</h1>
-          <p className="text-2xl font-['Fredoka_One'] text-[#FFE66D] mt-1">Game Over!</p>
+          <h1 className="text-4xl font-['Fredoka_One'] text-[#FF6B6B]">{gameName('draw-telephone', t.lang)}</h1>
+          <p className="text-2xl font-['Fredoka_One'] text-[#FFE66D] mt-1">{t.gameOver}</p>
         </motion.div>
         <div className="w-full flex flex-col gap-3">
           {(leaderboard || []).map((entry, i) => (
@@ -1543,14 +1566,15 @@ function DtHostPanel({ dtData, players, status, onRevealNext, drawerTimers = {},
 }
 
 function FitbHostPanel({ fitbData, players, onSkipToVote, onShowResults, onNextRound }) {
+  const t = useHostT();
   const activePlayers = players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound);
   if (fitbData.phase === 'end') {
     return (
       <div className="flex flex-col items-center gap-8 w-full max-w-lg">
         <div className="text-center">
           <p className="text-6xl mb-3">✏️</p>
-          <h1 className="text-5xl font-['Fredoka_One'] text-[#F9CA24]">Fill in the Blank</h1>
-          <p className="text-2xl font-['Fredoka_One'] text-[#FFE66D] mt-2">Game Over!</p>
+          <h1 className="text-5xl font-['Fredoka_One'] text-[#F9CA24]">{gameName('fill-in-the-blank', t.lang)}</h1>
+          <p className="text-2xl font-['Fredoka_One'] text-[#FFE66D] mt-2">{t.gameOver}</p>
         </div>
         <div className="w-full flex flex-col gap-3">
           {(fitbData.leaderboard || []).map((entry, i) => (
@@ -1570,7 +1594,7 @@ function FitbHostPanel({ fitbData, players, onSkipToVote, onShowResults, onNextR
     return (
       <div className="flex flex-col items-center gap-6 w-full max-w-3xl">
         <div className="text-center">
-          <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest mb-2">Results · Round {fitbData.round}/{fitbData.totalRounds}</p>
+          <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest mb-2">{fmt(t.resultsRound, { round: fitbData.round, total: fitbData.totalRounds })}</p>
           <h2 className="text-2xl font-['Fredoka_One'] text-[#F9CA24] leading-snug">{fitbData.question}</h2>
         </div>
         <div className="w-full flex flex-col gap-3">
@@ -1590,7 +1614,7 @@ function FitbHostPanel({ fitbData, players, onSkipToVote, onShowResults, onNextR
   if (fitbData.phase === 'voting') {
     return (
       <div className="flex flex-col items-center gap-6 w-full max-w-3xl">
-        <h1 className="text-3xl font-['Fredoka_One'] text-[#F9CA24]">✏️ Fill in the Blank — Vote!</h1>
+        <h1 className="text-3xl font-['Fredoka_One'] text-[#F9CA24]">{fmt(t.gameVote, { game: gameLabel('fill-in-the-blank', t.lang) })}</h1>
         <h2 className="text-xl font-['Nunito'] text-[#FFE66D] text-center">{fitbData.question}</h2>
         <div className="w-full flex flex-col gap-2">
           {(fitbData.answers || []).map((ans, i) => (
@@ -1602,7 +1626,7 @@ function FitbHostPanel({ fitbData, players, onSkipToVote, onShowResults, onNextR
         </div>
         <div className="w-full max-w-md bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
           <div className="flex items-center justify-between mb-3">
-            <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">Votes in</p>
+            <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">{t.votesIn}</p>
             <p className="text-2xl font-['Fredoka_One'] text-white">{fitbData.voteCount}/{fitbData.totalVoters}</p>
           </div>
           <ProgressBar value={fitbData.voteCount} total={fitbData.totalVoters} color="#F9CA24" />
@@ -1619,19 +1643,19 @@ function FitbHostPanel({ fitbData, players, onSkipToVote, onShowResults, onNextR
     <div className="flex flex-col items-center gap-6 w-full max-w-3xl">
       <div className="text-center">
         <p className="text-5xl mb-2">✏️</p>
-        <h1 className="text-3xl font-['Fredoka_One'] text-[#F9CA24]">Fill in the Blank</h1>
-        <p className="text-sm font-['Nunito'] text-gray-400 mt-1">Round {fitbData.round} of {fitbData.totalRounds}</p>
+        <h1 className="text-3xl font-['Fredoka_One'] text-[#F9CA24]">{gameName('fill-in-the-blank', t.lang)}</h1>
+        <p className="text-sm font-['Nunito'] text-gray-400 mt-1">{fmt(t.roundOf, { round: fitbData.round, total: fitbData.totalRounds })}</p>
       </div>
       {fitbData.answerTimeLeft > 0 && (
         <TimerRing secondsLeft={fitbData.answerTimeLeft} total={fitbData.answerTimeTotal || 30} paused={!!fitbData.paused} size={100} />
       )}
       <div className="w-full bg-[#1A1A2E] border-2 border-[#F9CA24]/50 rounded-3xl p-8 text-center">
-        <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-3">Complete the sentence</p>
+        <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-3">{t.completeSentence}</p>
         <h2 className="text-3xl font-['Fredoka_One'] text-[#FFE66D] leading-snug">{fitbData.question}</h2>
       </div>
       <div className="w-full max-w-md bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
         <div className="flex items-center justify-between mb-3">
-          <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">Answers submitted</p>
+          <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">{t.answersSubmitted}</p>
           <p className="text-2xl font-['Fredoka_One'] text-white">{fitbData.answeredCount}/{fitbData.totalAnswerers || activePlayers.length}</p>
         </div>
         <ProgressBar value={fitbData.answeredCount} total={fitbData.totalAnswerers || activePlayers.length} color="#F9CA24" />
@@ -1646,22 +1670,23 @@ function FitbHostPanel({ fitbData, players, onSkipToVote, onShowResults, onNextR
 }
 
 function PhotoVoteHostPanel({ photoVoteData, players }) {
+  const t = useHostT();
   const {
     subType = 'pmatch', phase = 'waiting', prompt = '', photos = [],
     votedPlayerIds = [], submittedPlayerIds = [], voteResults = [],
     round = 0, totalRounds = 5, leaderboard = [],
   } = photoVoteData || {};
   const activePlayers = players.filter(p => p.isPlaying !== false && p.isConnected !== false);
-  const label = subType === 'photoassoc' ? '🎯 Prompt Match' : '🎭 Selfie Challenge';
+  const label = gameLabel(subType === 'photoassoc' ? 'photoassoc' : 'pmatch', t.lang);
   const color = subType === 'photoassoc' ? '#A29BFE' : '#FDCB6E';
 
   if (phase === 'photo') {
     return (
       <div className="flex flex-col items-center gap-6 w-full max-w-2xl">
         <h1 className="text-3xl font-['Fredoka_One']" style={{ color }}>{label}</h1>
-        <p className="text-gray-400 font-['Nunito']">Players are submitting their selfies...</p>
+        <p className="text-gray-400 font-['Nunito']">{t.submittingSelfies}</p>
         <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
-          <ProgressBar value={submittedPlayerIds.length} total={activePlayers.length} color={color} label="Photos submitted" sublabel />
+          <ProgressBar value={submittedPlayerIds.length} total={activePlayers.length} color={color} label={t.photosSubmitted} sublabel />
           <div className="flex flex-wrap gap-3 justify-center mt-4">
             {activePlayers.map(p => (
               <PlayerAvatar key={p.id} player={p} size="sm" status={submittedPlayerIds.includes(p.id) ? 'answered' : 'waiting'} />
@@ -1675,7 +1700,7 @@ function PhotoVoteHostPanel({ photoVoteData, players }) {
   if (phase === 'voting') {
     return (
       <div className="flex flex-col items-center gap-6 w-full max-w-2xl">
-        <h1 className="text-3xl font-['Fredoka_One']" style={{ color }}>{label} — Round {round}/{totalRounds}</h1>
+        <h1 className="text-3xl font-['Fredoka_One']" style={{ color }}>{label}{fmt(t.roundSuffix, { round, total: totalRounds })}</h1>
         {prompt && (
           <div className="w-full bg-[#1A1A2E] border-2 rounded-2xl p-5 text-center" style={{ borderColor: color }}>
             <p className="text-2xl font-['Fredoka_One'] text-white">{prompt}</p>
@@ -1683,7 +1708,7 @@ function PhotoVoteHostPanel({ photoVoteData, players }) {
         )}
         <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
           <div className="flex items-center justify-between mb-3">
-            <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">Votes in</p>
+            <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">{t.votesIn}</p>
             <p className="text-2xl font-['Fredoka_One'] text-white">{votedPlayerIds.length}/{activePlayers.length}</p>
           </div>
           <ProgressBar value={votedPlayerIds.length} total={activePlayers.length} color={color} />
@@ -1700,7 +1725,7 @@ function PhotoVoteHostPanel({ photoVoteData, players }) {
   if (phase === 'results') {
     return (
       <div className="flex flex-col items-center gap-6 w-full max-w-2xl">
-        <h1 className="text-3xl font-['Fredoka_One']" style={{ color }}>{label} — Round {round} Results</h1>
+        <h1 className="text-3xl font-['Fredoka_One']" style={{ color }}>{label}{fmt(t.roundNResults, { round })}</h1>
         {prompt && (
           <div className="w-full bg-[#1A1A2E] rounded-2xl px-4 py-2 text-center mb-1">
             <p className="font-['Nunito'] text-sm font-semibold" style={{ color: '#FFE66D' }}>{prompt}</p>
@@ -1717,7 +1742,7 @@ function PhotoVoteHostPanel({ photoVoteData, players }) {
                 <div className="w-14 h-14 rounded-xl bg-[#2D2D44] flex items-center justify-center text-2xl flex-shrink-0">🤷</div>
               )}
               <p className="flex-1 font-['Fredoka_One'] text-white text-lg">{r.playerName}</p>
-              <span className="font-['Fredoka_One'] text-xl" style={{ color }}>{r.voteCount} vote{r.voteCount !== 1 ? 's' : ''}</span>
+              <span className="font-['Fredoka_One'] text-xl" style={{ color }}>{votesLabel(t, r.voteCount)}</span>
             </motion.div>
           ))}
         </div>
@@ -1728,7 +1753,7 @@ function PhotoVoteHostPanel({ photoVoteData, players }) {
   if (phase === 'ended') {
     return (
       <div className="flex flex-col items-center gap-6 w-full max-w-2xl">
-        <h1 className="text-3xl font-['Fredoka_One']" style={{ color }}>🏆 {label} — Final Results!</h1>
+        <h1 className="text-3xl font-['Fredoka_One']" style={{ color }}>🏆 {label}{t.finalResultsSuffix}</h1>
         <div className="flex flex-col gap-3 w-full">
           {leaderboard.map((entry, i) => (
             <motion.div key={entry.id} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }}
@@ -1736,7 +1761,7 @@ function PhotoVoteHostPanel({ photoVoteData, players }) {
               style={i === 0 ? { background: 'linear-gradient(135deg, #FFE66D20, #FDCB6E20)', border: `2px solid ${color}` } : { background: '#1A1A2E', border: '1px solid #2D2D44' }}>
               <span className="text-2xl w-10 text-center">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}</span>
               <span className="flex-1 text-white font-['Fredoka_One'] text-xl">{entry.name}</span>
-              <span className="font-['Fredoka_One'] text-2xl" style={{ color }}>{entry.pts} pts</span>
+              <span className="font-['Fredoka_One'] text-2xl" style={{ color }}>{entry.pts} {t.pts}</span>
             </motion.div>
           ))}
         </div>
@@ -1748,30 +1773,31 @@ function PhotoVoteHostPanel({ photoVoteData, players }) {
     <div className="flex flex-col items-center gap-6 w-full max-w-xl">
       <p className="text-6xl">{subType === 'photoassoc' ? '🏆' : '🎯'}</p>
       <h1 className="text-3xl font-['Fredoka_One']" style={{ color }}>{label}</h1>
-      <p className="text-gray-400 font-['Nunito']">Starting game...</p>
+      <p className="text-gray-400 font-['Nunito']">{t.startingGame}</p>
     </div>
   );
 }
 
 function SimplePhotoHostPanel({ label, phase, players, onSkipToResults, onNextRound }) {
+  const t = useHostT();
   const activePlayers = players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound);
   return (
     <div className="flex flex-col items-center gap-6 w-full max-w-xl">
       <h1 className="text-3xl font-['Fredoka_One'] text-[#FFE66D]">{label}</h1>
       <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
-        <p className="text-lg font-['Fredoka_One'] text-white mb-2 capitalize">Phase: {phase || '—'}</p>
-        <p className="text-sm font-['Nunito'] text-gray-400">{activePlayers.length} active players</p>
+        <p className="text-lg font-['Fredoka_One'] text-white mb-2 capitalize">{t.phaseLabel} {phase || '—'}</p>
+        <p className="text-sm font-['Nunito'] text-gray-400">{fmt(t.activePlayersN, { n: activePlayers.length })}</p>
       </div>
 
       {(phase === 'voting') && (
         <button onClick={onSkipToResults} className="w-full py-3 rounded-2xl bg-[#FFE66D] text-black font-['Fredoka_One'] text-lg">
-          🏆 Show Results
+          {t.showResultsTrophy}
         </button>
       )}
 
       {(phase === 'results') && (
         <button onClick={onNextRound} className="w-full py-3 rounded-2xl bg-[#4ECDC4] text-black font-['Fredoka_One'] text-lg">
-          Next Round ▶️
+          {t.nextRoundPlay}
         </button>
       )}
     </div>
@@ -1779,8 +1805,10 @@ function SimplePhotoHostPanel({ label, phase, players, onSkipToResults, onNextRo
 }
 
 function CaptionHostPanel({ captionData, players }) {
+  const t = useHostT();
   const phase = captionData?.phase;
-  const roundLabel = captionData?.totalRounds > 1 ? ` — Round ${captionData.round || 1}/${captionData.totalRounds}` : '';
+  const roundLabel = captionData?.totalRounds > 1 ? fmt(t.roundSuffix, { round: captionData.round || 1, total: captionData.totalRounds }) : '';
+  const captionTitle = gameLabel('caption', t.lang);
 
   const photoBlock = captionData?.featuredPhotoData ? (
     <div className="w-full rounded-2xl overflow-hidden border border-[#2D2D44] bg-black" style={{ aspectRatio: '4/3' }}>
@@ -1792,10 +1820,10 @@ function CaptionHostPanel({ captionData, players }) {
     const activePlayers = players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound);
     return (
       <div className="flex flex-col items-center gap-6 w-full max-w-xl">
-        <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">💬 Selfie Captions{roundLabel}</h1>
+        <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">{captionTitle}{roundLabel}</h1>
         <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5 text-center">
-          <p className="text-lg font-['Fredoka_One'] text-white mb-1">📸 Taking selfies…</p>
-          <p className="text-sm font-['Nunito'] text-gray-400">{activePlayers.length} players</p>
+          <p className="text-lg font-['Fredoka_One'] text-white mb-1">{t.takingSelfies}</p>
+          <p className="text-sm font-['Nunito'] text-gray-400">{fmt(t.playersN, { n: activePlayers.length })}</p>
         </div>
       </div>
     );
@@ -1806,10 +1834,10 @@ function CaptionHostPanel({ captionData, players }) {
     const total = captionData.totalWriters || players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound).length;
     return (
       <div className="flex flex-col items-center gap-6 w-full max-w-xl">
-        <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">💬 Selfie Captions{roundLabel}</h1>
+        <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">{captionTitle}{roundLabel}</h1>
         {photoBlock}
         {captionData.featuredOwnerName && (
-          <p className="text-sm font-['Nunito'] text-gray-400">📸 {captionData.featuredOwnerName}'s photo</p>
+          <p className="text-sm font-['Nunito'] text-gray-400">{fmt(t.photoOf, { name: captionData.featuredOwnerName })}</p>
         )}
         {captionData.prompt && (
           <div className="w-full bg-[#1A1A2E] border border-[#FD79A8]/40 rounded-2xl p-4 text-center">
@@ -1818,7 +1846,7 @@ function CaptionHostPanel({ captionData, players }) {
         )}
         <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-4">
           <div className="flex justify-between mb-2">
-            <span className="text-sm font-['Nunito'] text-gray-400">Captions written</span>
+            <span className="text-sm font-['Nunito'] text-gray-400">{t.captionsWritten}</span>
             <span className="text-sm font-['Fredoka_One'] text-white">{written}/{total}</span>
           </div>
           <div className="w-full bg-[#2D2D44] rounded-full h-2">
@@ -1839,7 +1867,7 @@ function CaptionHostPanel({ captionData, players }) {
     const total = captionData.totalVoters || players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound).length;
     return (
       <div className="flex flex-col items-center gap-6 w-full max-w-xl">
-        <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">💬 Selfie Captions{roundLabel}</h1>
+        <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">{captionTitle}{roundLabel}</h1>
         {photoBlock}
         {captionData.prompt && (
           <div className="w-full bg-[#1A1A2E] border border-[#FD79A8]/40 rounded-2xl p-4 text-center">
@@ -1856,7 +1884,7 @@ function CaptionHostPanel({ captionData, players }) {
         </div>
         <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-4">
           <div className="flex justify-between mb-2">
-            <span className="text-sm font-['Nunito'] text-gray-400">Votes in</span>
+            <span className="text-sm font-['Nunito'] text-gray-400">{t.votesIn}</span>
             <span className="text-sm font-['Fredoka_One'] text-white">{voted}/{total}</span>
           </div>
           <div className="w-full bg-[#2D2D44] rounded-full h-2">
@@ -1875,10 +1903,10 @@ function CaptionHostPanel({ captionData, players }) {
   if (phase === 'results') {
     return (
       <div className="flex flex-col items-center gap-6 w-full max-w-xl">
-        <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">💬 Results{roundLabel}</h1>
+        <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">💬 {t.results}{roundLabel}</h1>
         {photoBlock}
         {captionData.featuredOwnerName && (
-          <p className="text-sm font-['Nunito'] text-gray-400">📸 {captionData.featuredOwnerName}'s photo</p>
+          <p className="text-sm font-['Nunito'] text-gray-400">{fmt(t.photoOf, { name: captionData.featuredOwnerName })}</p>
         )}
         {captionData.prompt && (
           <div className="w-full bg-[#1A1A2E] border border-[#FD79A8]/40 rounded-2xl p-4 text-center">
@@ -1905,22 +1933,23 @@ function CaptionHostPanel({ captionData, players }) {
   const activePlayers = players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound);
   return (
     <div className="flex flex-col items-center gap-6 w-full max-w-xl">
-      <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">💬 Selfie Captions{roundLabel}</h1>
+      <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">{captionTitle}{roundLabel}</h1>
       <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5 text-center">
-        <p className="text-sm font-['Nunito'] text-gray-400">{activePlayers.length} active players</p>
+        <p className="text-sm font-['Nunito'] text-gray-400">{fmt(t.activePlayersN, { n: activePlayers.length })}</p>
       </div>
     </div>
   );
 }
 
 function SelfieHostPanel({ selfieData, players, isFinal, onSkipToVote, onShowResults }) {
+  const t = useHostT();
   const activePlayers = players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound);
-  const roundLabel = selfieData.totalRounds > 1 ? ` — Round ${selfieData.round}/${selfieData.totalRounds}` : '';
+  const roundLabel = selfieData.totalRounds > 1 ? fmt(t.roundSuffix, { round: selfieData.round, total: selfieData.totalRounds }) : '';
   if (selfieData.phase === 'results') {
     return (
       <div className="flex flex-col items-center gap-8 w-full max-w-4xl" data-testid="host-question-screen">
-        {isFinal && <h1 className="text-5xl font-['Fredoka_One'] text-[#FFE66D]">🎉 Game Over!</h1>}
-        <h1 className="text-4xl font-['Fredoka_One'] text-[#FD79A8]">{gameLabel('selfie-roast')} — {isFinal ? 'Final Results' : `Results${roundLabel}`}</h1>
+        {isFinal && <h1 className="text-5xl font-['Fredoka_One'] text-[#FFE66D]">🎉 {t.gameOver}</h1>}
+        <h1 className="text-4xl font-['Fredoka_One'] text-[#FD79A8]">{gameLabel('selfie-roast', t.lang)} — {isFinal ? t.finalResults : `${t.results}${roundLabel}`}</h1>
         <div className="w-full flex flex-col gap-3">
           {(selfieData.leaderboard || []).map((entry, i) => (
             <motion.div key={entry.playerId || entry.id || i} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }}
@@ -1938,10 +1967,10 @@ function SelfieHostPanel({ selfieData, players, isFinal, onSkipToVote, onShowRes
   if (selfieData.phase === 'voting') {
     return (
       <div className="flex flex-col items-center gap-6 w-full max-w-xl">
-        <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">📸 Vote for the Funniest!</h1>
+        <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">{t.voteFunniest}</h1>
         <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
           <div className="flex items-center justify-between mb-3">
-            <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">Votes in</p>
+            <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">{t.votesIn}</p>
             <p className="text-2xl font-['Fredoka_One'] text-white">{selfieData.voteCount}/{selfieData.totalVoters}</p>
           </div>
           <ProgressBar value={selfieData.voteCount} total={selfieData.totalVoters} color="#FD79A8" />
@@ -1957,7 +1986,7 @@ function SelfieHostPanel({ selfieData, players, isFinal, onSkipToVote, onShowRes
   if (selfieData.phase === 'drawing') {
     return (
       <div className="flex flex-col items-center gap-6 w-full max-w-xl">
-        <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">📸 Roasting in Progress...</h1>
+        <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">{t.roastingInProgress}</h1>
         {selfieData.promptTemplate && (
           <div className="w-full bg-[#1A1A2E] border border-[#FD79A8]/40 rounded-2xl p-4 text-center">
             <p className="text-lg font-['Fredoka_One'] text-[#FD79A8]">🎨 {selfieData.promptTemplate}</p>
@@ -1965,7 +1994,7 @@ function SelfieHostPanel({ selfieData, players, isFinal, onSkipToVote, onShowRes
         )}
         <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
           <div className="flex items-center justify-between mb-3">
-            <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">Drawings submitted</p>
+            <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">{t.drawingsSubmitted}</p>
             <p className="text-2xl font-['Fredoka_One'] text-white">{selfieData.drawingCount}/{selfieData.totalDrawers || activePlayers.length}</p>
           </div>
           <ProgressBar value={selfieData.drawingCount} total={selfieData.totalDrawers || activePlayers.length} color="#FD79A8" />
@@ -1981,11 +2010,11 @@ function SelfieHostPanel({ selfieData, players, isFinal, onSkipToVote, onShowRes
   return (
     <div className="flex flex-col items-center gap-6 w-full max-w-xl">
       <p className="text-5xl">📸</p>
-      <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">{gameLabel('selfie-roast')}</h1>
-      <p className="text-gray-400 font-['Nunito']">Players are taking their selfies...</p>
+      <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">{gameLabel('selfie-roast', t.lang)}</h1>
+      <p className="text-gray-400 font-['Nunito']">{t.takingTheirSelfies}</p>
       <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
         <div className="flex items-center justify-between mb-3">
-          <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">Selfies submitted</p>
+          <p className="text-sm font-['Nunito'] text-gray-400 uppercase tracking-widest">{t.selfiesSubmitted}</p>
           <p className="text-2xl font-['Fredoka_One'] text-white">{selfieData.photoCount}/{selfieData.totalPhotographers || activePlayers.length}</p>
         </div>
         <ProgressBar value={selfieData.photoCount} total={selfieData.totalPhotographers || activePlayers.length} color="#FD79A8" />
@@ -1999,20 +2028,21 @@ function SelfieHostPanel({ selfieData, players, isFinal, onSkipToVote, onShowRes
   );
 }
 
-const GAME_TYPES_FOR_CREATE = [
-  ...PICKABLE_GAMES.map(g => ({ id: g.id, label: gameLabel(g.id), desc: g.tagline, accent: g.accent })),
-  { id: 'playlist', label: '📋 Playlist', desc: 'Play multiple games in order!', accent: '#FDCB6E', colSpan: 2 },
+const gameTypesForCreate = (t) => [
+  ...PICKABLE_GAMES.map(g => ({ id: g.id, label: gameLabel(g.id, t.lang), desc: t.taglines?.[g.id] || g.tagline, accent: g.accent })),
+  { id: 'playlist', label: t.playlist, desc: t.playlistDesc, accent: '#FDCB6E', colSpan: 2 },
 ];
 
 function SetupScreen({ onCreateRoom, onSpectate }) {
+  const t = useHostT();
   const [inputCode, setInputCode] = React.useState('');
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-8 gap-10">
       <div className="text-center">
         <p className="text-7xl mb-4">📺</p>
-        <h1 className="text-5xl font-['Fredoka_One'] text-[#FFE66D] mb-3">Big Screen Mode</h1>
+        <h1 className="text-5xl font-['Fredoka_One'] text-[#FFE66D] mb-3">{t.bigScreenMode}</h1>
         <p className="text-gray-400 font-['Nunito'] text-lg max-w-lg leading-relaxed">
-          Show the game on a TV or laptop. Create a room — players join from their phones using the code or QR.
+          {t.bigScreenDesc}
         </p>
       </div>
 
@@ -2020,25 +2050,25 @@ function SetupScreen({ onCreateRoom, onSpectate }) {
         <button
           data-testid="host-btn-create-room"
           onClick={onCreateRoom}
-          className="flex-1 flex flex-col items-center gap-5 bg-[#1A1A2E] border-2 border-[#4ECDC4] rounded-3xl p-8 hover:bg-[#4ECDC4]/10 active:scale-[0.98] transition text-left"
+          className="flex-1 flex flex-col items-center gap-5 bg-[#1A1A2E] border-2 border-[#4ECDC4] rounded-3xl p-8 hover:bg-[#4ECDC4]/10 active:scale-[0.98] transition text-start"
           style={{ boxShadow: '0 0 40px #4ECDC420' }}
         >
           <span className="text-5xl">🎮</span>
           <div className="text-center">
-            <p className="font-['Fredoka_One'] text-2xl text-[#4ECDC4] mb-2">Create New Room</p>
+            <p className="font-['Fredoka_One'] text-2xl text-[#4ECDC4] mb-2">{t.createNewRoom}</p>
             <p className="font-['Nunito'] text-gray-400 text-sm leading-relaxed">
-              Set up a game on this screen. Players scan the QR code or enter the room code on their phones.
+              {t.createNewRoomDesc}
             </p>
           </div>
-          <span className="text-[#4ECDC4] font-['Fredoka_One'] text-lg mt-auto">Let's go →</span>
+          <span className="text-[#4ECDC4] font-['Fredoka_One'] text-lg mt-auto">{t.letsGo}</span>
         </button>
 
         <div className="flex-1 flex flex-col items-center gap-5 bg-[#1A1A2E] border-2 border-[#2D2D44] rounded-3xl p-8">
           <span className="text-5xl">🔗</span>
           <div className="text-center w-full">
-            <p className="font-['Fredoka_One'] text-2xl text-white mb-2">Display Existing Room</p>
+            <p className="font-['Fredoka_One'] text-2xl text-white mb-2">{t.displayExisting}</p>
             <p className="font-['Nunito'] text-gray-400 text-sm mb-5 leading-relaxed">
-              Game already created on a phone? Enter the room code to show it here.
+              {t.displayExistingDesc}
             </p>
             <input
               type="text"
@@ -2052,7 +2082,7 @@ function SetupScreen({ onCreateRoom, onSpectate }) {
               disabled={inputCode.length !== 4}
               className="w-full py-3 rounded-xl font-['Fredoka_One'] text-lg bg-[#6C5CE7] text-white disabled:opacity-40 hover:bg-[#7d6fd4] active:scale-[0.98] transition"
             >
-              📺 Display →
+              {t.displayBtn}
             </button>
           </div>
         </div>
@@ -2061,12 +2091,13 @@ function SetupScreen({ onCreateRoom, onSpectate }) {
   );
 }
 
-const MIXED_SUB_GAMES = ['who-said-that', 'situational', 'this-or-that', 'drawing']
-  .map(id => ({ id, label: gameLabel(id), accent: PICKABLE_GAMES.find(g => g.id === id)?.accent }));
+const mixedSubGames = (lang) => ['who-said-that', 'situational', 'this-or-that', 'drawing']
+  .map(id => ({ id, label: gameLabel(id, lang), accent: PICKABLE_GAMES.find(g => g.id === id)?.accent }));
 
 const DEFAULT_SUB_GAMES = ['who-said-that', 'situational', 'this-or-that', 'drawing'];
 
 function CreateRoomForm({ onSubmit, onBack }) {
+  const t = useHostT();
   const [gameType, setGameType] = React.useState('most-likely-to');
   const [gameName, setGameName] = React.useState('');
   const [rounds, setRounds] = React.useState(5);
@@ -2074,6 +2105,7 @@ function CreateRoomForm({ onSubmit, onBack }) {
   const [roundsPerSubGame, setRoundsPerSubGame] = React.useState(3);
   const [drawMode, setDrawMode] = React.useState('classic');
   const [roundDurationSecs, setRoundDurationSecs] = React.useState(60);
+  const [mltAllowSelfVote, setMltAllowSelfVote] = React.useState(true);
   const [queueItems, setQueueItems] = React.useState([
     { type: 'most-likely-to', rounds: 5 },
   ]);
@@ -2107,7 +2139,9 @@ function CreateRoomForm({ onSubmit, onBack }) {
   };
 
   const handleSubmit = () => {
-    const roomConfig = { roundDurationSecs };
+    const roomConfig = { roundDurationSecs, mltAllowSelfVote };
+    const hasMlt = gameType === 'most-likely-to' || (gameType === 'playlist' && queueItems.some(q => q.type === 'most-likely-to'));
+    if (!hasMlt) delete roomConfig.mltAllowSelfVote;
     if (gameType === 'playlist') {
       const firstGame = queueItems[0];
       onSubmit({ gameType: firstGame.type, gameName: gameName.trim(), rounds: firstGame.rounds, drawMode, roomConfig, gameQueue: queueItems });
@@ -2120,7 +2154,7 @@ function CreateRoomForm({ onSubmit, onBack }) {
     }
   };
 
-  const PLAYLIST_GAME_OPTIONS = PLAYLIST_GAMES.map(g => ({ id: g.id, label: gameLabel(g.id), accent: g.accent }));
+  const PLAYLIST_GAME_OPTIONS = PLAYLIST_GAMES.map(g => ({ id: g.id, label: gameLabel(g.id, t.lang), accent: g.accent }));
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 overflow-auto">
@@ -2129,19 +2163,19 @@ function CreateRoomForm({ onSubmit, onBack }) {
           onClick={onBack}
           className="text-gray-500 font-['Nunito'] mb-6 flex items-center gap-2 hover:text-white transition text-sm"
         >
-          ← Back
+          {t.back}
         </button>
-        <h1 className="text-4xl font-['Fredoka_One'] text-[#FFE66D] mb-8">Create Room</h1>
+        <h1 className="text-4xl font-['Fredoka_One'] text-[#FFE66D] mb-8">{t.createRoom}</h1>
 
-        <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-3">Game Mode</p>
+        <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-3">{t.gameMode}</p>
         <div className="grid grid-cols-2 gap-3 mb-6">
-          {GAME_TYPES_FOR_CREATE.map(g => {
+          {gameTypesForCreate(t).map(g => {
             const selected = gameType === g.id;
             return (
               <button
                 key={g.id}
                 onClick={() => setGameType(g.id)}
-                className={`rounded-2xl p-4 text-left border-2 transition active:scale-95 ${(g.id === 'mixed' || g.colSpan === 2) ? 'col-span-2' : ''}`}
+                className={`rounded-2xl p-4 text-start border-2 transition active:scale-95 ${(g.id === 'mixed' || g.colSpan === 2) ? 'col-span-2' : ''}`}
                 style={selected
                   ? { backgroundColor: g.accent + '20', borderColor: g.accent, boxShadow: `0 0 12px ${g.accent}44` }
                   : { borderColor: '#2D2D44', backgroundColor: '#0D0D1A60' }}
@@ -2155,15 +2189,15 @@ function CreateRoomForm({ onSubmit, onBack }) {
 
         {gameType === 'mixed' && (
           <div className="mb-6">
-            <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-3">Mini Games to Include</p>
+            <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-3">{t.miniGamesToInclude}</p>
             <div className="grid grid-cols-2 gap-2 mb-4">
-              {MIXED_SUB_GAMES.map(sg => {
+              {mixedSubGames(t.lang).map(sg => {
                 const active = selectedSubGames.includes(sg.id);
                 return (
                   <button
                     key={sg.id}
                     onClick={() => toggleSubGame(sg.id)}
-                    className="rounded-xl px-4 py-2.5 text-left border-2 transition active:scale-95 font-['Fredoka_One'] text-sm"
+                    className="rounded-xl px-4 py-2.5 text-start border-2 transition active:scale-95 font-['Fredoka_One'] text-sm"
                     style={active
                       ? { backgroundColor: sg.accent + '22', borderColor: sg.accent, color: sg.accent }
                       : { borderColor: '#2D2D44', color: '#666', backgroundColor: 'transparent' }}
@@ -2173,7 +2207,7 @@ function CreateRoomForm({ onSubmit, onBack }) {
                 );
               })}
             </div>
-            <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-2">Rounds per Game</p>
+            <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-2">{t.roundsPerGame}</p>
             <div className="flex gap-2">
               {[3, 4, 5].map(r => (
                 <button
@@ -2193,15 +2227,15 @@ function CreateRoomForm({ onSubmit, onBack }) {
 
         {gameType === 'playlist' && (
           <div className="mb-6">
-            <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-3">Game Queue</p>
+            <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-3">{t.gameQueue}</p>
             <div className="flex flex-col gap-2 mb-4">
               {queueItems.map((item, idx) => {
                 const meta = PLAYLIST_GAME_OPTIONS.find(g => g.id === item.type) || { label: item.type, accent: '#aaa' };
                 return (
                   <div key={idx} className="flex items-center gap-2 rounded-xl p-3 border-2" style={{ borderColor: meta.accent + '55', backgroundColor: meta.accent + '11' }}>
                     <span className="font-['Fredoka_One'] text-sm flex-1" style={{ color: meta.accent }}>{idx + 1}. {meta.label}</span>
-                    <div className="flex items-center gap-1 mr-2">
-                      <span className="text-xs text-gray-500">Rounds</span>
+                    <div className="flex items-center gap-1 me-2">
+                      <span className="text-xs text-gray-500">{t.rounds}</span>
                       {[3, 5, 8].map(r => (
                         <button key={r} onClick={() => updateQueueRounds(idx, r)} className={`px-2 py-0.5 rounded text-xs font-['Fredoka_One'] border transition ${item.rounds === r ? 'border-[#4ECDC4] text-[#4ECDC4] bg-[#4ECDC4]/10' : 'border-[#2D2D44] text-gray-500'}`}>{r}</button>
                       ))}
@@ -2213,7 +2247,7 @@ function CreateRoomForm({ onSubmit, onBack }) {
                 );
               })}
             </div>
-            <p className="text-xs font-['Nunito'] text-gray-500 mb-2">Add game →</p>
+            <p className="text-xs font-['Nunito'] text-gray-500 mb-2">{t.addGame}</p>
             <div className="flex flex-wrap gap-2">
               {PLAYLIST_GAME_OPTIONS.map(g => (
                 <button key={g.id} onClick={() => addQueueItem(g.id)} className="px-3 py-1.5 rounded-xl border-2 font-['Fredoka_One'] text-xs transition active:scale-95" style={{ borderColor: g.accent + '66', color: g.accent, backgroundColor: g.accent + '11' }}>
@@ -2226,16 +2260,16 @@ function CreateRoomForm({ onSubmit, onBack }) {
 
         {gameType === 'drawing' && (
           <div className="mb-6">
-            <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-3">Drawing Mode</p>
+            <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-3">{t.drawingMode}</p>
             <div className="flex gap-3">
               {[
-                { id: 'classic', label: '🎨 Classic', desc: 'Everyone draws the same word' },
-                { id: 'secret', label: '✦ Secret Words', desc: 'Each player gets a unique word' },
+                { id: 'classic', label: t.classic, desc: t.classicDesc },
+                { id: 'secret', label: t.secretWords, desc: t.secretDesc },
               ].map(m => (
                 <button
                   key={m.id}
                   onClick={() => setDrawMode(m.id)}
-                  className="flex-1 rounded-2xl p-4 text-left border-2 transition active:scale-95"
+                  className="flex-1 rounded-2xl p-4 text-start border-2 transition active:scale-95"
                   style={drawMode === m.id
                     ? { backgroundColor: '#C39BD320', borderColor: '#C39BD3', boxShadow: '0 0 12px #C39BD344' }
                     : { borderColor: '#2D2D44', backgroundColor: '#0D0D1A60' }}
@@ -2248,16 +2282,16 @@ function CreateRoomForm({ onSubmit, onBack }) {
           </div>
         )}
 
-        <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-2">Game Name (optional)</p>
+        <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-2">{t.gameNameOptional}</p>
         <input
           type="text"
-          placeholder="e.g. Sarah's Birthday Party 🎂"
+          placeholder={t.gameNamePlaceholder}
           value={gameName}
           onChange={e => setGameName(e.target.value.slice(0, 40))}
           className="w-full p-3 rounded-xl text-black mb-6 text-base border-2 border-transparent focus:border-[#FFE66D] focus:outline-none"
         />
 
-        <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-2">Number of Rounds</p>
+        <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-2">{t.numberOfRounds}</p>
         <div className="flex gap-2 mb-6">
           {[3, 5, 8, 10].map(r => (
             <button
@@ -2272,7 +2306,7 @@ function CreateRoomForm({ onSubmit, onBack }) {
           ))}
         </div>
 
-        <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-3 mt-6">Answer Time Limit</p>
+        <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-3 mt-6">{t.answerTimeLimit}</p>
         <div className="flex gap-2 mb-6">
           {[30, 45, 60, 90, 120].map(s => (
             <button
@@ -2287,12 +2321,19 @@ function CreateRoomForm({ onSubmit, onBack }) {
           ))}
         </div>
 
+        {(gameType === 'most-likely-to' || (gameType === 'playlist' && queueItems.some(q => q.type === 'most-likely-to'))) && (
+          <label className="flex items-center justify-between gap-3 mb-6 rounded-xl border-2 border-[#2D2D44] px-4 py-3 cursor-pointer" data-testid="mlt-allow-self-vote">
+            <span className="font-['Nunito'] text-sm text-gray-300">{t.mltSelfVote}</span>
+            <input type="checkbox" className="w-5 h-5 accent-[#4ECDC4]" checked={mltAllowSelfVote} onChange={(e) => setMltAllowSelfVote(e.target.checked)} />
+          </label>
+        )}
+
         <button
           onClick={handleSubmit}
           className="w-full py-4 rounded-2xl font-['Fredoka_One'] text-xl bg-[#4ECDC4] text-black hover:bg-[#3dbdb5] active:scale-95 transition"
           style={{ boxShadow: '0 0 20px #4ECDC440' }}
         >
-          📺 Create & Display
+          {t.createDisplay}
         </button>
       </div>
     </div>
@@ -2304,13 +2345,15 @@ const TIMED_PHASES = ['selfie-photo', 'selfie-voting', 'caption-photo', 'caption
 
 // ─── Host control bar (creator only) ─────────────────────────────────────────
 
-function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onTogglePhasePause, status, isRoomCreator, players, mlt, votingData, fitbData, photoVoteData, captionData, isMixedMode, onStart, onMltPauseResume, onMltChangeQuestion, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, onNewGame, onPlayAgain, onNewPartyPack, gameQueue, queueIndex, onSelfieNextRound, onSelfieSkipQuestion, onShowSelfieResults, onFitbChangeQuestion, onFitbSkipToVote, onFitbShowResults, onFitbNextRound, onPhotoVoteChangeQuestion, onPhotoVoteSkipToResults, onPhotoVoteNextRound, onCaptionChangeQuestion, onCaptionSkipToVoting, onCaptionSkipToResults, onCaptionNextRound, onAnswerPauseResume, answerPaused, onFitbPauseResume, dtData, onDtPauseResume }) {
+function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onTogglePhasePause, status, isRoomCreator, players, mlt, votingData, fitbData, photoVoteData, captionData, isMixedMode, onStart, onMltPauseResume, onMltChangeQuestion, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, onNewGame, onPlayAgain, onNewPartyPack, gameQueue, queueIndex, onSelfieNextRound, onSelfieSkipQuestion, onShowSelfieResults, onFitbChangeQuestion, onFitbSkipToVote, onFitbShowResults, onFitbNextRound, onPhotoVoteChangeQuestion, onPhotoVoteSkipToResults, onPhotoVoteNextRound, onCaptionChangeQuestion, onCaptionSkipToVoting, onCaptionSkipToResults, onCaptionNextRound, onAnswerPauseResume, answerPaused, onFitbPauseResume, dtData, onDtPauseResume, selfieData, onSelfiePauseResume, onSelfieSkipToVote, onDtSkipToReveal }) {
+  const t = useHostT();
   // One advance per click: a double-click must not skip content (AUDIT.md P1-01).
   const guard = useSingleFlight(1000);
   onMltNext = guard(onMltNext); onNextRound = guard(onNextRound); onSkipQuestion = guard(onSkipQuestion);
   onTotNext = guard(onTotNext); onSitNext = guard(onSitNext); onNextAnswer = guard(onNextAnswer);
   onDrawSkipToVote = guard(onDrawSkipToVote); onDrawShowResults = guard(onDrawShowResults); onDrawNextRound = guard(onDrawNextRound);
   onNextQueueGame = guard(onNextQueueGame); onSelfieNextRound = guard(onSelfieNextRound); onShowSelfieResults = guard(onShowSelfieResults);
+  onSelfieSkipToVote = guard(onSelfieSkipToVote); onDtSkipToReveal = guard(onDtSkipToReveal);
   onFitbSkipToVote = guard(onFitbSkipToVote); onFitbShowResults = guard(onFitbShowResults); onFitbNextRound = guard(onFitbNextRound);
   onPhotoVoteSkipToResults = guard(onPhotoVoteSkipToResults); onPhotoVoteNextRound = guard(onPhotoVoteNextRound);
   onCaptionSkipToVoting = guard(onCaptionSkipToVoting); onCaptionSkipToResults = guard(onCaptionSkipToResults); onCaptionNextRound = guard(onCaptionNextRound);
@@ -2334,20 +2377,20 @@ function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onToggleP
           : 'bg-[#2D2D44] text-gray-500 cursor-not-allowed'}`}
         style={canStart ? { boxShadow: '0 0 20px #4ECDC460' } : {}}
       >
-        {canStart ? '▶ Start Game' : `⏳ Need ${3 - playingCount} more player${3 - playingCount !== 1 ? 's' : ''}`}
+        {canStart ? t.startGame : fmt(3 - playingCount !== 1 ? t.needMoreBtnMany : t.needMoreBtnOne, { n: 3 - playingCount })}
       </button>
     );
   } else if (status === 'mlt-voting') {
     controls = (
       <div className="flex gap-3">
         <button onClick={onMltPauseResume} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FFE66D] text-[#FFE66D] bg-[#FFE66D]/10 hover:bg-[#FFE66D]/20 active:scale-95 transition">
-          {mlt.paused ? '▶ Resume' : '⏸ Pause'}
+          {mlt.paused ? t.resume : t.pause}
         </button>
         <button onClick={onMltChangeQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#4ECDC4] hover:text-[#4ECDC4] active:scale-95 transition">
-          🔄 Change Question
+          {t.changeQuestion}
         </button>
         <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-          🔀 Skip Mini Game
+          {t.skipMiniGame}
         </button>
       </div>
     );
@@ -2355,10 +2398,10 @@ function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onToggleP
     controls = (
       <div className="flex gap-3">
         <button onClick={onMltNext} className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#4ECDC4] text-black hover:bg-[#3dbdb5] active:scale-95 transition" style={{ boxShadow: '0 0 20px #4ECDC440' }}>
-          Next Round →
+          {t.nextRoundArrow}
         </button>
         <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-          🔀 Skip Mini Game
+          {t.skipMiniGame}
         </button>
       </div>
     );
@@ -2366,13 +2409,13 @@ function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onToggleP
     controls = (
       <div className="flex gap-3">
         <button onClick={onAnswerPauseResume} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FFE66D] text-[#FFE66D] bg-[#FFE66D]/10 hover:bg-[#FFE66D]/20 active:scale-95 transition">
-          {answerPaused ? '▶ Resume' : '⏸ Pause'}
+          {answerPaused ? t.resume : t.pause}
         </button>
         <button onClick={onSkipQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FFE66D] hover:text-[#FFE66D] active:scale-95 transition">
-          ⏭ Skip Question
+          {t.skipQuestion}
         </button>
         <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-          🔀 Skip Mini Game
+          {t.skipMiniGame}
         </button>
       </div>
     );
@@ -2380,14 +2423,14 @@ function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onToggleP
     controls = (
       <div className="flex gap-3">
         <button onClick={onAnswerPauseResume} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FFE66D] text-[#FFE66D] bg-[#FFE66D]/10 hover:bg-[#FFE66D]/20 active:scale-95 transition">
-          {answerPaused ? '▶ Resume' : '⏸ Pause'}
+          {answerPaused ? t.resume : t.pause}
         </button>
         <button
           onClick={onSitNext}
           className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#FFE66D] text-black hover:bg-[#ffdd33] active:scale-95 transition"
           style={{ boxShadow: '0 0 20px #FFE66D60' }}
         >
-          Show Results →
+          {t.showResultsArrow}
         </button>
       </div>
     );
@@ -2395,10 +2438,10 @@ function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onToggleP
     controls = (
       <div className="flex gap-3">
         <button onClick={onNextRound} className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#4ECDC4] text-black hover:bg-[#3dbdb5] active:scale-95 transition" style={{ boxShadow: '0 0 20px #4ECDC440' }}>
-          Next Round →
+          {t.nextRoundArrow}
         </button>
         <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-          🔀 Skip Mini Game
+          {t.skipMiniGame}
         </button>
       </div>
     );
@@ -2406,10 +2449,10 @@ function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onToggleP
     controls = (
       <div className="flex gap-3">
         <button onClick={onTotNext} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#6C5CE7] hover:text-[#6C5CE7] active:scale-95 transition">
-          ⏭ Skip / Next →
+          {t.skipNext}
         </button>
         <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-          🔀 Skip Mini Game
+          {t.skipMiniGame}
         </button>
       </div>
     );
@@ -2417,10 +2460,10 @@ function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onToggleP
     controls = (
       <div className="flex gap-3">
         <button onClick={onSitNext} className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#A8E6CF] text-black hover:bg-[#8fd4b8] active:scale-95 transition" style={{ boxShadow: '0 0 20px #A8E6CF40' }}>
-          Next Round →
+          {t.nextRoundArrow}
         </button>
         <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-          🔀 Skip Mini Game
+          {t.skipMiniGame}
         </button>
       </div>
     );
@@ -2428,25 +2471,28 @@ function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onToggleP
     controls = (
       <div className="flex gap-3">
         <button onClick={onAnswerPauseResume} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FFE66D] text-[#FFE66D] bg-[#FFE66D]/10 hover:bg-[#FFE66D]/20 active:scale-95 transition">
-          {answerPaused ? '▶ Resume' : '⏸ Pause'}
+          {answerPaused ? t.resume : t.pause}
         </button>
         <button
           onClick={onNextAnswer}
           className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#6C5CE7] text-white hover:bg-[#7d6fd4] active:scale-95 transition"
           style={{ boxShadow: '0 0 20px #6C5CE760' }}
         >
-          Next Answer →
+          {t.nextAnswerArrow}
         </button>
       </div>
     );
   } else if (status === 'drawing') {
     controls = (
       <div className="flex gap-3">
+        <button onClick={onDrawSkipToVote} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#C39BD3] text-[#C39BD3] hover:bg-[#C39BD3]/10 active:scale-95 transition">
+          {t.skipToVote}
+        </button>
         <button onClick={onDrawNewWord} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FFE66D] text-[#FFE66D] hover:bg-[#FFE66D]/10 active:scale-95 transition">
-          🔄 New Word
+          {t.newWord}
         </button>
         <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-          🔀 Skip Mini Game
+          {t.skipMiniGame}
         </button>
       </div>
     );
@@ -2454,10 +2500,10 @@ function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onToggleP
     controls = (
       <div className="flex gap-3">
         <button onClick={onDrawShowResults} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#C39BD3] text-[#C39BD3] hover:bg-[#C39BD3]/10 active:scale-95 transition">
-          🏆 Show Results
+          {t.showResultsTrophy}
         </button>
         <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-          🔀 Skip Mini Game
+          {t.skipMiniGame}
         </button>
       </div>
     );
@@ -2465,10 +2511,10 @@ function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onToggleP
     controls = (
       <div className="flex gap-3">
         <button onClick={onDrawNextRound} className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#C39BD3] text-black hover:bg-[#b085c4] active:scale-95 transition" style={{ boxShadow: '0 0 20px #C39BD340' }}>
-          Next Round →
+          {t.nextRoundArrow}
         </button>
         <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-          🔀 Skip Mini Game
+          {t.skipMiniGame}
         </button>
       </div>
     );
@@ -2478,13 +2524,13 @@ function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onToggleP
       controls = (
         <div className="flex gap-3">
           <button onClick={onFitbPauseResume} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FFE66D] text-[#FFE66D] bg-[#FFE66D]/10 hover:bg-[#FFE66D]/20 active:scale-95 transition">
-            {fitbData?.paused ? '▶ Resume' : '⏸ Pause'}
+            {fitbData?.paused ? t.resume : t.pause}
           </button>
           <button onClick={onFitbChangeQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#F9CA24] hover:text-[#F9CA24] active:scale-95 transition">
-            🔄 Change Question
+            {t.changeQuestion}
           </button>
           <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-            🔀 Skip Mini Game
+            {t.skipMiniGame}
           </button>
         </div>
       );
@@ -2492,10 +2538,10 @@ function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onToggleP
       controls = (
         <div className="flex gap-3">
           <button onClick={onFitbShowResults} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#F9CA24] text-[#F9CA24] hover:bg-[#F9CA24]/10 active:scale-95 transition">
-            🏆 Show Results
+            {t.showResultsTrophy}
           </button>
           <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-            🔀 Skip Mini Game
+            {t.skipMiniGame}
           </button>
         </div>
       );
@@ -2503,10 +2549,10 @@ function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onToggleP
       controls = (
         <div className="flex gap-3">
           <button onClick={onFitbNextRound} className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#F9CA24] text-black hover:opacity-90 active:scale-95 transition" style={{ boxShadow: '0 0 20px #F9CA2440' }}>
-            Next Round →
+            {t.nextRoundArrow}
           </button>
           <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-            🔀 Skip Mini Game
+            {t.skipMiniGame}
           </button>
         </div>
       );
@@ -2517,10 +2563,10 @@ function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onToggleP
       controls = (
         <div className="flex gap-3">
           <button onClick={onCaptionChangeQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FD79A8] hover:text-[#FD79A8] active:scale-95 transition">
-            🔄 Change Question
+            {t.changeQuestion}
           </button>
           <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-            🔀 Skip Mini Game
+            {t.skipMiniGame}
           </button>
         </div>
       );
@@ -2528,10 +2574,10 @@ function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onToggleP
       controls = (
         <div className="flex gap-3">
           <button onClick={onCaptionSkipToResults} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FFE66D] hover:text-[#FFE66D] active:scale-95 transition">
-            🏆 Show Results
+            {t.showResultsTrophy}
           </button>
           <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-            🔀 Skip Mini Game
+            {t.skipMiniGame}
           </button>
         </div>
       );
@@ -2539,10 +2585,10 @@ function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onToggleP
       controls = (
         <div className="flex gap-3">
           <button onClick={onCaptionNextRound} className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#FD79A8] text-black hover:opacity-90 active:scale-95 transition" style={{ boxShadow: '0 0 20px #FD79A840' }}>
-            Next Round →
+            {t.nextRoundArrow}
           </button>
           <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-            🔀 Skip Mini Game
+            {t.skipMiniGame}
           </button>
         </div>
       );
@@ -2550,7 +2596,7 @@ function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onToggleP
       controls = (
         <div className="flex gap-3">
           <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-            🔀 Skip Mini Game
+            {t.skipMiniGame}
           </button>
         </div>
       );
@@ -2561,10 +2607,10 @@ function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onToggleP
       controls = (
         <div className="flex gap-3">
           <button onClick={onPhotoVoteChangeQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FDCB6E] hover:text-[#FDCB6E] active:scale-95 transition">
-            🔄 Change Question
+            {t.changeQuestion}
           </button>
           <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-            🔀 Skip Mini Game
+            {t.skipMiniGame}
           </button>
         </div>
       );
@@ -2572,10 +2618,10 @@ function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onToggleP
       controls = (
         <div className="flex gap-3">
           <button onClick={onPhotoVoteChangeQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FDCB6E] hover:text-[#FDCB6E] active:scale-95 transition">
-            🔄 Change Question
+            {t.changeQuestion}
           </button>
           <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-            🔀 Skip Mini Game
+            {t.skipMiniGame}
           </button>
         </div>
       );
@@ -2583,10 +2629,10 @@ function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onToggleP
       controls = (
         <div className="flex gap-3">
           <button onClick={onPhotoVoteNextRound} className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#FDCB6E] text-black hover:opacity-90 active:scale-95 transition" style={{ boxShadow: '0 0 20px #FDCB6E40' }}>
-            Next Round →
+            {t.nextRoundArrow}
           </button>
           <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-            🔀 Skip Mini Game
+            {t.skipMiniGame}
           </button>
         </div>
       );
@@ -2594,10 +2640,10 @@ function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onToggleP
       controls = (
         <div className="flex gap-3 flex-wrap justify-center">
           <button onClick={onPlayAgain} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#4ECDC4] text-[#4ECDC4] hover:bg-[#4ECDC4]/10 active:scale-95 transition">
-            🔄 Play Again
+            {t.playAgain}
           </button>
           <button onClick={onNewPartyPack} className="px-8 py-2.5 rounded-xl font-['Fredoka_One'] text-base bg-[#FFE66D] text-black hover:bg-[#ffdd33] active:scale-95 transition" style={{ boxShadow: '0 0 16px #FFE66D40' }}>
-            🎮 New Party Pack
+            {t.newPartyPack}
           </button>
         </div>
       );
@@ -2605,7 +2651,7 @@ function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onToggleP
       controls = (
         <div className="flex gap-3">
           <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-            🔀 Skip Mini Game
+            {t.skipMiniGame}
           </button>
         </div>
       );
@@ -2613,11 +2659,21 @@ function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onToggleP
   } else if (status === 'selfie') {
     controls = (
       <div className="flex gap-3">
+        {selfieData?.phase === 'drawing' && (
+          <>
+            <button onClick={onSelfiePauseResume} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FFE66D] text-[#FFE66D] bg-[#FFE66D]/10 hover:bg-[#FFE66D]/20 active:scale-95 transition">
+              {selfieData?.paused ? t.resume : t.pause}
+            </button>
+            <button onClick={onSelfieSkipToVote} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FD79A8] text-[#FD79A8] hover:bg-[#FD79A8]/10 active:scale-95 transition">
+              {t.skipToVote}
+            </button>
+          </>
+        )}
         <button onClick={onSelfieSkipQuestion} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FD79A8] hover:text-[#FD79A8] active:scale-95 transition">
-          🔄 Change Question
+          {t.changeQuestion}
         </button>
         <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-          🔀 Skip Mini Game
+          {t.skipMiniGame}
         </button>
       </div>
     );
@@ -2625,10 +2681,10 @@ function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onToggleP
     controls = (
       <div className="flex gap-3">
         <button onClick={onShowSelfieResults} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FD79A8] text-[#FD79A8] hover:bg-[#FD79A8]/10 active:scale-95 transition">
-          🏆 Show Results
+          {t.showResultsTrophy}
         </button>
         <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-          🔀 Skip Mini Game
+          {t.skipMiniGame}
         </button>
       </div>
     );
@@ -2636,10 +2692,10 @@ function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onToggleP
     controls = (
       <div className="flex gap-3">
         <button onClick={onSelfieNextRound} className="px-10 py-3 rounded-2xl font-['Fredoka_One'] text-xl bg-[#FD79A8] text-black hover:bg-[#e8628f] active:scale-95 transition" style={{ boxShadow: '0 0 20px #FD79A840' }}>
-          Next Round →
+          {t.nextRoundArrow}
         </button>
         <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-          🔀 Skip Mini Game
+          {t.skipMiniGame}
         </button>
       </div>
     );
@@ -2647,7 +2703,7 @@ function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onToggleP
     controls = (
       <div className="flex gap-3">
         <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-          🔀 Skip Mini Game
+          {t.skipMiniGame}
         </button>
       </div>
     );
@@ -2656,10 +2712,15 @@ function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onToggleP
     controls = (
       <div className="flex gap-3">
         <button onClick={onDtPauseResume} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FFE66D] text-[#FFE66D] bg-[#FFE66D]/10 hover:bg-[#FFE66D]/20 active:scale-95 transition">
-          {isPaused ? '▶ Resume' : '⏸ Pause'}
+          {isPaused ? t.resume : t.pause}
         </button>
+        {status === 'dt-guessing' && (
+          <button onClick={onDtSkipToReveal} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#4ECDC4] text-[#4ECDC4] hover:bg-[#4ECDC4]/10 active:scale-95 transition">
+            {t.skipToReveal}
+          </button>
+        )}
         <button onClick={onSkipMiniGame} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FF8B94] hover:text-[#FF8B94] active:scale-95 transition">
-          🔀 Skip Mini Game
+          {t.skipMiniGame}
         </button>
       </div>
     );
@@ -2669,11 +2730,11 @@ function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onToggleP
     controls = (
       <div className="flex gap-3 flex-wrap justify-center">
         <button onClick={onPlayAgain} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#4ECDC4] text-[#4ECDC4] hover:bg-[#4ECDC4]/10 active:scale-95 transition">
-          🔄 Play Again
+          {t.playAgain}
         </button>
         {hasNextInQueue && (
           <button onClick={onNextQueueGame} className="px-8 py-2.5 rounded-xl font-['Fredoka_One'] text-base bg-[#6C5CE7] text-white hover:bg-[#5a4bd0] active:scale-95 transition" style={{ boxShadow: '0 0 16px #6C5CE740' }}>
-            ▶ Next: {gameName(nextGame.type)}
+            {fmt(t.nextGame, { game: gameName(nextGame.type, t.lang) })}
           </button>
         )}
         <button
@@ -2681,7 +2742,7 @@ function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onToggleP
           className="px-8 py-2.5 rounded-xl font-['Fredoka_One'] text-base bg-[#FFE66D] text-black hover:bg-[#ffdd33] active:scale-95 transition"
           style={{ boxShadow: '0 0 16px #FFE66D40' }}
         >
-          🎮 New Party Pack
+          {t.newPartyPack}
         </button>
       </div>
     );
@@ -2694,10 +2755,10 @@ function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onToggleP
     <div className="flex items-center gap-3" data-testid="timed-phase-controls">
       <TimerRing secondsLeft={phaseTimer.secondsLeft} total={phaseTimer.total || 30} paused={phaseTimer.paused} size={44} />
       <button onClick={onTogglePhasePause} className="px-5 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FFE66D] text-[#FFE66D] bg-[#FFE66D]/10 hover:bg-[#FFE66D]/20 active:scale-95 transition">
-        {phaseTimer.paused ? '▶ Resume' : '⏸ Pause'}
+        {phaseTimer.paused ? t.resume : t.pause}
       </button>
       <button onClick={onAdvancePhase} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base bg-[#4ECDC4] text-black hover:bg-[#3dbdb5] active:scale-95 transition">
-        ⏭ Continue
+        {t.continueBtn}
       </button>
     </div>
   ) : null;
@@ -2705,7 +2766,7 @@ function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onToggleP
   if (status === 'intro') {
     controls = (
       <button data-testid="host-intro-start-now" onClick={onIntroStartNow} className="px-8 py-2.5 rounded-xl font-['Fredoka_One'] text-base bg-[#4ECDC4] text-black hover:bg-[#3dbdb5] active:scale-95 transition">
-        ▶ Start now
+        {t.startNow}
       </button>
     );
   }
@@ -2714,7 +2775,7 @@ function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onToggleP
 
   return (
     <div className="flex-shrink-0 flex justify-center items-center gap-6 py-4 px-6 bg-[#0D0D1A]/95 border-t border-[#2D2D44] z-10">
-      <span className="text-xs font-['Nunito'] text-gray-600 uppercase tracking-widest">Host Controls</span>
+      <span className="text-xs font-['Nunito'] text-gray-600 uppercase tracking-widest">{t.hostControls}</span>
       <div className="w-px h-5 bg-[#2D2D44]" />
       {timedControls}
       {controls}
@@ -2762,6 +2823,7 @@ const phaseToStatus = (roomPhase, roomData) => {
 
 export default function HostPage() {
   const [searchParams] = useSearchParams();
+  const ht = useHostT();
   const roomCodeParam = searchParams.get('room')?.toUpperCase();
   // The host key proves this screen may control the room (AUDIT.md P2-31):
   // the creator's TV keeps it in sessionStorage; a phone host shares it through
@@ -3177,9 +3239,11 @@ export default function HostPage() {
       setSelfieData(prev => ({ ...prev, photoCount, totalPhotographers, submittedPlayerIds: submittedPlayerIds || prev.submittedPlayerIds }));
     });
     sock.on('selfie:drawing_phase', (data) => {
-      setSelfieData(prev => ({ ...prev, phase: 'drawing', drawingCount: 0, totalDrawers: data.totalDrawers || 0, drawnPlayerIds: [], promptTemplate: data.promptTemplate || '' }));
+      setSelfieData(prev => ({ ...prev, phase: 'drawing', paused: false, drawingCount: 0, totalDrawers: data.totalDrawers || 0, drawnPlayerIds: [], promptTemplate: data.promptTemplate || '' }));
       setStatus('selfie'); // Ensure host shows selfie panel even when photo phase was skipped
     });
+    sock.on('selfie:paused', () => setSelfieData(prev => ({ ...prev, paused: true })));
+    sock.on('selfie:resumed', () => setSelfieData(prev => ({ ...prev, paused: false })));
     sock.on('selfie:prompt_updated', (data) => {
       setSelfieData(prev => ({ ...prev, promptTemplate: data.promptTemplate || prev.promptTemplate }));
     });
@@ -3455,6 +3519,10 @@ export default function HostPage() {
           gameName: room.gameName || '',
         }));
       }
+      // ── WST / Situational round counter (every phase of a classic round) ──
+      if (room.currentRound) {
+        setQuestionData(prev => ({ ...prev, round: room.currentRound, totalRounds: room.totalRounds }));
+      }
       // ── WST answering phase ───────────────────────────────────────────────
       if (room.phase === 'question') {
         setQuestionData(prev => ({
@@ -3721,6 +3789,9 @@ export default function HostPage() {
   const handleSkipQuestion = () => socketRef.current?.emit('skip_question', { code: gameInfo.code });
   const handleSelfieNextRound = () => socketRef.current?.emit('selfie:next_round', { code: gameInfo.code });
   const handleSelfieSkipQuestion = () => socketRef.current?.emit('selfie:skip_question', { code: gameInfo.code });
+  const handleSelfiePauseResume = () => socketRef.current?.emit(selfieData.paused ? 'selfie:resume' : 'selfie:pause', { code: gameInfo.code });
+  const handleSelfieSkipToVote = () => socketRef.current?.emit('selfie:skip_to_vote', { code: gameInfo.code });
+  const handleDtSkipToReveal = () => socketRef.current?.emit('dt:skip_to_reveal', { code: gameInfo.code });
   const handleSkipMiniGame = () => {
     if (isTransitioning) return;
     setIsTransitioning(true);
@@ -3843,20 +3914,20 @@ export default function HostPage() {
         return (
           <div className="flex flex-col items-center gap-4 text-gray-500">
             <div className="w-16 h-16 border-4 border-[#4ECDC4] border-t-transparent rounded-full animate-spin" />
-            <p className="font-['Nunito'] text-xl">Connecting...</p>
+            <p className="font-['Nunito'] text-xl">{ht.connecting}</p>
           </div>
         );
       case 'error':
         return (
           <div className="flex flex-col items-center gap-4 text-center">
             <p className="text-6xl">😕</p>
-            <p className="text-3xl font-['Fredoka_One'] text-[#FF6B6B]">{errorMsg || 'Room not found'}</p>
-            <p className="font-['Nunito'] text-gray-400">Make sure the room code is correct and the game is still running.</p>
+            <p className="text-3xl font-['Fredoka_One'] text-[#FF6B6B]">{errorMsg || ht.roomNotFound}</p>
+            <p className="font-['Nunito'] text-gray-400">{ht.roomNotFoundHint}</p>
             <button
               onClick={() => { window.history.replaceState({}, '', '/host'); setStatus('setup'); }}
               className="px-6 py-3 bg-[#2D2D44] rounded-xl font-['Fredoka_One'] text-white hover:bg-[#3D3D54] transition mt-2"
             >
-              ← Try Again
+              {ht.tryAgain}
             </button>
           </div>
         );
@@ -3936,17 +4007,17 @@ export default function HostPage() {
       )}
       {!isMltCoreView && !isTotCoreView && <div className="flex items-center justify-between px-6 py-3 bg-[#1A1A2E] border-b border-[#2D2D44] flex-shrink-0">
         <div className="flex items-center gap-3">
-          <span className="text-xl font-['Fredoka_One'] text-[#FFE66D]">🎉 Party Pack</span>
+          <span className="text-xl font-['Fredoka_One'] text-[#FFE66D]">{ht.partyPackHeader}</span>
           {gameInfo.gameName && (
             <span className="text-base font-['Fredoka_One'] text-[#4ECDC4]">— {gameInfo.gameName}</span>
           )}
           {!gameInfo.gameName && gameInfo.gameType && (
-            <span className="text-sm font-['Nunito'] text-gray-500">{GAME_TYPE_LABELS[gameInfo.gameType] || ''}</span>
+            <span className="text-sm font-['Nunito'] text-gray-500">{gameLabel(gameInfo.gameType, ht.lang) || ''}</span>
           )}
         </div>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest">Room</span>
+            <span className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest">{ht.room}</span>
             <span className="text-2xl font-['Fredoka_One'] text-[#FFE66D] tracking-widest">{headerRoomCode}</span>
           </div>
           <div className="bg-white p-1 rounded">
@@ -3959,10 +4030,10 @@ export default function HostPage() {
                 const hostUrl = window.location.origin + '/host?room=' + headerRoomCode + (key ? '&key=' + encodeURIComponent(key) : '');
                 navigator.clipboard.writeText(hostUrl).catch(() => {});
               }}
-              title="Copy host URL"
+              title={ht.copyHostUrl}
               className="px-3 py-1 rounded-lg text-xs font-['Nunito'] border border-[#2D2D44] text-gray-400 hover:border-[#FFE66D] hover:text-[#FFE66D] active:scale-95 transition"
             >
-              📋 Host URL
+              {ht.hostUrl}
             </button>
           )}
           {isRoomCreator && status !== 'setup' && status !== 'creating' && status !== 'connecting' && status !== 'error' && (
@@ -3970,7 +4041,7 @@ export default function HostPage() {
               onClick={() => setShowGamePicker(true)}
               className="px-3 py-1 rounded-lg text-xs font-['Fredoka_One'] border border-[#2D2D44] text-gray-400 hover:border-[#4ECDC4] hover:text-[#4ECDC4] active:scale-95 transition"
             >
-              🎮 Change Game
+              {ht.changeGame}
             </button>
           )}
           {isRoomCreator && status !== 'setup' && status !== 'creating' && status !== 'connecting' && status !== 'error' && (
@@ -3978,7 +4049,7 @@ export default function HostPage() {
               onClick={() => setShowMainMenu(true)}
               className="px-3 py-1 rounded-lg text-xs font-['Fredoka_One'] border border-[#2D2D44] text-gray-400 hover:border-[#FF6B6B] hover:text-[#FF6B6B] active:scale-95 transition"
             >
-              🏠 Main Menu
+              {ht.mainMenu}
             </button>
           )}
           <SoundToggle />
@@ -3998,7 +4069,7 @@ export default function HostPage() {
             onClick={e => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-2xl font-['Fredoka_One'] text-[#F7F7F7]">🏠 Main Menu</h2>
+              <h2 className="text-2xl font-['Fredoka_One'] text-[#F7F7F7]">{ht.mainMenu}</h2>
               <button onClick={() => setShowMainMenu(false)} className="text-gray-500 hover:text-white text-2xl leading-none transition">✕</button>
             </div>
 
@@ -4008,23 +4079,23 @@ export default function HostPage() {
                 onClick={() => setMainMenuKeepPoints(true)}
                 className={`flex-1 py-2 rounded-xl font-['Fredoka_One'] text-sm transition active:scale-95 ${mainMenuKeepPoints ? 'bg-[#4ECDC4] text-black' : 'bg-[#2D2D44] text-gray-400 hover:text-white'}`}
               >
-                🏆 Keep Points
+                {ht.keepPoints}
               </button>
               <button
                 onClick={() => setMainMenuKeepPoints(false)}
                 className={`flex-1 py-2 rounded-xl font-['Fredoka_One'] text-sm transition active:scale-95 ${!mainMenuKeepPoints ? 'bg-[#FF6B6B] text-white' : 'bg-[#2D2D44] text-gray-400 hover:text-white'}`}
               >
-                🔄 Start Fresh
+                {ht.startFresh}
               </button>
             </div>
 
-            <p className="text-xs font-['Nunito'] text-gray-500 mb-4 text-center">Choose the next mini game — same room &amp; players</p>
+            <p className="text-xs font-['Nunito'] text-gray-500 mb-4 text-center">{ht.chooseNextGame}</p>
 
             <div className="grid grid-cols-2 gap-2">
               {[
-                ...PICKABLE_GAMES.filter(g => g.id !== 'mixed').map(g => ({ id: g.id, label: gameLabel(g.id), accent: g.accent })),
-                { id: 'playlist', label: '📋 Playlist', accent: '#FDCB6E' },
-                { id: 'mixed', label: gameLabel('mixed'), accent: '#FDCB6E', colSpan: true },
+                ...PICKABLE_GAMES.filter(g => g.id !== 'mixed').map(g => ({ id: g.id, label: gameLabel(g.id, ht.lang), accent: g.accent })),
+                { id: 'playlist', label: ht.playlist, accent: '#FDCB6E' },
+                { id: 'mixed', label: gameLabel('mixed', ht.lang), accent: '#FDCB6E', colSpan: true },
               ].map(g => (
                 <button
                   key={g.id}
@@ -4046,11 +4117,11 @@ export default function HostPage() {
                     setQueueIndex(0);
                     setShowMainMenu(false);
                   }}
-                  className={`py-3 px-4 rounded-2xl font-['Fredoka_One'] text-sm text-black active:scale-95 hover:opacity-90 transition text-left${g.colSpan ? ' col-span-2 text-center' : ''}`}
+                  className={`py-3 px-4 rounded-2xl font-['Fredoka_One'] text-sm text-black active:scale-95 hover:opacity-90 transition text-start${g.colSpan ? ' col-span-2 text-center' : ''}`}
                   style={{ backgroundColor: g.accent }}
                 >
                   {g.label}
-                  {g.id === gameInfo.gameType && <span className="ml-1 text-xs opacity-60">(current)</span>}
+                  {g.id === gameInfo.gameType && <span className="ms-1 text-xs opacity-60">{ht.current}</span>}
                 </button>
               ))}
             </div>
@@ -4066,15 +4137,15 @@ export default function HostPage() {
             onClick={e => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-5">
-              <h2 className="text-2xl font-['Fredoka_One'] text-[#F7F7F7]">🎮 Change Game</h2>
+              <h2 className="text-2xl font-['Fredoka_One'] text-[#F7F7F7]">{ht.changeGame}</h2>
               <button onClick={() => setShowGamePicker(false)} className="text-gray-500 hover:text-white text-2xl leading-none transition">✕</button>
             </div>
-            <p className="text-sm font-['Nunito'] text-gray-400 mb-4 text-center">Same room &amp; players — new game starts immediately</p>
-            <div className="grid grid-cols-2 gap-2 max-h-[60vh] overflow-y-auto pr-1">
+            <p className="text-sm font-['Nunito'] text-gray-400 mb-4 text-center">{ht.changeGameHint}</p>
+            <div className="grid grid-cols-2 gap-2 max-h-[60vh] overflow-y-auto pe-1">
               {[
-                ...PICKABLE_GAMES.filter(g => g.id !== 'mixed').map(g => ({ id: g.id, label: gameLabel(g.id), accent: g.accent })),
-                { id: 'playlist', label: '📋 Playlist', accent: '#FDCB6E' },
-                { id: 'mixed', label: gameLabel('mixed'), accent: '#FDCB6E', colSpan: true },
+                ...PICKABLE_GAMES.filter(g => g.id !== 'mixed').map(g => ({ id: g.id, label: gameLabel(g.id, ht.lang), accent: g.accent })),
+                { id: 'playlist', label: ht.playlist, accent: '#FDCB6E' },
+                { id: 'mixed', label: gameLabel('mixed', ht.lang), accent: '#FDCB6E', colSpan: true },
               ].map(g => (
                 <button
                   key={g.id}
@@ -4095,11 +4166,11 @@ export default function HostPage() {
                     setQueueIndex(0);
                     setShowGamePicker(false);
                   }}
-                  className="py-3 px-4 rounded-2xl font-['Fredoka_One'] text-base text-black active:scale-95 hover:opacity-90 transition text-left"
+                  className="py-3 px-4 rounded-2xl font-['Fredoka_One'] text-base text-black active:scale-95 hover:opacity-90 transition text-start"
                   style={{ backgroundColor: g.accent }}
                 >
                   {g.label}
-                  {g.id === gameInfo.gameType && <span className="ml-1 text-xs opacity-60">(current)</span>}
+                  {g.id === gameInfo.gameType && <span className="ms-1 text-xs opacity-60">{ht.current}</span>}
                 </button>
               ))}
             </div>
@@ -4201,6 +4272,10 @@ export default function HostPage() {
         answerPaused={!!phaseTimer?.paused}
         dtData={dtData}
         onDtPauseResume={handleDtPauseResume}
+        selfieData={selfieData}
+        onSelfiePauseResume={handleSelfiePauseResume}
+        onSelfieSkipToVote={handleSelfieSkipToVote}
+        onDtSkipToReveal={handleDtSkipToReveal}
       />}
     </div>
   );

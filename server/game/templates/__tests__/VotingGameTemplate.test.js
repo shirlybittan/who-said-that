@@ -294,3 +294,54 @@ describe('rehydrate after a server restart (P0-02)', () => {
     expect(restored.test.phase).toBe('results');
   });
 });
+
+describe('createVotingGame — per-room self-vote option (P2-42)', () => {
+  const selfVoteGame = () => makeGame({ scoreConfig: { allowSelfVote: (room) => room.test?.allowSelfVote !== false } });
+
+  it('accepts a self-vote while the room option is on', () => {
+    const game = selfVoteGame();
+    const room = makeRoom(3);
+    game.start(makeIo(), room, 'ABC', { rounds: 2, _initialState: { allowSelfVote: true } });
+    expect(room.test._voteCollector.castVote('p1', 'p1')).toBe(true);
+  });
+
+  it('rejects a self-vote once the host turns the option off', () => {
+    const game = selfVoteGame();
+    const room = makeRoom(3);
+    game.start(makeIo(), room, 'ABC', { rounds: 2, _initialState: { allowSelfVote: false } });
+    expect(room.test._voteCollector.castVote('p1', 'p1')).toBe(false);
+    expect(room.test._voteCollector.castVote('p1', 'p2')).toBe(true);
+  });
+});
+
+describe('createVotingGame — resumeVotingTimer after a restart (P2-38)', () => {
+  it('restarts the countdown from the saved seconds without touching votes', () => {
+    const game = makeGame({ scoreConfig: { allowSelfVote: true } });
+    const io = makeIo();
+    const room = makeRoom(3);
+    game.start(io, room, 'ABC', { rounds: 2 });
+    game.startVoting(io, room, 'ABC');
+    room.test._voteCollector.castVote('p1', 'p2');
+    room.test.secondsLeft = 12;
+    room._timers.test.cancel();
+    delete room._timers.test;                       // what a restart loses
+    const startedBefore = io._emitsOf('test:voting_started').length;
+
+    game.resumeVotingTimer(io, room, 'ABC');
+
+    expect(room._timers.test).toBeTruthy();
+    expect(room.test.secondsLeft).toBe(12);
+    expect(room.test.votes).toEqual({ p1: 'p2' });
+    expect(io._emitsOf('test:voting_started')).toHaveLength(startedBefore);
+    room._timers.test.cancel();
+  });
+
+  it('does nothing outside voting', () => {
+    const game = makeGame();
+    const room = makeRoom(3);
+    game.start(makeIo(), room, 'ABC', { rounds: 2 });
+    room.test.phase = 'results';
+    game.resumeVotingTimer(makeIo(), room, 'ABC');
+    expect(room._timers.test).toBeFalsy();
+  });
+});
