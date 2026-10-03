@@ -52,15 +52,9 @@ const { words: drawWordBank, prompts: drawPrompts } = require('./questions/drawi
 const { selfiePrompts } = require('./questions/selfie');
 const { isConfigured: storageConfigured, createPresignedUpload, getPublicBaseUrl } = require('./storage/photoStorage');
 
-// Fisher-Yates shuffle (unbiased, unlike .sort(() => Math.random() - 0.5))
-const fisherYatesShuffle = (arr) => {
-  const a = [...arr];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-};
+// Unbiased shuffle (server/game/shuffle.js).
+const { fisherYatesShuffle } = require('./game/shuffle');
+const { recentDistinct } = require('./game/recent');
 
 // Select `count` items from `pool`, preferring items not in `history`.
 // History is trimmed so at most 70% of the pool is excluded, ensuring there's
@@ -2186,7 +2180,7 @@ io.on('connection', (socket) => {
 
     if (drawMode === 'secret') {
       // Assign each player a unique word
-      const shuffled = [...drawWordBank].sort(() => Math.random() - 0.5);
+      const shuffled = fisherYatesShuffle(drawWordBank);
       playingPlayers.forEach((p, i) => {
         room.draw.playerWords[p.id] = shuffled[i % shuffled.length];
       });
@@ -2229,7 +2223,7 @@ io.on('connection', (socket) => {
     if (room.draw.mode === 'secret') {
       if (isHostAction) {
         // Host: give ALL players a new secret word
-        const shuffled = [...drawWordBank].sort(() => Math.random() - 0.5);
+        const shuffled = fisherYatesShuffle(drawWordBank);
         playingPlayers.forEach((p, i) => {
           room.draw.playerWords[p.id] = shuffled[i % shuffled.length];
           delete room.draw.submissions[p.id];
@@ -2391,7 +2385,7 @@ io.on('connection', (socket) => {
     if (room.draw.mode === 'secret') {
       room.draw.word = null;
       if (!room.draw.playerWords) room.draw.playerWords = {};
-      const shuffledNext = [...drawWordBank].sort(() => Math.random() - 0.5);
+      const shuffledNext = fisherYatesShuffle(drawWordBank);
       nextPlayingPlayers.forEach((p, i) => { room.draw.playerWords[p.id] = shuffledNext[i % shuffledNext.length]; });
       io.to(code).emit('draw:round_start', { word: null, round: room.draw.round, totalRounds: room.draw.totalRounds, timeLimit: room.draw.timeLimit, players, mode: 'secret' });
       nextPlayingPlayers.forEach(p => {
@@ -2425,9 +2419,8 @@ io.on('connection', (socket) => {
     // per-session used questions for fine-grained deduplication within a session
     if (!room.promptHistory) room.promptHistory = { mlt: [], fitb: [], caption: [], pmatch: [], photoassoc: [] };
     const sessionUsed = room.fitb.usedQuestions || [];
-    const allUsed = [...new Set([...room.promptHistory.fitb, ...sessionUsed])];
     const maxExclude = Math.floor(fitbQuestions.length * 0.7);
-    const recentUsed = allUsed.slice(-maxExclude);
+    const recentUsed = recentDistinct([...room.promptHistory.fitb, ...sessionUsed], maxExclude);
     const unused = fitbQuestions.filter(q => !recentUsed.includes(q));
     const pool = unused.length > 0 ? unused : fitbQuestions;
     const q = pool[Math.floor(Math.random() * pool.length)];
@@ -2588,7 +2581,7 @@ io.on('connection', (socket) => {
       onComplete: () => resolveFitbVoting(io, room, code),
     });
     // Shuffle answers so order doesn't reveal authorship
-    const shuffled = [...room.fitb.answers].sort(() => Math.random() - 0.5);
+    const shuffled = fisherYatesShuffle(room.fitb.answers);
     room.fitb.answers = shuffled;
     const playingPlayers = getActivePlayers(room);
     // Send anonymous answers (no author info) + tell each player which index is theirs

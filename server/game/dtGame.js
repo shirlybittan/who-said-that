@@ -7,6 +7,7 @@ const { buildMiniGameSnapshot } = require('./miniGameSnapshot');
 const { shuffleAnswers } = require('./gameLogic');
 const { sanitizeStrokes } = require('./limits');
 const { getActivePlayers, admitLateJoiners } = require('./players');
+const { fisherYatesShuffle, shuffleInPlace } = require('./shuffle');
 const { requireMinPlayers, clampRounds } = require('./rules');
 const { PHOTO_SECS, VOTE_SECS, startPhaseTimer } = require('./phaseTimer');
 const log = require('../logger');
@@ -211,7 +212,7 @@ function setupDtGame(io, socket, {
 
     const photoOwnerIds = Object.keys(room.selfie.photos);
     // Shuffle photo owners so each drawer gets someone else's photo
-    const shuffled = [...photoOwnerIds].sort(() => Math.random() - 0.5);
+    const shuffled = fisherYatesShuffle(photoOwnerIds);
     // Create a derangement (no one draws their own photo)
     const playingPlayers = room.players.filter(p => p.isConnected && p.isPlaying && room.selfie.photos[p.id]);
     const drawerIds = playingPlayers.map(p => p.id);
@@ -224,7 +225,7 @@ function setupDtGame(io, socket, {
         if (drawerIds[i] === assignedOwners[i % assignedOwners.length]) { valid = false; break; }
       }
       if (valid) break;
-      assignedOwners.sort(() => Math.random() - 0.5);
+      shuffleInPlace(assignedOwners);
     }
 
     drawerIds.forEach((drawerId, i) => {
@@ -352,7 +353,7 @@ function setupDtGame(io, socket, {
       };
     });
     // Shuffle so drawer order is not obvious
-    submissions.sort(() => Math.random() - 0.5);
+    shuffleInPlace(submissions);
 
     io.to(code).emit('selfie:voting_started', {
       submissions,
@@ -899,7 +900,7 @@ function setupDtGame(io, socket, {
     });
     const captionList = Object.values(room.caption.captions).map(c => ({ id: c.id, text: c.text }));
     // Shuffle so order doesn't reveal authorship
-    captionList.sort(() => Math.random() - 0.5);
+    shuffleInPlace(captionList);
     const owner = room.players.find(p => p.id === room.caption.featuredOwnerId);
     io.to(code).emit('caption:voting_phase', {
       captions: captionList,
@@ -1073,7 +1074,7 @@ function setupDtGame(io, socket, {
     cancelAllTimers(room);
     const pvPlayers = getActivePlayers(room);
     const { pmatchPrompts } = require('../questions/pmatchPrompts');
-    const prompts = [...pmatchPrompts].sort(() => Math.random() - 0.5);
+    const prompts = fisherYatesShuffle(pmatchPrompts);
     room.phase = 'photovote';
     room.photoVote = { subType: 'pmatch', phase: 'photo', photos: {}, currentRound: 1, totalRounds: 5, prompts, currentPromptIndex: 0, votes: {}, scores: {} };
     const photoPhasePrompt = resolvePhotoVotePrompt(prompts[0], pvPlayers);
@@ -2106,7 +2107,7 @@ function setupDtGame(io, socket, {
     room.dt.phase = 'reveal';
     room.dt.revealQueue = Object.keys(room.dt.chains);
     // Shuffle reveal order
-    room.dt.revealQueue.sort(() => Math.random() - 0.5);
+    shuffleInPlace(room.dt.revealQueue);
     room.dt.revealCurrentIndex = 0;
     room.dt.revealStep = 0;
 
