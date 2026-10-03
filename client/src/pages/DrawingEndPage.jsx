@@ -3,6 +3,7 @@ import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { translations } from '../locales/translations';
 import GameEndShell from '../components/game/GameEndShell';
+import { gameLabel } from '../games/registry';
 
 export default function DrawingEndPage() {
   const { state } = useGame();
@@ -12,7 +13,7 @@ export default function DrawingEndPage() {
   return (
     <GameEndShell
       title={t.finalTitle}
-      subtitle="🎨 Sketch It!"
+      subtitle={gameLabel('drawing', state.lang)}
       leaderboard={draw.leaderboard || []}
       accentColor="#C39BD3"
       pts={t.pts}

@@ -11,6 +11,7 @@ import { getRouteForPhase } from '../utils/rejoinState.js';
 // an unmount. Keep this in sync with getRouteForPhase().
 const PHASE_ROUTES = {
   lobby: ['/lobby'],
+  intro: ['/intro'],
   question: ['/question'],
   'sit-voting': ['/sit-vote'],
   'sit-results': ['/sit-vote'],
@@ -28,7 +29,9 @@ const PHASE_ROUTES = {
   selfie: ['/selfie-photo', '/selfie-draw', '/selfie-vote', '/selfie-results'],
   selfieEnd: ['/selfie-results'],
   caption: ['/caption-photo', '/caption-write', '/caption-vote', '/caption-results'],
+  captionEnd: ['/caption-results'],
   photovote: ['/photo-vote-photo', '/photo-vote', '/photo-vote-results'],
+  photovoteEnd: ['/photo-vote-results'],
   dt: ['/draw-tel-prompt', '/draw-tel-draw', '/draw-tel-guess', '/draw-tel-reveal', '/draw-tel-end', '/draw-tel-wait', '/selfie-photo'],
   dtEnd: ['/draw-tel-end'],
 };
@@ -57,7 +60,9 @@ export const computeReconcileTarget = (state, path) => {
   const { phase, roomCode, joinedMidRound } = state;
   if (!roomCode || !phase || phase === 'home') return null;
   if (path === '/' || path === '/host') return null;
-  if (joinedMidRound) return null;
+  // A mid-round joiner waits in the lobby until the server admits them at the
+  // next round — even if a broadcast (e.g. voting_started) navigated them away.
+  if (joinedMidRound) return path === '/lobby' ? null : '/lobby';
 
   const valid = PHASE_ROUTES[phase];
   if (!valid) return null;
@@ -100,7 +105,6 @@ export const usePhaseSync = () => {
   useEffect(() => {
     if (!roomCode || !phase || phase === 'home') return;   // not in an active game
     if (path === '/' || path === '/host') return;          // home / TV screen opt out
-    if (joinedMidRound) return;                            // intentionally parked in lobby until next round
 
     const target = computeReconcileTarget(state, path);
     if (target) navigate(target, { replace: true });

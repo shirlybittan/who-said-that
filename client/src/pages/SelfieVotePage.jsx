@@ -1,15 +1,19 @@
 import React, { useState } from 'react';
 import { useGame } from '../store/gameStore.jsx';
+import { translations } from '../locales/translations';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
 import ReplayCanvas from '../components/game/ReplayCanvas';
 import ConfirmVoteCard from '../game-core/player/ConfirmVoteCard';
+import VoteLocked from '../components/game/VoteLocked';
+import useAutoConfirmPending from '../game-core/hooks/useAutoConfirmPending';
 
 export default function SelfieVotePage() {
   const { state, dispatch } = useGame();
   const selfie = state.selfie;
   const sounds = useSounds();
+  const t = translations[state.lang]?.selfie || translations.en.selfie;
   const [selected, setSelected] = useState(null);
 
   const handleSelect = (drawerId) => {
@@ -25,17 +29,14 @@ export default function SelfieVotePage() {
     dispatch({ type: 'SELFIE_MARK_VOTED', payload: { drawerId: selected } });
   };
 
-  const handleShowResults = () => {
-    sounds.click?.();
-    socket.emit('selfie:show_results', { code: state.roomCode });
-  };
+  useAutoConfirmPending({ pending: selected, hasVoted: selfie.hasVoted, onConfirm: handleConfirm });
 
   return (
     <motion.div
       className="flex flex-col items-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6"
       initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}
     >
-      <h1 className="text-2xl font-['Fredoka_One'] text-[#FF6B6B] mt-6 mb-2">Vote for Funniest! 😂</h1>
+      <h1 className="text-2xl font-['Fredoka_One'] text-[#FF6B6B] mt-6 mb-2">{t.voteTitle}</h1>
       {selfie.promptTemplate ? (
         <div className="bg-[#FFE66D]/10 border border-[#FFE66D]/30 rounded-xl px-4 py-2 mb-4 text-center">
           <p className="text-[#FFE66D] font-['Fredoka_One'] text-sm">
@@ -43,7 +44,7 @@ export default function SelfieVotePage() {
           </p>
         </div>
       ) : (
-        <p className="text-gray-400 font-['Nunito'] text-sm mb-6">Which roast made you laugh?</p>
+        <p className="text-gray-400 font-['Nunito'] text-sm mb-6">{t.voteHint}</p>
       )}
 
       <motion.div
@@ -53,7 +54,8 @@ export default function SelfieVotePage() {
       >
         {selfie.submissions.map((sub) => {
           const isOwn = sub.drawerId === state.playerId;
-          const selected = selfie.myVote === sub.drawerId;
+          // (was a local `selected` shadowing the pending-pick state, so the
+          // tapped card never highlighted — AUDIT.md P2-22)
           return (
             <motion.div
               key={sub.drawerId}
@@ -74,17 +76,17 @@ export default function SelfieVotePage() {
                 <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: selfie.hasVoted ? sub.drawerColor : '#6B7280' }} />
                 <span className="font-['Nunito'] text-sm text-gray-300">
                   {selfie.hasVoted ? (
-                    <>Drew: <span className="font-bold">{sub.drawerName}</span></>
+                    <>{t.drew} <span className="font-bold">{sub.drawerName}</span></>
                   ) : isOwn ? (
-                    <span className="text-gray-500">Your drawing (can't vote)</span>
+                    <span className="text-gray-500">{t.ownDrawing}</span>
                   ) : (
-                    <span className="text-gray-500">Anonymous Artist</span>
+                    <span className="text-gray-500">{t.anonymousArtist}</span>
                   )}
                 </span>
               </div>
-              <span className="text-xs text-gray-500 font-['Nunito']">on {sub.ownerName}'s selfie</span>
-              {selected === sub.drawerId && !selfie.hasVoted && <div className="mt-1 text-yellow-400 font-['Fredoka_One']">👆 Selected</div>}
-              {selfie.myVote === sub.drawerId && <div className="mt-1 text-[#FF6B6B] font-['Fredoka_One']">✓ Your vote</div>}
+              <span className="text-xs text-gray-500 font-['Nunito']">{t.onSelfie.replace('{name}', sub.ownerName)}</span>
+              {selected === sub.drawerId && !selfie.hasVoted && <div className="mt-1 text-yellow-400 font-['Fredoka_One']">{t.selected}</div>}
+              {selfie.myVote === sub.drawerId && <div className="mt-1 text-[#FF6B6B] font-['Fredoka_One']">{t.yourVote}</div>}
             </motion.div>
           );
         })}
@@ -95,31 +97,18 @@ export default function SelfieVotePage() {
         return (
           <ConfirmVoteCard
             vote={{
-              name: selectedSub ? `Drawing on ${selectedSub.ownerName}'s photo` : 'Anonymous Artist',
+              name: selectedSub ? t.drawingOnPhoto.replace('{name}', selectedSub.ownerName) : t.anonymousArtist,
               color: '#6B7280'
             }}
             onConfirm={handleConfirm}
             onChange={() => setSelected(null)}
-            confirmLabel="✓ Confirm"
-            changeLabel="← Change"
-            titleLabel="Confirm your vote?"
+            accentColor="#FF6B6B"
           />
         );
       })()}
 
       {selfie.hasVoted && (
-        <p className="text-gray-400 font-['Nunito'] text-sm">
-          Waiting for results… ({selfie.voteCount}/{selfie.totalVoters} voted)
-        </p>
-      )}
-
-      {state.isHost && (
-        <button
-          onClick={handleShowResults}
-          className="mt-4 text-sm text-gray-400 underline font-['Nunito'] hover:text-white transition"
-        >
-          Show results now
-        </button>
+        <VoteLocked voteCount={selfie.voteCount} totalVoters={selfie.totalVoters} accentColor="#FF6B6B" />
       )}
     </motion.div>
   );

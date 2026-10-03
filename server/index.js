@@ -21,11 +21,22 @@ const { selectQuestions, selectSituationalQuestions, selectThisOrThatQuestions, 
 const { buildMiniGameSnapshot } = require('./game/miniGameSnapshot');
 const { computeCanonicalRoute } = require('./game/canonicalRoute');
 const { tallyVotes } = require('./game/ScoreCalculator');
-const { getActivePlayers } = require('./game/players');
+const { getActivePlayers, admitLateJoiners } = require('./game/players');
 const eventLog = require('./game/eventLog');
 const { sanitizeStrokes, clampText, createRateLimiter, MAX_ANSWER } = require('./game/limits');
 const { renderDashboard } = require('./admin/dashboard');
 const log = require('./logger');
+const { hardenSocket } = require('./game/safeSocket');
+const { requireMinPlayers, clampRounds } = require('./game/rules');
+const { isGameId } = require('./game/registry');
+const { createIntro } = require('./game/intro');
+const { HOST_GRACE_MS, bindDisplay, noteHostOffline, resolveHost, withoutSecrets } = require('./game/hostIdentity');
+const { VOTE_SECS, startPhaseTimer, advanceCurrentPhase, togglePausePhase } = require('./game/phaseTimer');
+
+// Last-resort guard: a bug in a timer callback or handler must not take down
+// every room. Socket handlers are already wrapped by hardenSocket (below).
+process.on('uncaughtException', (err) => log.error('uncaughtException', { err: err?.stack || String(err) }));
+process.on('unhandledRejection', (err) => log.error('unhandledRejection', { err: err?.stack || String(err) }));
 
 // Per-socket flood guard. Generous so normal play never trips it.
 const rateLimiter = createRateLimiter({ windowMs: 1000, max: 80 });
@@ -33,7 +44,7 @@ let lastRateLog = 0; // throttle the rate-limit warning so a flood can't spam lo
 const TimerManager = require('./game/TimerManager');
 const SubmissionTracker = require('./game/SubmissionTracker');
 const VoteCollector = require('./game/VoteCollector');
-const { setupDtGame, DT_DRAW_SECS, DT_PROMPT_SECS, DT_GUESS_SECS, DT_VOTE_SECS } = require('./game/dtGame');
+const { setupDtGame, recheckDtRoom, DT_DRAW_SECS, DT_PROMPT_SECS, DT_GUESS_SECS, DT_VOTE_SECS } = require('./game/dtGame');
 const { createMltGame } = require('./game/mltGame');
 const { createTotGame } = require('./game/totGame');
 const mltPromptBank = require('./questions/mostLikelyTo');
@@ -254,7 +265,19 @@ const mergeToGlobalScores = (io, room, scores) => {
 // "Maximum call stack size exceeded" error when it encounters these because the
 // internal Node.js Timeout objects have circular prototype chains.
 
-const sanitizeRoomForClient = (room) => TimerManager.sanitizeForClient(room);
+// Never send the host key to clients (only the creator receives it, once).
+const sanitizeRoomForClient = (room) => withoutSecrets(TimerManager.sanitizeForClient(room));
+
+// Re-evaluate who hosts the room and tell everyone if it changed.
+function refreshHost(io, room) {
+  const newHost = resolveHost(room);
+  if (newHost) {
+    io.to(room.code).emit('host_changed', { host: newHost.id });
+    eventLog.logSystem(room.code, 'host_changed', newHost.id, room.phase, { name: newHost.name });
+    persistSoon();
+  }
+  return newHost;
+}
 
 // ─── MLT game controller ──────────────────────────────────────────────────────
 // mltGame is a reusable controller created once at startup.  Socket handlers
@@ -304,6 +327,8 @@ const startWstVotingTimer = (io, room, code) => {
     onPause: () => { room.wstVotingPaused = true; },
     onResume: () => { room.wstVotingPaused = false; },
     onExpire: () => {
+      const answer = room.answers[room.currentAnswerIndex];
+      if (answer) answer.allVotesIn = true;
       io.to(code).emit('all_votes_in', { currentIndex: room.currentAnswerIndex });
     }
   });
@@ -321,7 +346,7 @@ const startDrawTimer = (io, room, code, seconds) => {
   room.draw.secondsLeft = seconds;
   room.draw.submissions = {};
   room.draw._submissionTracker = SubmissionTracker.create({
-    getExpectedCount: () => getActivePlayers(room).length,
+    getExpectedIds: () => getActivePlayers(room).map(p => p.id),
     onRecord: (playerId, data) => { room.draw.submissions[playerId] = data; },
     onComplete: () => { room._timers?.draw?.cancel(); startDrawVoting(io, room, code); },
   });
@@ -341,7 +366,7 @@ const startDrawVoting = (io, room, code) => {
   room.draw.phase = 'voting';
   room.draw.votes = {};
   room.draw._voteCollector = VoteCollector.create({
-    getExpectedCount: () => getActivePlayers(room).length,
+    getExpectedIds: () => getActivePlayers(room).map(p => p.id),
     allowSelfVote: false,
     onVote: (voterId, targetId) => { room.draw.votes[voterId] = targetId; },
     onComplete: () => resolveDrawVoting(io, room, code),
@@ -361,6 +386,11 @@ const startDrawVoting = (io, room, code) => {
   for (let i = submissions.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1)); [submissions[i], submissions[j]] = [submissions[j], submissions[i]];
   }
+  startPhaseTimer(io, room, code, {
+    key: 'drawVote', seconds: VOTE_SECS, phase: 'draw-voting',
+    isActive: () => room.phase === 'drawing' && room.draw?.phase === 'voting',
+    onExpire: () => resolveDrawVoting(io, room, code),
+  });
   io.to(code).emit('draw:voting_started', { submissions, round: room.draw.round, word: room.draw.word, mode: room.draw.mode || 'classic', totalVoters: playingPlayers.length });
 };
 
@@ -423,7 +453,7 @@ const advanceWstAnswerPhase = (io, room, code) => {
     room.phase = 'sit-voting';
     room.sit.votes = {};
     room.sit._voteCollector = VoteCollector.create({
-      getExpectedCount: () => activePlayers(room).length,
+      getExpectedIds: () => activePlayers(room).map(p => p.id),
       allowSelfVote: false,
       onVote: (voterId, targetId) => { room.sit.votes[voterId] = targetId; },
       onComplete: () => closeSitVoting(io, room, code),
@@ -485,7 +515,7 @@ const emitWstQuestion = (io, room, code) => {
   room.answers = [];
   room.skipVotes = [];
   room._answerTracker = SubmissionTracker.create({
-    getExpectedCount: () => activePlayers(room).length,
+    getExpectedIds: () => activePlayers(room).map(p => p.id),
     onComplete: () => advanceWstAnswerPhase(io, room, code),
   });
 
@@ -522,10 +552,7 @@ const emitWstQuestion = (io, room, code) => {
         room.currentQuestionIndex++;
         emitNextQuestion(io, room, code);
       } else {
-        room.phase = 'gameEnd';
-        const finalStats = require('./game/gameLogic').computeStats(room.players, room.answers, room.scores);
-        io.to(code).emit('game_ended', { finalScores: room.scores, players: room.players, stats: finalStats });
-        mergeToGlobalScores(io, room, room.scores);
+        endClassicGame(io, room, code, room.answers);
       }
       return;
     }
@@ -569,9 +596,10 @@ const emitTotQuestion = (io, room, code) => {
 const emitNextQuestion = (io, room, code) => {
   const q = room.questions[room.currentQuestionIndex];
   if (!q) return;
+  room.answerDrafts = {}; // a previous question's draft must never be auto-submitted here (P3-17)
 
   // Let mid-round joiners participate from here on
-  room.players.forEach(p => { p.joinedMidRound = false; });
+  admitLateJoiners(io, room);
 
   if (q.type === 'drawing') {
     room.phase = 'drawing';
@@ -668,7 +696,8 @@ const closeSitVoting = (io, room, code) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Players who count toward round thresholds (connected, playing, not waiting for next round)
-const activePlayers = (room) => room.players.filter(p => p.isConnected && p.isPlaying && !p.joinedMidRound);
+// Same definition as players.getActivePlayers (kept as an alias for existing call sites).
+const activePlayers = getActivePlayers;
 
 // Instantiate after activePlayers is defined (mltGame.js defines its own copy but we need
 // mergeToGlobalScores which was defined earlier).
@@ -717,7 +746,11 @@ const resumeRoomTimers = (io, room) => {
         tickEvent: 'phase_timer', extraData: { phase: 'wst-voting' },
         isActive: () => room.phase === 'voting',
         onTick: (s) => { room.wstVotingSecondsLeft = s; },
-        onExpire: () => io.to(code).emit('all_votes_in', { currentIndex: room.currentAnswerIndex }),
+        onExpire: () => {
+          const answer = room.answers[room.currentAnswerIndex];
+          if (answer) answer.allVotesIn = true;
+          io.to(code).emit('all_votes_in', { currentIndex: room.currentAnswerIndex });
+        },
       });
     }
   } catch (err) {
@@ -732,6 +765,76 @@ const resumeRoomTimers = (io, room) => {
 //   3. So this must run HERE — after those definitions and after restore, but
 //      it's fine that it's before io.on('connection') (timers only need `io`).
 getAllRooms().forEach(room => resumeRoomTimers(io, room));
+
+// ─── "Everyone we're waiting for has voted" checks ──────────────────────────
+// Compare against the CURRENT expected players (players.getActivePlayers), not
+// raw counts, so leavers neither block nor prematurely complete a phase.
+function checkWstVotesComplete(io, room, code) {
+  if (room.phase !== 'voting') return;
+  const answer = room.answers[room.currentAnswerIndex];
+  if (!answer || answer.allVotesIn) return;
+  const players = activePlayers(room);
+  if (players.length > 0 && players.every(p => answer.votes.some(v => v.voterId === p.id))) {
+    answer.allVotesIn = true;
+    if (room._timers?.wstVoting) room._timers.wstVoting.cancel();
+    io.to(code).emit('all_votes_in', { currentIndex: room.currentAnswerIndex });
+  }
+}
+
+function checkTotVotesComplete(io, room, code) {
+  if (room.phase !== 'tot' || room.tot?.roundState !== 'voting') return;
+  const players = activePlayers(room);
+  if (players.length > 0 && players.every(p => room.tot.votesA[p.id] || room.tot.votesB[p.id])) {
+    totGame.closeRound(io, room, code);
+  }
+}
+
+/**
+ * Re-evaluate every phase threshold after the expected-player set changed
+ * (disconnect, kick). Without this a round waited for its timer — or forever
+ * in untimed phases — for a player who had left (AUDIT.md P2-01).
+ */
+function recheckThresholds(io, room) {
+  const code = room.code;
+  try {
+    room._answerTracker?.recheck?.();
+    for (const key of ['draw', 'sit', 'mlt', 'fitb', 'selfie', 'caption', 'photoVote']) {
+      room[key]?._submissionTracker?.recheck?.();
+      room[key]?._voteCollector?.recheck?.();
+    }
+    checkWstVotesComplete(io, room, code);
+    checkTotVotesComplete(io, room, code);
+    recheckDtRoom(io, room, code);
+    intro.checkReady(room);
+  } catch (err) {
+    log.error('recheckThresholds failed', { code, err: err?.stack || String(err) });
+  }
+}
+
+// ─── Game end for the question-based games (WST, Situational, ToT, Mixed) ───
+// Mixed packs keep ToT points in room.tot.scores and Drawing points in
+// room.draw.scores; the final board used to show only whichever map belonged
+// to the last round (AUDIT.md P1-08). Mixed now sums every sub-game.
+function classicFinalScores(room) {
+  if (room.gameType !== 'mixed') {
+    return room.gameType === 'this-or-that' ? { ...(room.tot?.scores || {}) } : { ...(room.scores || {}) };
+  }
+  const total = {};
+  for (const part of [room.scores, room.tot?.scores, room.draw?.mixedMode ? room.draw?.scores : null]) {
+    for (const [pid, pts] of Object.entries(part || {})) {
+      if (typeof pts === 'number') total[pid] = (total[pid] || 0) + pts;
+    }
+  }
+  return total;
+}
+
+function endClassicGame(io, room, code, answers = []) {
+  room.phase = 'gameEnd';
+  const finalScores = classicFinalScores(room);
+  const finalStats = require('./game/gameLogic').computeStats(room.players, answers || [], finalScores);
+  io.to(code).emit('game_ended', { finalScores, players: room.players, stats: finalStats });
+  mergeToGlobalScores(io, room, finalScores);
+}
 
 // Cancel all active game timers for a room (called before starting a new game)
 function cancelAllTimers(room) {
@@ -759,7 +862,12 @@ function getPlayerSocket(player) {
 }
 // ────────────────────────────────────────────────────────────────────────────
 
+// Pre-game intro gate (every game start goes through an intro screen).
+const intro = createIntro({ io, getRoom, findPlayer, log });
+getAllRooms().forEach(room => intro.resume(room)); // restored mid-countdown
+
 io.on('connection', (socket) => {
+  hardenSocket(socket, log);
   log.debug('socket connected', { id: socket.id });
 
   // ─── Flood guard ────────────────────────────────────────────────────────────
@@ -782,9 +890,14 @@ io.on('connection', (socket) => {
       const code = room?.code || args[0]?.code || null;
       const player = room ? findPlayer(room, socket.id) : null;
       eventLog.logInbound(code, event, player?.id, room?.phase, args[0]);
+      // Any event from a room member is activity: keeps an active room from
+      // being evicted as idle (P2-35) and schedules a save of its new state.
+      if (room) touchRoom(room.code);
     } catch (_) { /* logging must never break gameplay */ }
     next();
   });
+
+  intro.register(socket);
 
   // ─── Auto-rejoin via handshake auth ────────────────────────────────────────
   // When a mobile player reconnects after a phone call / app switch, their
@@ -793,11 +906,18 @@ io.on('connection', (socket) => {
   (() => {
     const { playerId, roomCode, playerName } = socket.handshake.auth || {};
     if (!playerId || !roomCode) return;
+    // Only re-attach a player that still exists. joinRoom() would otherwise
+    // create a NEW player for a stale id (e.g. after a kick), and join_room
+    // would then add a second one — a phantom that inflated every count.
+    const knownRoom = getRoom(String(roomCode).toUpperCase());
+    if (!knownRoom || !knownRoom.players.some(p => p.id === playerId)) return;
     try {
       const { room, player, isRejoin } = joinRoom(roomCode, socket.id, playerName || '', playerId);
       if (!isRejoin) return; // Only handle returning players here; fresh joins go through join_room
       touchRoom(roomCode);
       socket.join(room.code);
+      // The owner coming back reclaims host; a hostless room gets one.
+      refreshHost(io, room);
       const uploadToken = issueUploadToken(room.code, player.id);
       socket.emit('join_success', {
         room: sanitizeRoomForClient(room),
@@ -833,7 +953,7 @@ io.on('connection', (socket) => {
       room.mixedRoundsPerGame = Math.min(5, Math.max(1, parseInt(data.roundsPerSubGame, 10) || 1));
     }
     socket.join(room.code);
-    socket.emit('room_created', { code: room.code, playerId: player.id, players: room.players, gameType: room.gameType, gameName: room.gameName, selectedSubGames: room.selectedSubGames, isPlaying: player.isPlaying, roomConfig: room.roomConfig, globalScores: room.globalScores });
+    socket.emit('room_created', { code: room.code, hostKey: room.hostKey, playerId: player.id, players: room.players, gameType: room.gameType, gameName: room.gameName, selectedSubGames: room.selectedSubGames, isPlaying: player.isPlaying, roomConfig: room.roomConfig, globalScores: room.globalScores });
   });
 
   socket.on('join_room', ({ code, playerName, playerId }) => {
@@ -854,6 +974,8 @@ io.on('connection', (socket) => {
         }
       }
       socket.join(room.code);
+      // The owner coming back reclaims host; a hostless room gets one.
+      refreshHost(io, room);
       const uploadToken = issueUploadToken(room.code, player.id);
       socket.emit('join_success', {
         room: sanitizeRoomForClient(room),
@@ -948,14 +1070,15 @@ io.on('connection', (socket) => {
     const player = findPlayer(room, socket.id);
     if (!player || !player.isConnected) return;
     
-    // Add custom question natively inside array
-    if (text.trim().length > 0) {
-      room.customQuestions.push({ id: `c-${room.customQuestions.length}`, text: text.trim(), saveToBank: !!saveToBank });
+    // Add custom question (string, trimmed, capped length and count — P3-18)
+    const clean = typeof text === 'string' ? text.trim().slice(0, 200) : '';
+    if (clean.length > 0 && room.customQuestions.length < 100) {
+      room.customQuestions.push({ id: `c-${room.customQuestions.length}`, text: clean, saveToBank: !!saveToBank });
       io.to(code).emit('custom_questions_updated', { customQuestions: room.customQuestions });
     }
   });
 
-  socket.on('start_game', ({ code }) => {
+  socket.on('start_game', ({ code, rounds }) => {
     const room = getRoom(code);
     if (!room) return;
     
@@ -963,11 +1086,14 @@ io.on('connection', (socket) => {
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
-    if (getActivePlayers(room).length < 3) return;
+    if (!requireMinPlayers(socket, room, room.gameType)) return;
 
     // MLT is started separately via mlt:start
     if (room.gameType === 'most-likely-to') return;
 
+    // The TV sends the host's chosen round count with the start request
+    // (it used to be ignored and every game played 3 rounds — AUDIT.md P1-04).
+    if (rounds !== undefined) room.totalRounds = clampRounds(rounds, room.totalRounds || 3);
     const count = Math.max(1, room.totalRounds);
     room.currentRound = 1;
     room.currentQuestionIndex = 0;
@@ -992,6 +1118,9 @@ io.on('connection', (socket) => {
       room.questions = selectMixedQuestions(mixedCount, room.mode, room.customQuestions, mixedTypes);
       room.miniGameSelectedTypes = mixedTypes;
       room.miniGamePlayedTypes = [];
+      // Fresh per-sub-game score maps (tot scores used to leak across games).
+      room.tot.scores = {};
+      if (room.draw) room.draw.scores = {};
     } else {
       // who-said-that
       room.questions = selectQuestions(room.mode, count, room.customQuestions);
@@ -1157,11 +1286,31 @@ io.on('connection', (socket) => {
     }
   });
 
+  // ─── Generic host controls for timed phases (AUDIT.md P1-05) ──────────────
+  // "Continue": end the current timed phase now, exactly as if its timer ran out.
+  socket.on('host:advance', ({ code }) => {
+    const room = getRoom(code);
+    if (!room) return;
+    const player = findPlayer(room, socket.id);
+    if (!player || !player.isHost) return;
+    advanceCurrentPhase(room);
+  });
+
+  socket.on('host:toggle_pause', ({ code }) => {
+    const room = getRoom(code);
+    if (!room) return;
+    const player = findPlayer(room, socket.id);
+    if (!player || !player.isHost) return;
+    const paused = togglePausePhase(room);
+    if (paused !== null) io.to(code).emit('phase_paused', { paused, phase: room._advance?.phase });
+  });
+
   socket.on('kick_player', ({ code, targetPlayerId }) => {
     const room = getRoom(code);
     if (!room) return;
     const host = findPlayer(room, socket.id);
     if (!host || !host.isHost) return;
+    if (targetPlayerId === host.id) return; // a host kicking themselves leaves the room hostless
 
     const targetPlayerIndex = room.players.findIndex(p => p.id === targetPlayerId);
     if (targetPlayerIndex !== -1) {
@@ -1175,6 +1324,7 @@ io.on('connection', (socket) => {
       
       // Notify remaining players
       io.to(code).emit('player_joined', { players: room.players });
+      recheckThresholds(io, room);
       
       // Disconnect the target player explicitly (TV socket, phone socket, and phoneSocketId if present)
       if (targetSocketId && io.sockets.sockets.get(targetSocketId)) {
@@ -1209,7 +1359,10 @@ io.on('connection', (socket) => {
     const player = findPlayer(room, socket.id);
     if (!player || !player.isConnected || !player.isPlaying) return;
 
-    const clean = clampText(text, MAX_ANSWER); // bound stored answer length
+    const clean = clampText(typeof text === 'string' ? text.trim() : '', MAX_ANSWER); // bound stored answer length
+    // Blank answers are refused (the client disables Submit too); a player who
+    // never answers gets the timer's placeholder instead (AUDIT.md P2-09).
+    if (!clean) return;
 
     const existingAnswer = room.answers.find(a => a.playerId === player.id);
     if (existingAnswer) {
@@ -1230,7 +1383,10 @@ io.on('connection', (socket) => {
     const answeredPlayerIds = room._answerTracker?.getPlayerIds() ?? room.answers.map(a => a.playerId);
     io.to(code).emit('answer_received', { answeredCount, totalPlayers: connectedPlayersCount, answeredPlayerIds });
 
-    if ((room._answerTracker?.isComplete()) || answeredCount >= connectedPlayersCount) {
+    const everyoneAnswered = room._answerTracker
+      ? room._answerTracker.isComplete()
+      : activePlayers(room).every(p => room.answers.some(a => a.playerId === p.id));
+    if (everyoneAnswered) {
       advanceWstAnswerPhase(io, room, code);
     }
   });
@@ -1242,6 +1398,7 @@ io.on('connection', (socket) => {
     const player = findPlayer(room, socket.id);
     if (!player || !player.isConnected || !player.isPlaying) return;
     if (answerId === player.id) return;           // can't vote own answer
+    if (!room.answers.some(a => a.playerId === answerId)) return; // must be a real answer (P3-17)
 
     // Use VoteCollector for dedup + threshold detection
     const accepted = room.sit._voteCollector
@@ -1293,10 +1450,7 @@ io.on('connection', (socket) => {
       room.currentQuestionIndex++;
       emitNextQuestion(io, room, code);
     } else {
-      room.phase = 'gameEnd';
-      const finalStats = require('./game/gameLogic').computeStats(room.players, room.answers, room.scores);
-      io.to(code).emit('game_ended', { finalScores: room.scores, players: room.players, stats: finalStats });
-      mergeToGlobalScores(io, room, room.scores);
+      endClassicGame(io, room, code, room.answers);
     }
   });
 
@@ -1308,7 +1462,12 @@ io.on('connection', (socket) => {
     if (!player || !player.isConnected || !player.isPlaying) return;
 
     const currentAnswer = room.answers[room.currentAnswerIndex];
-    if (!currentAnswer) return;      const connectedPlayersCount = activePlayers(room).length;
+    if (!currentAnswer) return;
+    // Voting on this answer is closed (all in / timer out): the author may
+    // already be shown, so a late vote would be a free point (P3-17).
+    if (currentAnswer.allVotesIn) return;
+    // The target must be a real player.
+    if (!room.players.some(p => p.id === votedPlayerId)) return;      const connectedPlayersCount = activePlayers(room).length;
     const expectedVotes = connectedPlayersCount; 
 
     // allow author to fake vote, record it so they look identical to others
@@ -1323,17 +1482,19 @@ io.on('connection', (socket) => {
     io.to(code).emit('vote_received', { votedCount: currentAnswer.votes.length, totalPlayers: expectedVotes, votedPlayerIds: currentAnswer.votes.map(v => v.voterId) });
     log.debug('WST vote', { votes: currentAnswer.votes.length, expected: expectedVotes, code });
 
-    if (currentAnswer.votes.length >= expectedVotes) {
-      if (room._timers?.wstVoting) room._timers.wstVoting.cancel();
-      io.to(code).emit('all_votes_in', { currentIndex: room.currentAnswerIndex });
-    }
+    checkWstVotesComplete(io, room, code);
   });
 
 
 
-  socket.on('next_answer_request', ({ code }) => {
+  socket.on('next_answer_request', ({ code, answerIndex }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'voting') return;
+    const requester = findPlayer(room, socket.id);
+    if (!requester || !requester.isHost) return;
+    // Stale request (double-click, or TV + phone both pressing): the client
+    // says which answer it wants to move past; ignore it if we already moved.
+    if (typeof answerIndex === 'number' && answerIndex !== room.currentAnswerIndex) return;
 
     if (room._timers?.wstVoting) room._timers.wstVoting.cancel();
 
@@ -1364,10 +1525,7 @@ io.on('connection', (socket) => {
       room.currentQuestionIndex++;
       emitNextQuestion(io, room, code);
     } else {
-      room.phase = 'gameEnd';
-      const finalStats = require('./game/gameLogic').computeStats(room.players, room.answers, room.scores);
-      io.to(code).emit('game_ended', { finalScores: room.scores, players: room.players, stats: finalStats });
-      mergeToGlobalScores(io, room, room.scores);
+      endClassicGame(io, room, code, room.answers);
     }
   });
 
@@ -1399,15 +1557,14 @@ io.on('connection', (socket) => {
       votedPlayerIds: [...Object.keys(room.tot.votesA), ...Object.keys(room.tot.votesB)],
     });
 
-    const allVoted = connectedPlayers.every(p => room.tot.votesA[p.id] || room.tot.votesB[p.id]);
-    if (voteCount >= connectedPlayers.length || allVoted) {
-      totGame.closeRound(io, room, code);
-    }
+    checkTotVotesComplete(io, room, code);
   });
 
   socket.on('tot:next_round', ({ code }) => {
     const room = getRoom(code);
-    if (!room || room.phase !== 'tot') return;
+    // Only advance from the results screen: a second click lands in the next
+    // round's voting and used to skip a whole question (AUDIT.md P1-01).
+    if (!room || room.phase !== 'tot' || room.tot.roundState !== 'results') return;
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
@@ -1415,10 +1572,7 @@ io.on('connection', (socket) => {
       if (room.gameType === 'this-or-that') {
         totGame.sendEnd(io, room, code);
       } else {
-        room.phase = 'gameEnd';
-        const finalStats = require('./game/gameLogic').computeStats(room.players, [], room.tot.scores);
-        io.to(code).emit('game_ended', { finalScores: room.tot.scores, players: room.players, stats: finalStats });
-        mergeToGlobalScores(io, room, room.tot.scores);
+        endClassicGame(io, room, code, []);
       }
       return;
     }
@@ -1438,9 +1592,7 @@ io.on('connection', (socket) => {
       if (room.gameType === 'this-or-that') {
         totGame.sendEnd(io, room, code);
       } else {
-        room.phase = 'gameEnd';
-        io.to(code).emit('game_ended', { finalScores: room.tot.scores, players: room.players, stats: {} });
-        mergeToGlobalScores(io, room, room.tot.scores);
+        endClassicGame(io, room, code, []);
       }
       return;
     }
@@ -1525,7 +1677,7 @@ io.on('connection', (socket) => {
 
   // ─── Host screen spectator ──────────────────────────────────────────────────
 
-  socket.on('join_spectator', ({ code } = {}) => {
+  socket.on('join_spectator', ({ code, hostKey } = {}) => {
     if (!code || typeof code !== 'string') { socket.emit('error', { message: 'Room code required' }); return; }
     const room = getRoom(code.toUpperCase().slice(0, 8));
     if (!room) { socket.emit('error', { message: 'Room not found' }); return; }
@@ -1533,22 +1685,17 @@ io.on('connection', (socket) => {
     const playerId = null;
     socket.join(room.code);
 
-    // Transfer host socket to this TV/host-screen connection so all host-guarded
-    // events work regardless of whether the room was created from this socket.
-    const hostPlayer = room.players.find(p => p.isHost);
-    if (hostPlayer) {
-      // Preserve the host player's original phone socket so they can still
-      // participate in games (drawing, guessing, voting) on their phone.
-      if (hostPlayer.socketId && hostPlayer.socketId !== socket.id) {
-        hostPlayer.phoneSocketId = hostPlayer.socketId;
-      }
-      hostPlayer.socketId = socket.id;
-      hostPlayer.isConnected = true;
-    }
+    // Only a screen presenting the room's host key controls the game (the
+    // creator's TV reconnecting, or a phone host's 'Show on TV' link). Anyone
+    // else who opens /host?room=CODE gets a view-only display (P2-31).
+    const { canControl, hostChanged } = bindDisplay(room, socket.id, hostKey);
+    if (hostChanged) io.to(room.code).emit('host_changed', { host: room.host });
 
     const playingPlayers = getActivePlayers(room);
 
     socket.emit('spectator_joined', {
+      canControl,
+      intro: room.phase === 'intro' ? intro.introPayload(room) : null,
       room: {
         code: room.code,
         gameName: room.gameName,
@@ -1635,7 +1782,7 @@ io.on('connection', (socket) => {
           votedPlayerIds: Object.keys(room.selfie.votes || {}),
         } : null,
         // Caption state (for reconnect recovery)
-        caption: room.phase === 'caption' ? {
+        caption: (room.phase === 'caption' || room.phase === 'captionEnd') ? {
           phase: room.caption.phase,
           captionCount: Object.keys(room.caption.captions || {}).length,
           totalWriters: playingPlayers.length,
@@ -1645,7 +1792,7 @@ io.on('connection', (socket) => {
           votedPlayerIds: Object.keys(room.caption.votes || {}),
         } : null,
         // PhotoVote (pmatch / photoassoc) state (for reconnect recovery)
-        photoVote: room.phase === 'photovote' ? {
+        photoVote: (room.phase === 'photovote' || room.phase === 'photovoteEnd') ? {
           phase: room.photoVote?.phase || 'photo',
           submittedPlayerIds: Object.keys(room.photoVote?.photos || {}),
           voteCount: Object.keys(room.photoVote?.votes || {}).length,
@@ -1715,7 +1862,7 @@ io.on('connection', (socket) => {
     rateLimiter.forget(socket.id);
     const room = getRoomBySocketId(socket.id);
     if (room) {
-      const { player, newHost, wentOffline } = removePlayerBySocketId(socket.id, false);
+      const { player, wentOffline } = removePlayerBySocketId(socket.id, false);
       // If an MLT timer is running and room is now empty, clean it up
       if (room.phase === 'mlt' && room._timers?.mlt && room.players.filter(p => p.isConnected).length === 0) {
         room._timers.mlt.cancel();
@@ -1727,10 +1874,15 @@ io.on('connection', (socket) => {
       if (player && wentOffline) {
         io.to(room.code).emit('player_disconnected', { playerId: player.id, playerName: player.name });
         eventLog.logSystem(room.code, 'disconnect', player.id, room.phase, { name: player.name });
-        if (newHost) {
-          io.to(room.code).emit('host_changed', { host: newHost.id });
-          eventLog.logSystem(room.code, 'host_migrated', newHost.id, room.phase, { name: newHost.name });
+        if (player.isHost) {
+          // Give the host a grace period to come back before handing the role
+          // to a connected player (AUDIT.md P2-32).
+          noteHostOffline(room);
+          if (room._hostGraceTimer) clearTimeout(room._hostGraceTimer);
+          room._hostGraceTimer = setTimeout(() => { room._hostGraceTimer = null; refreshHost(io, room); }, HOST_GRACE_MS + 100);
         }
+        // The expected-player set shrank: a phase may now be complete.
+        recheckThresholds(io, room);
         // Persist the changed connection/host state.
         persistSoon();
       }
@@ -1749,8 +1901,8 @@ io.on('connection', (socket) => {
 
     cancelAllTimers(room);
 
+    if (!requireMinPlayers(socket, room, 'most-likely-to')) return;
     const connectedPlayers = getActivePlayers(room);
-    if (connectedPlayers.length < 2) return; // need at least 2 votable players
 
     // Build prompt pool (custom questions take priority, padded with bank)
     const customMltPrompts = (room.customQuestions || []).map(q => q.text).filter(Boolean);
@@ -1796,6 +1948,9 @@ io.on('connection', (socket) => {
     const player = findPlayer(room, socket.id);
     if (!player || !player.isConnected || !player.isPlaying) return;
 
+    // The target must be someone in this round (P3-17).
+    if (!getActivePlayers(room).some(p => p.id === targetPlayerId)) return;
+    mltGame.rehydrate(io, room, code); // helpers are not persisted across restarts
     const accepted = room.mlt._voteCollector?.castVote(player.id, targetPlayerId);
     if (!accepted) return;
     // room.mlt.votes[player.id] is kept in sync by VoteCollector's onVote callback
@@ -1811,7 +1966,8 @@ io.on('connection', (socket) => {
 
   socket.on('mlt:next_round', ({ code }) => {
     const room = getRoom(code);
-    if (!room || room.phase !== 'mlt') return;
+    // Only from results (a double-click would otherwise skip a round).
+    if (!room || room.phase !== 'mlt' || room.mlt.roundState !== 'results') return;
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
@@ -1863,15 +2019,21 @@ io.on('connection', (socket) => {
     room.mlt.prompt = candidate;
     room.mlt.prompts[room.mlt.round - 1] = candidate;
     room.mlt.votes = {};
+    // Active jokers are refunded with the new question: tell those players so
+    // their "jokers left" count doesn't stay one short (AUDIT.md P3-06).
+    for (const pid of Object.keys(room.mlt.jokersThisRound || {})) {
+      const p = room.players.find(pl => pl.id === pid);
+      if (p) io.to(getPlayerSocket(p)).emit('mlt:joker_state', { jokerActive: false, jokersLeft: room.mlt.jokers[pid] ?? 2 });
+    }
     room.mlt.jokersThisRound = {};
     room.mlt.roundState = 'voting';
     room.mlt.phase = 'voting';
     room.mlt.paused = false;
-    room.players.forEach(p => { p.joinedMidRound = false; });
+    admitLateJoiners(io, room);
 
     // Re-create VoteCollector for the fresh question
     room.mlt._voteCollector = VoteCollector.create({
-      getExpectedCount: () => activePlayers(room).length,
+      getExpectedIds: () => activePlayers(room).map(p => p.id),
       allowSelfVote:    true,
       onVote:           (voterId, targetId) => { room.mlt.votes[voterId] = targetId; },
       onComplete:       () => mltGame.showResults(io, room, code),
@@ -1970,11 +2132,11 @@ io.on('connection', (socket) => {
     if (!player || !player.isHost) return;
 
     cancelAllTimers(room);
-    room.players.forEach(p => { p.joinedMidRound = false; });
+    admitLateJoiners(io, room);
+    if (!requireMinPlayers(socket, room, 'drawing')) return;
     const playingPlayers = getActivePlayers(room);
-    if (playingPlayers.length < 2) return;
 
-    const totalRounds = Math.min(Math.max(parseInt(rounds) || room.totalRounds || 3, 1), 10);
+    const totalRounds = clampRounds(rounds, room.totalRounds || 3);
     const drawMode = mode === 'secret' ? 'secret' : 'classic';
     const scores = {};
     playingPlayers.forEach(p => { scores[p.id] = 0; });
@@ -2046,6 +2208,7 @@ io.on('connection', (socket) => {
         playingPlayers.forEach((p, i) => {
           room.draw.playerWords[p.id] = shuffled[i % shuffled.length];
           delete room.draw.submissions[p.id];
+          room.draw._submissionTracker?.remove(p.id); // must redraw before voting (P2-39)
           if (getPlayerSocket(p)) io.to(getPlayerSocket(p)).emit('draw:secret_word', { word: room.draw.playerWords[p.id], skipped: true });
         });
         const submittedCount = Object.keys(room.draw.submissions).length;
@@ -2055,6 +2218,7 @@ io.on('connection', (socket) => {
         const newWord = pickDrawWord();
         room.draw.playerWords[player.id] = newWord;
         delete room.draw.submissions[player.id];
+        room.draw._submissionTracker?.remove(player.id); // must redraw before voting (P2-39)
         socket.emit('draw:secret_word', { word: newWord, skipped: true });
         const submittedCount = Object.keys(room.draw.submissions).length;
         io.to(code).emit('draw:submission_received', { submittedCount, totalDrawers: playingPlayers.length, submittedPlayerIds: Object.keys(room.draw.submissions) });
@@ -2171,11 +2335,7 @@ io.on('connection', (socket) => {
         room.currentQuestionIndex++;
         room.currentRound++;
         if (room.currentQuestionIndex >= room.questions.length) {
-          room.phase = 'gameEnd';
-          const { computeStats } = require('./game/gameLogic');
-          const finalStats = computeStats(room.players, [], room.scores);
-          io.to(code).emit('game_ended', { finalScores: room.scores, players: room.players, stats: finalStats });
-          mergeToGlobalScores(io, room, room.scores);
+          endClassicGame(io, room, code, []);
         } else {
           emitNextQuestion(io, room, code);
         }
@@ -2199,6 +2359,7 @@ io.on('connection', (socket) => {
     room.draw.secondsLeft = room.draw.timeLimit;
     room.draw.skipCount = 0;
 
+    admitLateJoiners(io, room);
     const nextPlayingPlayers = getActivePlayers(room);
     const players = nextPlayingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
 
@@ -2299,11 +2460,10 @@ io.on('connection', (socket) => {
     if (!player || !player.isHost) return;
 
     cancelAllTimers(room);
+    admitLateJoiners(io, room);
+    if (!requireMinPlayers(socket, room, 'fill-in-the-blank')) return;
     const playingPlayers = getActivePlayers(room);
-    if (playingPlayers.length < 2) return;
-
-    room.players.forEach(p => { p.joinedMidRound = false; });
-    const totalRounds = Math.min(Math.max(parseInt(rounds) || room.totalRounds || 3, 1), 10);
+    const totalRounds = clampRounds(rounds, room.totalRounds || 3);
     const timeLimit = room.roomConfig?.roundDurationSecs || 30;
     const scores = {};
     playingPlayers.forEach(p => { scores[p.id] = 0; });
@@ -2324,7 +2484,7 @@ io.on('connection', (socket) => {
       paused: false,
     };
     room.fitb._submissionTracker = SubmissionTracker.create({
-      getExpectedCount: () => getActivePlayers(room).length,
+      getExpectedIds: () => getActivePlayers(room).map(p => p.id),
       onComplete: () => startFitbVoting(io, room, code),
     });
     room.fitb.question = pickFitbQuestion(room, room.players);
@@ -2386,8 +2546,13 @@ io.on('connection', (socket) => {
     room._timers?.fitbAnswer?.cancel();
     room.fitb.phase = 'voting';
     room.fitb._votes = {};
+    startPhaseTimer(io, room, code, {
+      key: 'fitbVote', seconds: VOTE_SECS, phase: 'fitb-voting',
+      isActive: () => room.phase === 'fitb' && room.fitb?.phase === 'voting',
+      onExpire: () => resolveFitbVoting(io, room, code),
+    });
     room.fitb._voteCollector = VoteCollector.create({
-      getExpectedCount: () => getActivePlayers(room).length,
+      getExpectedIds: () => getActivePlayers(room).map(p => p.id),
       allowSelfVote: false,
       onVote: (voterId, idxStr) => {
         if (!room.fitb._votes) room.fitb._votes = {};
@@ -2414,7 +2579,7 @@ io.on('connection', (socket) => {
     });
     // Broadcast to everyone else in the room (host socket, spectator/browser screen, non-playing players)
     // This ensures the host TV screen receives the event even when it has a separate socket from hostPlayer.
-    const playingSocketIds = playingPlayers.map(p => p.socketId);
+    const playingSocketIds = playingPlayers.map(p => getPlayerSocket(p));
     io.to(code).except(playingSocketIds).emit('fitb:voting_started', {
       answers: anonAnswers,
       question: room.fitb.question,
@@ -2556,6 +2721,7 @@ io.on('connection', (socket) => {
     room.fitb.question = pickFitbQuestion(room, room.players);
     const timeLimit = room.roomConfig?.roundDurationSecs || 30;
 
+    admitLateJoiners(io, room);
     const playingPlayers = getActivePlayers(room);
     const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
     io.to(code).emit('fitb:round_start', {
@@ -2590,11 +2756,12 @@ io.on('connection', (socket) => {
     if (!room) return;
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
-    const validGameTypes = ['who-said-that', 'most-likely-to', 'situational', 'this-or-that', 'mixed', 'drawing', 'fill-in-the-blank', 'selfie-roast', 'caption', 'pmatch', 'photoassoc', 'selfie-beforeafter', 'draw-telephone'];
-    if (!validGameTypes.includes(newGameType)) return;
+    if (!isGameId(newGameType)) return;
 
-    // Cancel any active timers before resetting state
+    // Cancel any active timers (and a pending intro) before resetting state
     cancelAllTimers(room);
+    if (room._introTimer) { clearTimeout(room._introTimer); room._introTimer = null; }
+    room.intro = null;
 
     room.gameType = newGameType;
     room.phase = 'lobby';
@@ -2634,7 +2801,8 @@ io.on('connection', (socket) => {
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     room.globalScores = {};
-    io.to(code).emit('global_scores_updated', { globalScores: {}, leaderboard: [] });
+    const leaderboard = room.players.filter(p => p.isPlaying).map(p => ({ id: p.id, name: p.name, color: p.color, score: 0 }));
+    io.to(code).emit('global_scores_updated', { globalScores: {}, leaderboard });
   });
 
   socket.on('remove_from_global_scores', ({ code, playerId }) => {

@@ -5,13 +5,17 @@ import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
 import SelfieCapture from '../components/game/SelfieCapture.jsx';
 import { uploadPhoto } from '../utils/photoUpload.js';
+import { translations } from '../locales/translations';
 
 export default function PhotoVotePhotoPage() {
   const { state, dispatch } = useGame();
   const pv = state.photoVote;
   const sounds = useSounds();
+  const lang = translations[state.lang] || translations.en;
+  const t = lang.photo || translations.en.photo;
+  const tc = lang.common || translations.en.common;
 
-  const modeLabel = pv.subType === 'photoassoc' ? 'Prompt Match 🎯' : 'Selfie Challenge 🎭';
+  const modeLabel = pv.subType === 'photoassoc' ? t.promptMatch : t.selfieChallenge;
   const modeColor = pv.subType === 'photoassoc' ? '#A29BFE' : '#FDCB6E';
 
   const handleSubmit = async (photoData) => {
@@ -29,19 +33,19 @@ export default function PhotoVotePhotoPage() {
     >
       <h1 style={{ color: modeColor }} className="text-3xl font-['Fredoka_One'] mt-6 mb-1">{modeLabel}</h1>
       <p className="text-gray-400 font-['Nunito'] text-sm text-center mb-2">
-        Round {pv.round} of {pv.totalRounds}
+        {tc.round.replace('{current}', pv.round).replace('{total}', pv.totalRounds)}
       </p>
       {pv.prompt ? (
         <div
           className="w-full max-w-sm rounded-2xl p-4 mb-5 text-center"
           style={{ backgroundColor: modeColor + '22', border: `2px solid ${modeColor}66` }}
         >
-          <p className="text-xs font-['Nunito'] text-gray-400 uppercase tracking-widest mb-1">Your Challenge</p>
+          <p className="text-xs font-['Nunito'] text-gray-400 uppercase tracking-widest mb-1">{t.yourChallenge}</p>
           <p style={{ color: modeColor }} className="font-['Fredoka_One'] text-lg leading-snug">{pv.prompt}</p>
         </div>
       ) : (
         <p className="text-gray-400 font-['Nunito'] text-sm text-center mb-6">
-          Take a selfie — everyone will vote on who fits each prompt best!
+          {t.photoVoteHint}
         </p>
       )}
 

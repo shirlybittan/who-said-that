@@ -20,6 +20,10 @@ export default function QuestionPage() {
   const timerActive = state.phaseTimer?.active ?? false;
   const timerPaused = state.phaseTimer?.paused ?? false;
 
+  // Expected answerers: connected, playing, not waiting for the next round
+  // (the TV "Screen Cast" player used to be counted — AUDIT.md P2-03).
+  const expectedCount = state.players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound).length;
+
   const isSituational = state.currentRoundType === 'situational';
   const target = state.situationalTarget;
 
@@ -114,16 +118,11 @@ export default function QuestionPage() {
       className="flex flex-col items-center justify-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 text-center shadow-lg"
       initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}
     >
-<div className="mt-16 mb-8 w-full max-w-lg">
+<div className="mt-2 mb-8 w-full max-w-lg">
           <h3 className="text-xl font-['Fredoka_One'] text-[#FFE66D] uppercase tracking-widest mb-2">
             {t.round} {state.currentRound} {t.of} {state.totalRounds}
           </h3>
-          {/* Server-driven timer */}
-          {timerActive && !hasConfirmed && (
-            <p className={`text-xl font-bold font-['Nunito'] mb-2 ${serverTimeLeft <= 5 ? 'text-red-400 animate-pulse' : serverTimeLeft <= 15 ? 'text-orange-400' : 'text-gray-400'}`}>
-              ⏳ {serverTimeLeft}s
-            </p>
-          )}
+          {/* The round timer lives in the app shell (PlayerTopBar → GameTimer). */}
 
         {/* Situational: target player badge */}
         {isSituational && target && (
@@ -148,7 +147,7 @@ export default function QuestionPage() {
           </div>
         )}
 
-        <h1 className="text-4xl md:text-5xl font-['Nunito'] font-bold text-white mt-4">
+        <h1 className="text-4xl md:text-5xl font-['Nunito'] font-bold text-white mt-4 [overflow-wrap:anywhere]">
           "{typeof state.currentQuestion === 'string' ? state.currentQuestion : (state.currentQuestion?.[state.lang] || state.currentQuestion?.en)}"
         </h1>
       </div>
@@ -185,20 +184,20 @@ export default function QuestionPage() {
             onChangePrompt={state.isHost ? handleSkip : undefined}
             confirmLabel={state.hasAnswered ? t.updateBtn : t.submitBtn}
             editLabel={t.editBtn}
-            disableConfirm={false}
+            value={answer}
             isHost={state.isHost}
           >
             <textarea
               data-testid="player-answer-input"
               value={answer}
               onChange={(e) => handleAnswerChange(e.target.value)}
-              placeholder={isSituational && target ? `What would ${target.name} say?` : t.typeAnswerPlaceholder}
+              placeholder={isSituational && target ? tSit.whatWouldSay.replace('{name}', target.name) : t.typeAnswerPlaceholder}
               className="w-full p-4 rounded-xl text-black bg-white focus:bg-[#FFF] font-['Nunito'] text-[16px] border-4 border-transparent focus:border-[#FFE66D] focus:outline-none resize-none h-32"
               maxLength={150}
             />
           </MiniGameWrapper>
           <p className="text-xs text-gray-500 font-['Nunito'] mt-3 text-center">
-            {state.answeredCount} / {state.totalPlayers || state.players.length} {t.answered}
+            {Math.min(Math.max(state.answeredCount, state.roundProgress?.doneIds?.length || 0), expectedCount)} / {expectedCount} {t.answered}
           </p>
         </div>
       )}

@@ -1,69 +1,110 @@
-import React from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
+import WaitingFor from '../game-core/player/WaitingFor';
+import { useGame } from '../store/gameStore.jsx';
+import { translations } from '../locales/translations';
 
 /**
- * MiniGameWrapper — enforces a unified Input → Confirm → Waiting lifecycle
- * for every mini-game input phase.
+ * MiniGameWrapper — the canonical Input → Confirm → Waiting lifecycle for every
+ * mini-game input phase (text answers, prompts, captions, drawings).
  *
  * Lifecycle:
- *   Input/Edit Phase  (!hasConfirmed): renders children + Confirm button
- *   Waiting Phase     (hasConfirmed):  renders children + waiting message + Edit Response button
+ *   Input phase   (!hasConfirmed): children + Confirm button
+ *   Waiting phase (hasConfirmed):  children (locked) + waiting message +
+ *                                  who we're waiting for + Edit button
  *
- * The Change Prompt button is rendered below the action area for hosts only.
+ * Canonical rules (AUDIT.md §6.1 "Confirm / submit"):
+ *   - Confirm is disabled while `value` is empty/whitespace (or disableConfirm).
+ *   - After Confirm the inputs inside are locked (a <fieldset disabled>) until
+ *     the player presses Edit — typing into a submitted box used to be silently
+ *     discarded, and Enter could re-submit. Canvas games that keep drawing after
+ *     submitting pass lockWhenConfirmed={false}.
+ *   - Edit is only offered when the game allows changing a submitted answer
+ *     (onEditResponse provided).
  *
  * Props:
- *   hasConfirmed   {boolean}   Whether the player has confirmed their response
- *   onConfirm      {Function}  Called when Confirm is clicked
- *   onEditResponse {Function}  Called when Edit Response is clicked
- *   onChangePrompt {Function}  (optional) Called when Change Prompt is clicked — only visible to hosts
- *   confirmLabel   {string}    Label for the Confirm button (default "✓ Confirm")
- *   disableConfirm {boolean}   Whether the Confirm button is disabled
- *   isHost         {boolean}   Whether the current player is the host
- *   waitingMessage {string}    Text shown in the waiting phase
- *   children       {ReactNode} The raw input content (textarea / canvas / etc.)
+ *   hasConfirmed, onConfirm, onEditResponse, onChangePrompt, isHost
+ *   value              current input value (text phases) — enables the empty check
+ *   disableConfirm     extra condition (e.g. no strokes yet, no [name] in prompt)
+ *   lockWhenConfirmed  default true
+ *   confirmLabel / editLabel / waitingMessage — override translated defaults
  */
 export default function MiniGameWrapper({
   hasConfirmed,
   onConfirm,
   onEditResponse,
   onChangePrompt,
-  confirmLabel = '✓ Confirm',
-  editLabel = '✏️ Edit Response',
+  confirmLabel,
+  editLabel,
   disableConfirm = false,
+  value,
+  lockWhenConfirmed = true,
   isHost = false,
-  waitingMessage = 'Waiting for other players…',
+  waitingMessage,
   children,
 }) {
+  const { state } = useGame();
+  const t = translations[state.lang]?.common || translations.en.common;
+  // Empty check by default: use `value` when given, otherwise read the text
+  // input/textarea inside the wrapper (canvas phases have none → never empty).
+  const fieldsetRef = useRef(null);
+  const [domEmpty, setDomEmpty] = useState(false);
+  // This effect runs after every render (a field can be reset without an input
+  // event), so it must only set state on a real change: a same-value setState
+  // can still schedule a render, which re-runs the effect — under a stream of
+  // timer ticks that nested loop hit "Maximum update depth exceeded" (P2-44).
+  const domEmptyRef = useRef(false);
+  useLayoutEffect(() => {
+    if (typeof value === 'string') return undefined;
+    const el = fieldsetRef.current;
+    const read = () => {
+      const field = el?.querySelector('textarea, input[type=text], input:not([type])');
+      const next = !!field && field.value.trim().length === 0;
+      if (next === domEmptyRef.current) return;
+      domEmptyRef.current = next;
+      setDomEmpty(next);
+    };
+    read();
+    el?.addEventListener('input', read);
+    return () => el?.removeEventListener('input', read);
+  });
+  const isEmpty = typeof value === 'string' ? value.trim().length === 0 : domEmpty;
+  const confirmDisabled = disableConfirm || isEmpty;
+
   return (
     <div className="w-full flex flex-col items-center gap-4">
-      {/* Input content: always rendered so players can keep editing */}
-      {children}
+      <fieldset ref={fieldsetRef} disabled={hasConfirmed && lockWhenConfirmed} className="w-full flex flex-col items-center min-w-0 border-0 p-0 m-0">
+        {children}
+      </fieldset>
 
       {!hasConfirmed ? (
         /* ── Input Phase ─────────────────────────────────────────────── */
         <button
           data-testid="player-answer-submit"
-          onClick={onConfirm}
-          disabled={disableConfirm}
+          onClick={() => { if (!confirmDisabled) onConfirm?.(); }}
+          disabled={confirmDisabled}
           className={`w-full max-w-sm py-4 rounded-2xl font-['Fredoka_One'] text-xl uppercase shadow-lg transition active:scale-95 ${
-            disableConfirm
+            confirmDisabled
               ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
               : 'bg-[#FFE66D] text-black hover:bg-[#ffdd33]'
           }`}
         >
-          {confirmLabel}
+          {confirmLabel || t.submit}
         </button>
       ) : (
         /* ── Waiting Phase ───────────────────────────────────────────── */
-        <div className="w-full max-w-sm flex flex-col items-center gap-3">
+        <div data-testid="player-waiting" className="w-full max-w-sm flex flex-col items-center gap-3">
           <p className="text-[#4ECDC4] font-['Nunito'] text-sm text-center animate-pulse">
-            ✓ {waitingMessage}
+            ✓ {waitingMessage || t.waitingOthers}
           </p>
-          <button
-            onClick={onEditResponse}
-            className="w-full py-3 rounded-2xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FFE66D] hover:text-[#FFE66D] transition active:scale-95"
-          >
-            {editLabel}
-          </button>
+          <WaitingFor />
+          {onEditResponse && (
+            <button
+              onClick={onEditResponse}
+              className="w-full py-3 rounded-2xl font-['Fredoka_One'] text-base border-2 border-[#2D2D44] text-gray-400 hover:border-[#FFE66D] hover:text-[#FFE66D] transition active:scale-95"
+            >
+              {editLabel || t.edit}
+            </button>
+          )}
         </div>
       )}
 

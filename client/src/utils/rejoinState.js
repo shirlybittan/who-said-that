@@ -7,7 +7,10 @@ const getBaseRoomPayload = (room, playerId, isRejoin) => {
   const isPlaying = myPlayer?.isPlaying ?? true;
   const isHost = room.host === playerId;
   const phase = room.phase;
-  const joinedMidRound = !isRejoin && phase && phase !== 'lobby';
+  // Server-authoritative: the player record carries joinedMidRound until the
+  // server admits them at the next round (players.admitLateJoiners). Deriving it
+  // from isRejoin broke on every resync, which reports isRejoin:true.
+  const joinedMidRound = !!myPlayer?.joinedMidRound && phase && phase !== 'lobby';
 
   return {
     roomCode: room.code,
@@ -76,6 +79,12 @@ export const getRouteForPhase = (phase, snapshot) => {
       if (snapshot?.phase === 'writing') return '/caption-write';
       if (snapshot?.phase === 'voting') return '/caption-vote';
       return '/caption-results';
+    case 'intro':
+      return '/intro';
+    case 'captionEnd':
+      return '/caption-results';
+    case 'photovoteEnd':
+      return '/photo-vote-results';
     case 'photovote':
       if (snapshot?.phase === 'photo') return '/photo-vote-photo';
       if (snapshot?.phase === 'voting') return '/photo-vote';
@@ -93,6 +102,17 @@ export const getRouteForPhase = (phase, snapshot) => {
     default:
       return '/lobby';
   }
+};
+
+// A refresh after voting (or during results) must come back to 'voted' /
+// the results, not to live buttons whose vote the server drops (P2-37).
+const totRestoreExtras = (room, playerId) => {
+  const tot = room.tot || {};
+  const extras = [];
+  const myChoice = tot.votesA?.[playerId] ? 'a' : tot.votesB?.[playerId] ? 'b' : null;
+  if (myChoice) extras.push({ type: 'TOT_MARK_VOTED', payload: { choice: myChoice } });
+  if (tot.roundState === 'results' && tot.lastResults) extras.push({ type: 'TOT_SET_RESULTS', payload: tot.lastResults });
+  return extras;
 };
 
 const buildClassicRestore = (room, playerId) => {
@@ -113,6 +133,9 @@ const buildClassicRestore = (room, playerId) => {
 
     const myAnswer = room.answers?.find((answer) => answer.playerId === playerId);
     if (myAnswer) actions.push({ type: 'MARK_ANSWERED', payload: { myAnswer: myAnswer.text } });
+    // Who has answered so far: a refreshed phone used to show "0 / 3" until the
+    // next answer arrived (AUDIT.md P2-03).
+    actions.push({ type: 'ROUND_PROGRESS', payload: { doneIds: (room.answers || []).map((a) => a.playerId), source: 'rejoin' } });
     return actions;
   }
 
@@ -200,7 +223,7 @@ const buildClassicRestore = (room, playerId) => {
         round: room.currentRound,
         totalRounds: room.totalRounds,
       },
-    }];
+    }, ...totRestoreExtras(room, playerId)];
   }
 
   if (phase === 'totEnd') {

@@ -5,11 +5,15 @@ import { QRCodeSVG } from 'qrcode.react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Confetti from 'react-confetti';
 import TimerRing from '../components/game/TimerRing';
+import SoundToggle from '../components/shell/SoundToggle';
+import LangSwitcher from '../components/shell/LangSwitcher';
 import VoteCoin from '../components/game/VoteCoin';
 import ReplayCanvas from '../components/game/ReplayCanvas';
-import { QUEUE_GAME_LABELS } from '../config/hostControls';
+import { PICKABLE_GAMES, PLAYLIST_GAMES, getGame, gameLabel, gameName, gameRules, startGame } from '../games/registry';
 import MostLikelyToHostView from '../games/most-likely-to/HostView.jsx';
 import ThisOrThatHostView from '../games/this-or-that/HostView.jsx';
+import useSingleFlight from '../game-core/hooks/useSingleFlight';
+import { TIMER_STOP_EVENTS } from '../game-core/roundTimer';
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001';
 const CLIENT_URL = (import.meta.env.VITE_CLIENT_URL || '').replace(/\/$/, '') || null;
@@ -18,20 +22,8 @@ const CLIENT_URL = (import.meta.env.VITE_CLIENT_URL || '').replace(/\/$/, '') ||
 
 const COLORS = ['#FF6B6B', '#4ECDC4', '#FFE66D', '#A8E6CF', '#FF8B94', '#6C5CE7', '#FFA07A', '#00CEC9'];
 
-const GAME_TYPE_LABELS = {
-  'who-said-that': '🤔 Who Said That?',
-  'situational': ' Situational',
-  'this-or-that': '⚡ This or That',
-  'most-likely-to': '👑 Most Likely To',
-  'mixed': '🎲 Mixed',
-  'drawing': '🎨 Pictionary Battle',
-  'fill-in-the-blank': '✏️ Fill in the Blank',
-  'draw-telephone': '📞 Drawing in Chain',
-  'selfie-roast': '📸 Draw on Friends',
-  'caption': '💬 Selfie Captions',
-  'pmatch': '🎭 Selfie Challenge',
-  'photoassoc': '🎯 Prompt Match',
-};
+// Game names/icons come from games/registry.js (single source of truth).
+const GAME_TYPE_LABELS = new Proxy({}, { get: (_, id) => (typeof id === 'string' ? gameLabel(id) : undefined) });
 
 // ─── Shared sub-components ───────────────────────────────────────────────────
 
@@ -268,7 +260,7 @@ function MltVotingPanel({ mlt, players, gameName }) {
         <div className="flex-1 bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
           <p className="text-xs font-['Nunito'] text-gray-500 uppercase tracking-widest mb-4">Voting</p>
           <div className="flex flex-wrap gap-4 justify-center">
-            {players.filter(p => p.isPlaying && p.isConnected).map(p => (
+            {players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound).map(p => (
               <PlayerAvatar key={p.id} player={p} size="md" status={mlt.votedPlayerIds?.includes(p.id) ? 'voted' : 'waiting'} />
             ))}
           </div>
@@ -430,7 +422,7 @@ function MltEndPanel({ mlt }) {
 }
 
 function QuestionPanel({ questionData, players, paused = false, serverSecondsLeft }) {
-  const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
+  const activePlayers = players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound);
   const computeSecondsLeft = () => {
     const elapsed = questionData.startedAt ? Math.floor((Date.now() - questionData.startedAt) / 1000) : 0;
     return Math.max(0, (questionData.roundDuration || 60) - elapsed);
@@ -520,7 +512,7 @@ function QuestionPanel({ questionData, players, paused = false, serverSecondsLef
 function VotingPanel({ votingData, players, phaseTimer }) {
   const current = votingData.answers?.[votingData.currentIndex];
   const authorId = current?.playerId;
-  const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
+  const activePlayers = players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound);
   return (
     <div className="flex flex-col items-center gap-8 w-full max-w-4xl" data-testid="host-question-screen">
       <div className="flex items-center gap-3">
@@ -534,7 +526,7 @@ function VotingPanel({ votingData, players, phaseTimer }) {
         <div className="w-full bg-[#1A1A2E] border-2 border-[#6C5CE7]/60 rounded-3xl p-8 relative"
           style={{ boxShadow: '0 0 40px #6C5CE720' }}>
           <span className="text-6xl text-[#6C5CE7]/20 font-['Fredoka_One'] absolute top-3 left-5 leading-none select-none">"</span>
-          <p className="text-4xl md:text-5xl font-['Fredoka_One'] text-white leading-snug relative z-10">
+          <p className="text-4xl md:text-5xl font-['Fredoka_One'] text-white leading-snug relative z-10 [overflow-wrap:anywhere]">
             {current?.text || '...'}
           </p>
           <span className="text-6xl text-[#6C5CE7]/20 font-['Fredoka_One'] absolute bottom-1 right-5 leading-none select-none rotate-180">"</span>
@@ -634,6 +626,69 @@ function RoundEndPanel({ roundEndData, players }) {
   );
 }
 
+// TV intro: game icon, name, rules, who's ready, countdown (server/game/intro.js).
+function IntroPanel({ intro }) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => { const id = setInterval(() => setNow(Date.now()), 250); return () => clearInterval(id); }, []);
+  if (!intro) return null;
+  const game = getGame(intro.gameType);
+  const accent = game?.accent || '#4ECDC4';
+  const readyIds = intro.readyIds || [];
+  const countdown = intro.countdown != null ? Math.max(1, Math.ceil(intro.countdown - (now - intro.at) / 1000)) : null;
+  return (
+    <div data-testid="host-intro" className="flex flex-col items-center gap-6 w-full max-w-3xl text-center">
+      <p className="text-8xl">{game?.icon || '🎮'}</p>
+      <h1 className="text-6xl font-['Fredoka_One']" style={{ color: accent }}>{gameName(intro.gameType)}</h1>
+      <p className="text-2xl font-['Nunito'] text-gray-200 max-w-2xl leading-snug">{gameRules(intro.gameType)}</p>
+      {countdown !== null ? (
+        <p className="text-8xl font-['Fredoka_One']" style={{ color: accent }}>{countdown}</p>
+      ) : (
+        <p className="text-lg font-['Nunito'] text-gray-400">Tap “I’m ready” on your phone · {readyIds.length}/{(intro.players || []).length} ready</p>
+      )}
+      <div className="flex flex-wrap justify-center gap-4">
+        {(intro.players || []).map(p => (
+          <PlayerAvatar key={p.id} player={p} size="lg" status={readyIds.includes(p.id) ? 'answered' : 'waiting'} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const END_STATUSES = ['game-end', 'mlt-end', 'tot-end', 'draw-end', 'fitb-end', 'selfie-results', 'dt-end', 'caption-end', 'photovote-end'];
+
+// Running total across every game played in this room (playlist / mixed).
+function PartyScoreboard({ leaderboard, isFinal, onReset }) {
+  return (
+    <div data-testid="party-scoreboard" className="w-full max-w-3xl mt-8 bg-[#1A1A2E] border-2 border-[#FFE66D]/40 rounded-2xl p-5">
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="font-['Fredoka_One'] text-2xl text-[#FFE66D]">{isFinal ? '🏆 Final Party Scoreboard' : '📊 Party Totals'}</h2>
+        {onReset && (
+          <button onClick={onReset} className="px-4 py-1.5 rounded-xl text-sm font-['Fredoka_One'] border-2 border-[#FF6B6B]/60 text-[#FF6B6B] hover:bg-[#FF6B6B]/10 active:scale-95 transition">
+            🧹 Reset points
+          </button>
+        )}
+      </div>
+      <ol className="flex flex-col gap-2">
+        {leaderboard.map((e, i) => (
+          <li key={e.id} className="flex items-center gap-3 font-['Nunito']">
+            <span className="w-8 text-center font-['Fredoka_One'] text-lg text-gray-400">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}</span>
+            <span className="w-8 h-8 rounded-full flex items-center justify-center text-black font-bold" style={{ backgroundColor: e.color }}>{e.name?.charAt(0).toUpperCase()}</span>
+            <span className="flex-1 text-white text-lg">{e.name}</span>
+            <span className="font-['Fredoka_One'] text-xl text-[#FFE66D]">{e.score}</span>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+// Caption / PhotoVote send a [{id, pts}] leaderboard; GameEndPanel wants {id: score}.
+const pointsToScores = (leaderboard, scores) => (
+  (leaderboard && leaderboard.length)
+    ? Object.fromEntries(leaderboard.map(e => [e.id, e.pts]))
+    : (scores || {})
+);
+
 function GameEndPanel({ gameEndData, players }) {
   const activePlayers = players.filter(p => p.isPlaying);
   const sorted = [...activePlayers].sort((a, b) => (gameEndData.finalScores[b.id] || 0) - (gameEndData.finalScores[a.id] || 0));
@@ -687,7 +742,7 @@ function GameEndPanel({ gameEndData, players }) {
 }
 
 function TotPanel({ totData, players }) {
-  const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
+  const activePlayers = players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound);
   if (totData.resultsVisible) {
     return (
       <div className="flex flex-col items-center gap-8 w-full max-w-4xl" data-testid="host-question-screen">
@@ -759,7 +814,7 @@ function TotPanel({ totData, players }) {
 }
 
 function SitPanel({ sitData, players, phaseTimer }) {
-  const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
+  const activePlayers = players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound);
   if (sitData.hasResults) {
     return (
       <div className="flex flex-col items-center gap-6 w-full max-w-4xl">
@@ -919,7 +974,7 @@ function DrawingHostPanel({ drawData, players, status }) {
       <div className="flex flex-col items-center gap-6 w-full max-w-xl">
         <motion.div className="text-center" initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }}>
           <p className="text-5xl mb-2">🎨</p>
-          <h1 className="text-4xl font-['Fredoka_One'] text-[#C39BD3]">Sketch It!</h1>
+          <h1 className="text-4xl font-['Fredoka_One'] text-[#C39BD3]">{gameName('drawing')}</h1>
           <div className="flex items-center justify-center gap-2 mt-1">
             {isSecretMode
               ? <span className="px-3 py-1 rounded-full bg-[#C39BD3]/20 text-[#C39BD3] text-xs font-['Nunito'] font-bold uppercase tracking-widest">✦ Secret Words</span>
@@ -1086,7 +1141,7 @@ function DrawingHostPanel({ drawData, players, status }) {
       <div className="flex flex-col items-center gap-8 w-full max-w-3xl">
         <motion.div className="text-center" initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }}>
           <p className="text-6xl mb-3">🎨</p>
-          <h1 className="text-5xl font-['Fredoka_One'] text-[#C39BD3] mb-2">Sketch It!</h1>
+          <h1 className="text-5xl font-['Fredoka_One'] text-[#C39BD3] mb-2">{gameName('drawing')}</h1>
           <p className="text-2xl font-['Fredoka_One'] text-[#FFE66D]">Game Over!</p>
         </motion.div>
 
@@ -1143,7 +1198,7 @@ function DrawingHostPanel({ drawData, players, status }) {
   return (
     <div className="flex flex-col items-center gap-4">
       <p className="text-5xl">🎨</p>
-      <h1 className="text-4xl font-['Fredoka_One'] text-[#C39BD3]">Sketch It!</h1>
+      <h1 className="text-4xl font-['Fredoka_One'] text-[#C39BD3]">{gameName('drawing')}</h1>
     </div>
   );
 }
@@ -1152,28 +1207,15 @@ function DrawingHostPanel({ drawData, players, status }) {
 function DtHostPanel({ dtData, players, status, onRevealNext, drawerTimers = {}, phaseTimer = null }) {
   const { phase, promptsSubmittedCount, totalPrompts, totalChains, chainsCompletedCount, chainProgress, guessedCount, totalGuessers, reveal, leaderboard } = dtData;
 
-  // Countdown for prompting phase
-  const [promptSecs, setPromptSecs] = useState(dtData.promptSecondsLeft || 60);
-  useEffect(() => {
-    if (status !== 'dt-prompting') return;
-    setPromptSecs(dtData.promptSecondsLeft || 60);
-    const id = setInterval(() => setPromptSecs(s => Math.max(0, s - 1)), 1000);
-    return () => clearInterval(id);
-  }, [status]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Vote countdown for reveal step 2 (guess+vote — auto-advances)
-  const isRevealVoteStep = status === 'dt-reveal' && (reveal?.step ?? 0) === 2;
-  const [hostVoteSecs, setHostVoteSecs] = useState(30);
-  useEffect(() => {
-    if (!isRevealVoteStep) return;
-    setHostVoteSecs(reveal?.voteSecondsLeft ?? 30);
-    const id = setInterval(() => setHostVoteSecs(s => Math.max(0, s - 1)), 1000);
-    return () => clearInterval(id);
-  }, [isRevealVoteStep]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Countdowns come from the server's phase_timer ticks (they used to be local
+  // intervals that ignored pause and drifted — AUDIT.md P2-29).
+  const promptSecs = phaseTimer?.phase === 'dt-prompting' ? phaseTimer.secondsLeft : (dtData.promptSecondsLeft || 60);
+  const hostVoteSecs = phaseTimer?.phase === 'dt-vote' ? phaseTimer.secondsLeft : (reveal?.voteSecondsLeft ?? 30);
+  const dtPaused = !!phaseTimer?.paused || !!dtData.paused;
 
   // ── PROMPTING phase ─────────────────────────────────────────────────────
   if (status === 'dt-prompting') {
-    const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
+    const activePlayers = players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound);
     return (
       <div className="flex flex-col items-center gap-6 w-full max-w-lg">
         <motion.div className="text-center" initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }}>
@@ -1181,7 +1223,7 @@ function DtHostPanel({ dtData, players, status, onRevealNext, drawerTimers = {},
           <h1 className="text-4xl font-['Fredoka_One'] text-[#FF6B6B]">Drawing in Chain</h1>
           <p className="text-xl text-gray-300 font-['Nunito'] mt-1">Players are writing prompts…</p>
         </motion.div>
-        <TimerRing secondsLeft={promptSecs} total={dtData.promptTimeTotal || 60} paused={false} size={100} />
+        <TimerRing secondsLeft={promptSecs} total={phaseTimer?.total || dtData.promptTimeTotal || 60} paused={dtPaused} size={100} />
         <div className="w-full bg-[#1A1A2E] rounded-2xl p-6 border border-[#FF6B6B]/30">
           <div className="flex justify-between items-center mb-3">
             <span className="text-gray-400 font-['Nunito']">Prompts submitted</span>
@@ -1198,7 +1240,7 @@ function DtHostPanel({ dtData, players, status, onRevealNext, drawerTimers = {},
 
   // ── SELFIE phase ────────────────────────────────────────────────────────
   if (status === 'dt-selfie') {
-    const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
+    const activePlayers = players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound);
     return (
       <div className="flex flex-col items-center gap-6 w-full max-w-lg">
         <motion.div className="text-center" initial={{ opacity: 0, y: -12 }} animate={{ opacity: 1, y: 0 }}>
@@ -1209,7 +1251,7 @@ function DtHostPanel({ dtData, players, status, onRevealNext, drawerTimers = {},
         <div className="w-full bg-[#1A1A2E] rounded-2xl p-6 border border-[#FF6B6B]/30">
           <div className="flex justify-between items-center mb-3">
             <span className="text-gray-400 font-['Nunito']">Selfies submitted</span>
-            <span className="text-[#FF6B6B] font-['Fredoka_One'] text-2xl">{(dtData.submittedPlayerIds || []).length}<span className="text-gray-500">/{totalPrompts}</span></span>
+            <span className="text-[#FF6B6B] font-['Fredoka_One'] text-2xl">{(dtData.submittedPlayerIds || []).length}<span className="text-gray-500">/{dtData.selfieTotalPhotographers || players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound).length}</span></span>
           </div>
           <ProgressBar value={(dtData.submittedPlayerIds || []).length} total={totalPrompts} color="#FF6B6B" />
           <div className="flex flex-wrap gap-2 mt-4 justify-center">
@@ -1222,7 +1264,7 @@ function DtHostPanel({ dtData, players, status, onRevealNext, drawerTimers = {},
 
   // ── DRAWING phase ────────────────────────────────────────────────────────
   if (status === 'dt-drawing') {
-    const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
+    const activePlayers = players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound);
     const chainEntries = Object.entries(chainProgress);
     const activeDrawerIds = dtData.activeDrawerIds || [];
     return (
@@ -1277,7 +1319,7 @@ function DtHostPanel({ dtData, players, status, onRevealNext, drawerTimers = {},
           </div>
           <ProgressBar value={guessedCount} total={totalGuessers} color="#FF6B6B" />
           <div className="flex flex-wrap gap-2 mt-4 justify-center">
-            {players.filter(p => p.isPlaying && p.isConnected).map(p => (
+            {players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound).map(p => (
               <PlayerAvatar key={p.id} player={p} size="sm" status={(dtData.guessedPlayerIds || []).includes(p.id) ? 'answered' : 'waiting'} />
             ))}
           </div>
@@ -1501,7 +1543,7 @@ function DtHostPanel({ dtData, players, status, onRevealNext, drawerTimers = {},
 }
 
 function FitbHostPanel({ fitbData, players, onSkipToVote, onShowResults, onNextRound }) {
-  const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
+  const activePlayers = players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound);
   if (fitbData.phase === 'end') {
     return (
       <div className="flex flex-col items-center gap-8 w-full max-w-lg">
@@ -1512,7 +1554,7 @@ function FitbHostPanel({ fitbData, players, onSkipToVote, onShowResults, onNextR
         </div>
         <div className="w-full flex flex-col gap-3">
           {(fitbData.leaderboard || []).map((entry, i) => (
-            <motion.div key={entry.playerId} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }}
+            <motion.div key={entry.playerId || entry.id || i} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }}
               className="flex items-center gap-4 rounded-2xl px-5 py-4"
               style={i === 0 ? { background: 'linear-gradient(135deg, #F9CA2420, #FFE66D20)', border: '2px solid #F9CA24' } : { background: '#1A1A2E', border: '1px solid #2D2D44' }}>
               <span className="text-2xl w-10 text-center">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}</span>
@@ -1532,8 +1574,8 @@ function FitbHostPanel({ fitbData, players, onSkipToVote, onShowResults, onNextR
           <h2 className="text-2xl font-['Fredoka_One'] text-[#F9CA24] leading-snug">{fitbData.question}</h2>
         </div>
         <div className="w-full flex flex-col gap-3">
-          {(fitbData.answers || []).sort((a, b) => (b.votes || 0) - (a.votes || 0)).map((ans, i) => (
-            <div key={ans.playerId} className="flex items-start gap-3 rounded-2xl px-5 py-4 bg-[#1A1A2E] border border-[#2D2D44]">
+          {[...(fitbData.answers || [])].sort((a, b) => (b.votes || 0) - (a.votes || 0)).map((ans, i) => (
+            <div key={ans.playerId || i} className="flex items-start gap-3 rounded-2xl px-5 py-4 bg-[#1A1A2E] border border-[#2D2D44]">
               <span className="font-['Fredoka_One'] text-[#FFE66D] w-6">{ans.votes || 0}★</span>
               <div className="flex-1">
                 <p className="text-white font-['Nunito'] italic">"{ans.text}"</p>
@@ -1712,7 +1754,7 @@ function PhotoVoteHostPanel({ photoVoteData, players }) {
 }
 
 function SimplePhotoHostPanel({ label, phase, players, onSkipToResults, onNextRound }) {
-  const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
+  const activePlayers = players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound);
   return (
     <div className="flex flex-col items-center gap-6 w-full max-w-xl">
       <h1 className="text-3xl font-['Fredoka_One'] text-[#FFE66D]">{label}</h1>
@@ -1747,7 +1789,7 @@ function CaptionHostPanel({ captionData, players }) {
   ) : null;
 
   if (phase === 'photo') {
-    const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
+    const activePlayers = players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound);
     return (
       <div className="flex flex-col items-center gap-6 w-full max-w-xl">
         <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">💬 Selfie Captions{roundLabel}</h1>
@@ -1761,7 +1803,7 @@ function CaptionHostPanel({ captionData, players }) {
 
   if (phase === 'writing') {
     const written = captionData.captionCount || 0;
-    const total = captionData.totalWriters || players.filter(p => p.isPlaying && p.isConnected).length;
+    const total = captionData.totalWriters || players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound).length;
     return (
       <div className="flex flex-col items-center gap-6 w-full max-w-xl">
         <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">💬 Selfie Captions{roundLabel}</h1>
@@ -1783,7 +1825,7 @@ function CaptionHostPanel({ captionData, players }) {
             <div className="bg-[#FD79A8] h-2 rounded-full transition-all" style={{ width: total ? `${(written / total) * 100}%` : '0%' }} />
           </div>
           <div className="flex flex-wrap gap-3 justify-center mt-4">
-            {players.filter(p => p.isPlaying && p.isConnected).map(p => (
+            {players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound).map(p => (
               <PlayerAvatar key={p.id} player={p} size="sm" status={(captionData.captionSubmittedPlayerIds || []).includes(p.id) ? 'answered' : 'waiting'} />
             ))}
           </div>
@@ -1794,7 +1836,7 @@ function CaptionHostPanel({ captionData, players }) {
 
   if (phase === 'voting') {
     const voted = captionData.voteCount || 0;
-    const total = captionData.totalVoters || players.filter(p => p.isPlaying && p.isConnected).length;
+    const total = captionData.totalVoters || players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound).length;
     return (
       <div className="flex flex-col items-center gap-6 w-full max-w-xl">
         <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">💬 Selfie Captions{roundLabel}</h1>
@@ -1821,7 +1863,7 @@ function CaptionHostPanel({ captionData, players }) {
             <div className="bg-[#FFE66D] h-2 rounded-full transition-all" style={{ width: total ? `${(voted / total) * 100}%` : '0%' }} />
           </div>
           <div className="flex flex-wrap gap-3 justify-center mt-4">
-            {players.filter(p => p.isPlaying && p.isConnected).map(p => (
+            {players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound).map(p => (
               <PlayerAvatar key={p.id} player={p} size="sm" status={captionData.votedPlayerIds?.includes(p.id) ? 'voted' : 'waiting'} />
             ))}
           </div>
@@ -1860,7 +1902,7 @@ function CaptionHostPanel({ captionData, players }) {
   }
 
   // Fallback
-  const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
+  const activePlayers = players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound);
   return (
     <div className="flex flex-col items-center gap-6 w-full max-w-xl">
       <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">💬 Selfie Captions{roundLabel}</h1>
@@ -1871,16 +1913,17 @@ function CaptionHostPanel({ captionData, players }) {
   );
 }
 
-function SelfieHostPanel({ selfieData, players, onSkipToVote, onShowResults }) {
-  const activePlayers = players.filter(p => p.isPlaying && p.isConnected);
+function SelfieHostPanel({ selfieData, players, isFinal, onSkipToVote, onShowResults }) {
+  const activePlayers = players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound);
   const roundLabel = selfieData.totalRounds > 1 ? ` — Round ${selfieData.round}/${selfieData.totalRounds}` : '';
   if (selfieData.phase === 'results') {
     return (
       <div className="flex flex-col items-center gap-8 w-full max-w-4xl" data-testid="host-question-screen">
-        <h1 className="text-4xl font-['Fredoka_One'] text-[#FD79A8]">🎨 Selfie Artist — Results{roundLabel}!</h1>
+        {isFinal && <h1 className="text-5xl font-['Fredoka_One'] text-[#FFE66D]">🎉 Game Over!</h1>}
+        <h1 className="text-4xl font-['Fredoka_One'] text-[#FD79A8]">{gameLabel('selfie-roast')} — {isFinal ? 'Final Results' : `Results${roundLabel}`}</h1>
         <div className="w-full flex flex-col gap-3">
           {(selfieData.leaderboard || []).map((entry, i) => (
-            <motion.div key={entry.playerId} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }}
+            <motion.div key={entry.playerId || entry.id || i} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.08 }}
               className="flex items-center gap-4 rounded-2xl px-5 py-4"
               style={i === 0 ? { background: 'linear-gradient(135deg, #FD79A820, #FFE66D20)', border: '2px solid #FD79A8' } : { background: '#1A1A2E', border: '1px solid #2D2D44' }}>
               <span className="text-2xl w-10 text-center">{i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}.`}</span>
@@ -1938,7 +1981,7 @@ function SelfieHostPanel({ selfieData, players, onSkipToVote, onShowResults }) {
   return (
     <div className="flex flex-col items-center gap-6 w-full max-w-xl">
       <p className="text-5xl">📸</p>
-      <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">Selfie Artist</h1>
+      <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8]">{gameLabel('selfie-roast')}</h1>
       <p className="text-gray-400 font-['Nunito']">Players are taking their selfies...</p>
       <div className="w-full bg-[#1A1A2E] border border-[#2D2D44] rounded-2xl p-5">
         <div className="flex items-center justify-between mb-3">
@@ -1957,19 +2000,8 @@ function SelfieHostPanel({ selfieData, players, onSkipToVote, onShowResults }) {
 }
 
 const GAME_TYPES_FOR_CREATE = [
-  { id: 'most-likely-to',    label: '👑 Most Likely To',      desc: 'Who fits the prompt?',           accent: '#4ECDC4' },
-  { id: 'who-said-that',     label: '🤔 Who Said That?',      desc: 'Guess who wrote it!',            accent: '#FFE66D' },
-  { id: 'situational',       label: ' Situational',         desc: 'Answer for someone!',            accent: '#A8E6CF' },
-  { id: 'this-or-that',      label: '⚡ This or That',        desc: 'Pick a side!',                   accent: '#6C5CE7' },
-  { id: 'drawing',           label: '🎨 Pictionary Battle',    desc: 'Draw and guess!',                accent: '#C39BD3' },
-  { id: 'fill-in-the-blank', label: '✏️ Fill in the Blank',  desc: 'Finish the sentence!',           accent: '#F9CA24' },
-  { id: 'draw-telephone',    label: '📞 Drawing in Chain',    desc: 'Draw step by step, guess the prompt!', accent: '#FF6B6B' },
-  { id: 'selfie-roast',      label: '📸 Draw on Friends',       desc: "Draw on someone's selfie!",     accent: '#FD79A8' },
-  { id: 'caption',           label: '💬 Selfie Captions',     desc: 'Write funny captions!',          accent: '#FD79A8' },
-  { id: 'pmatch',            label: '🎭 Selfie Challenge',    desc: 'Act out a prompt — best selfie wins!', accent: '#FDCB6E' },
-  { id: 'photoassoc',        label: '🎯 Prompt Match',        desc: 'Vote who matches the vibe!',     accent: '#A29BFE' },
-  { id: 'mixed',             label: '🎲 Mixed',               desc: 'All modes shuffled!',            accent: '#FF8B94' },
-  { id: 'playlist',          label: '📋 Playlist',            desc: 'Play multiple games in order!',  accent: '#FDCB6E', colSpan: 2 },
+  ...PICKABLE_GAMES.map(g => ({ id: g.id, label: gameLabel(g.id), desc: g.tagline, accent: g.accent })),
+  { id: 'playlist', label: '📋 Playlist', desc: 'Play multiple games in order!', accent: '#FDCB6E', colSpan: 2 },
 ];
 
 function SetupScreen({ onCreateRoom, onSpectate }) {
@@ -2029,12 +2061,8 @@ function SetupScreen({ onCreateRoom, onSpectate }) {
   );
 }
 
-const MIXED_SUB_GAMES = [
-  { id: 'who-said-that', label: '🤔 Who Said That?', accent: '#FFE66D' },
-  { id: 'situational',   label: ' Situational',   accent: '#A8E6CF' },
-  { id: 'this-or-that',  label: '⚡ This or That',  accent: '#6C5CE7' },
-  { id: 'drawing',       label: '🎨 Pictionary Battle',  accent: '#C39BD3' },
-];
+const MIXED_SUB_GAMES = ['who-said-that', 'situational', 'this-or-that', 'drawing']
+  .map(id => ({ id, label: gameLabel(id), accent: PICKABLE_GAMES.find(g => g.id === id)?.accent }));
 
 const DEFAULT_SUB_GAMES = ['who-said-that', 'situational', 'this-or-that', 'drawing'];
 
@@ -2092,19 +2120,7 @@ function CreateRoomForm({ onSubmit, onBack }) {
     }
   };
 
-  const PLAYLIST_GAME_OPTIONS = [
-    { id: 'most-likely-to', label: '👑 Most Likely To', accent: '#4ECDC4' },
-    { id: 'who-said-that',  label: '🤔 Who Said That?', accent: '#FFE66D' },
-    { id: 'situational',   label: ' Situational',   accent: '#A8E6CF' },
-    { id: 'this-or-that',  label: '⚡ This or That',  accent: '#6C5CE7' },
-    { id: 'drawing',       label: '🎨 Pictionary Battle',  accent: '#C39BD3' },
-    { id: 'fill-in-the-blank', label: '✏️ Fill in the Blank', accent: '#F9CA24' },
-    { id: 'draw-telephone', label: '📞 Drawing in Chain', accent: '#FF6B6B' },
-    { id: 'selfie-roast',  label: '📸 Draw on Friends', accent: '#FD79A8' },
-    { id: 'caption',       label: '💬 Selfie Captions', accent: '#FD79A8' },
-    { id: 'pmatch',        label: '🎭 Selfie Challenge', accent: '#FDCB6E' },
-    { id: 'photoassoc',    label: '🎯 Prompt Match',     accent: '#A29BFE' },
-  ];
+  const PLAYLIST_GAME_OPTIONS = PLAYLIST_GAMES.map(g => ({ id: g.id, label: gameLabel(g.id), accent: g.accent }));
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6 overflow-auto">
@@ -2283,13 +2299,26 @@ function CreateRoomForm({ onSubmit, onBack }) {
   );
 }
 
-// ─── Host control bar (creator only) ─────────────────────────────────────────
-// QUEUE_GAME_LABELS imported from '../config/hostControls'
+// Server phases timed by server/game/phaseTimer.js (phase_timer.phase labels).
+const TIMED_PHASES = ['selfie-photo', 'selfie-voting', 'caption-photo', 'caption-writing', 'caption-voting', 'photovote-photo', 'photovote-voting', 'dt-selfie', 'draw-voting', 'fitb-voting'];
 
-function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbData, photoVoteData, captionData, isMixedMode, onStart, onMltPauseResume, onMltChangeQuestion, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, onNewGame, onPlayAgain, onNewPartyPack, gameQueue, queueIndex, onSelfieNextRound, onSelfieSkipQuestion, onShowSelfieResults, onFitbChangeQuestion, onFitbSkipToVote, onFitbShowResults, onFitbNextRound, onPhotoVoteChangeQuestion, onPhotoVoteSkipToResults, onPhotoVoteNextRound, onCaptionChangeQuestion, onCaptionSkipToVoting, onCaptionSkipToResults, onCaptionNextRound, onAnswerPauseResume, answerPaused, onFitbPauseResume, dtData, onDtPauseResume }) {
+// ─── Host control bar (creator only) ─────────────────────────────────────────
+
+function HostControlBar({ onIntroStartNow, phaseTimer, onAdvancePhase, onTogglePhasePause, status, isRoomCreator, players, mlt, votingData, fitbData, photoVoteData, captionData, isMixedMode, onStart, onMltPauseResume, onMltChangeQuestion, onMltSkip, onMltNext, onNextRound, onSkipQuestion, onSkipMiniGame, onTotNext, onSitNext, onNextAnswer, onDrawSkipToVote, onDrawShowResults, onDrawNextRound, onDrawNewWord, onDrawRestart, onNextQueueGame, onNewGame, onPlayAgain, onNewPartyPack, gameQueue, queueIndex, onSelfieNextRound, onSelfieSkipQuestion, onShowSelfieResults, onFitbChangeQuestion, onFitbSkipToVote, onFitbShowResults, onFitbNextRound, onPhotoVoteChangeQuestion, onPhotoVoteSkipToResults, onPhotoVoteNextRound, onCaptionChangeQuestion, onCaptionSkipToVoting, onCaptionSkipToResults, onCaptionNextRound, onAnswerPauseResume, answerPaused, onFitbPauseResume, dtData, onDtPauseResume }) {
+  // One advance per click: a double-click must not skip content (AUDIT.md P1-01).
+  const guard = useSingleFlight(1000);
+  onMltNext = guard(onMltNext); onNextRound = guard(onNextRound); onSkipQuestion = guard(onSkipQuestion);
+  onTotNext = guard(onTotNext); onSitNext = guard(onSitNext); onNextAnswer = guard(onNextAnswer);
+  onDrawSkipToVote = guard(onDrawSkipToVote); onDrawShowResults = guard(onDrawShowResults); onDrawNextRound = guard(onDrawNextRound);
+  onNextQueueGame = guard(onNextQueueGame); onSelfieNextRound = guard(onSelfieNextRound); onShowSelfieResults = guard(onShowSelfieResults);
+  onFitbSkipToVote = guard(onFitbSkipToVote); onFitbShowResults = guard(onFitbShowResults); onFitbNextRound = guard(onFitbNextRound);
+  onPhotoVoteSkipToResults = guard(onPhotoVoteSkipToResults); onPhotoVoteNextRound = guard(onPhotoVoteNextRound);
+  onCaptionSkipToVoting = guard(onCaptionSkipToVoting); onCaptionSkipToResults = guard(onCaptionSkipToResults); onCaptionNextRound = guard(onCaptionNextRound);
+  onSkipMiniGame = guard(onSkipMiniGame); onMltSkip = guard(onMltSkip); onAdvancePhase = guard(onAdvancePhase);
+
   if (!isRoomCreator) return null;
 
-  const playingCount = players.filter(p => p.isPlaying && p.isConnected).length;
+  const playingCount = players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound).length;
   const canStart = playingCount >= 3;
 
   let controls = null;
@@ -2634,7 +2663,7 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
         </button>
       </div>
     );
-  } else if (status === 'game-end' || status === 'mlt-end' || status === 'tot-end' || status === 'draw-end' || status === 'fitb-end' || status === 'selfie-results' || status === 'dt-end') {
+  } else if (status === 'game-end' || status === 'mlt-end' || status === 'tot-end' || status === 'draw-end' || status === 'fitb-end' || status === 'selfie-results' || status === 'dt-end' || status === 'caption-end' || status === 'photovote-end') {
     const hasNextInQueue = gameQueue && gameQueue.length > 1 && queueIndex < gameQueue.length - 1;
     const nextGame = hasNextInQueue ? gameQueue[queueIndex + 1] : null;
     controls = (
@@ -2644,7 +2673,7 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
         </button>
         {hasNextInQueue && (
           <button onClick={onNextQueueGame} className="px-8 py-2.5 rounded-xl font-['Fredoka_One'] text-base bg-[#6C5CE7] text-white hover:bg-[#5a4bd0] active:scale-95 transition" style={{ boxShadow: '0 0 16px #6C5CE740' }}>
-            ▶ Next: {QUEUE_GAME_LABELS[nextGame.type] || nextGame.type}
+            ▶ Next: {gameName(nextGame.type)}
           </button>
         )}
         <button
@@ -2658,12 +2687,36 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
     );
   }
 
-  if (!controls) return null;
+  // Generic controls for any server-timed waiting phase (photos, captions,
+  // votes): a countdown, Pause, and "Continue" = end the phase now (P1-05).
+  const timedPhaseActive = !!phaseTimer?.phase && TIMED_PHASES.includes(phaseTimer.phase) && phaseTimer.secondsLeft > 0;
+  const timedControls = timedPhaseActive ? (
+    <div className="flex items-center gap-3" data-testid="timed-phase-controls">
+      <TimerRing secondsLeft={phaseTimer.secondsLeft} total={phaseTimer.total || 30} paused={phaseTimer.paused} size={44} />
+      <button onClick={onTogglePhasePause} className="px-5 py-2.5 rounded-xl font-['Fredoka_One'] text-base border-2 border-[#FFE66D] text-[#FFE66D] bg-[#FFE66D]/10 hover:bg-[#FFE66D]/20 active:scale-95 transition">
+        {phaseTimer.paused ? '▶ Resume' : '⏸ Pause'}
+      </button>
+      <button onClick={onAdvancePhase} className="px-6 py-2.5 rounded-xl font-['Fredoka_One'] text-base bg-[#4ECDC4] text-black hover:bg-[#3dbdb5] active:scale-95 transition">
+        ⏭ Continue
+      </button>
+    </div>
+  ) : null;
+
+  if (status === 'intro') {
+    controls = (
+      <button data-testid="host-intro-start-now" onClick={onIntroStartNow} className="px-8 py-2.5 rounded-xl font-['Fredoka_One'] text-base bg-[#4ECDC4] text-black hover:bg-[#3dbdb5] active:scale-95 transition">
+        ▶ Start now
+      </button>
+    );
+  }
+
+  if (!controls && !timedControls) return null;
 
   return (
     <div className="flex-shrink-0 flex justify-center items-center gap-6 py-4 px-6 bg-[#0D0D1A]/95 border-t border-[#2D2D44] z-10">
       <span className="text-xs font-['Nunito'] text-gray-600 uppercase tracking-widest">Host Controls</span>
       <div className="w-px h-5 bg-[#2D2D44]" />
+      {timedControls}
       {controls}
     </div>
   );
@@ -2672,6 +2725,7 @@ function HostControlBar({ status, isRoomCreator, players, mlt, votingData, fitbD
 // ─── Phase → UI status mapping (used by both creator and spectator flows) ────
 const phaseToStatus = (roomPhase, roomData) => {
   if (roomPhase === 'lobby') return 'lobby';
+  if (roomPhase === 'intro') return 'intro';
   if (roomPhase === 'mlt') return roomData?.mlt?.roundState === 'results' ? 'mlt-results' : 'mlt-voting';
   if (roomPhase === 'mltEnd') return 'mlt-end';
   if (roomPhase === 'question') return 'question';
@@ -2684,10 +2738,10 @@ const phaseToStatus = (roomPhase, roomData) => {
   if (roomPhase === 'fitbEnd') return 'fitb-end';
   if (roomPhase === 'selfie') return 'selfie';
   if (roomPhase === 'selfieEnd') return 'selfie-results';
-  if (roomPhase === 'caption') return 'caption';
   if (roomPhase === 'captionEnd' || roomData?.caption?.phase === 'ended') return 'caption-end';
-  if (roomPhase === 'photovote') return 'photovote';
+  if (roomPhase === 'caption') return 'caption';
   if (roomPhase === 'photovoteEnd' || roomData?.photoVote?.phase === 'ended') return 'photovote-end';
+  if (roomPhase === 'photovote') return 'photovote';
   if (roomPhase === 'dt' || roomPhase === 'dt-prompting' || roomPhase === 'dt-selfie' || roomPhase === 'dt-drawing' || roomPhase === 'dt-guessing' || roomPhase === 'dt-reveal') {
     const dtPhase = roomData?.dt?.phase || 'prompting';
     return `dt-${dtPhase}`;
@@ -2709,9 +2763,27 @@ const phaseToStatus = (roomPhase, roomData) => {
 export default function HostPage() {
   const [searchParams] = useSearchParams();
   const roomCodeParam = searchParams.get('room')?.toUpperCase();
+  // The host key proves this screen may control the room (AUDIT.md P2-31):
+  // the creator's TV keeps it in sessionStorage; a phone host shares it through
+  // the "Show on TV" link (?key=). Without it the screen is view-only.
+  const hostKeyFor = (code) => {
+    const fromUrl = searchParams.get('key');
+    if (fromUrl && code) { try { sessionStorage.setItem(`wst_hostKey:${code}`, fromUrl); } catch { /* ignore */ } }
+    try { return fromUrl || sessionStorage.getItem(`wst_hostKey:${code}`) || null; } catch { return fromUrl || null; }
+  };
 
   const [status, setStatus] = useState(roomCodeParam ? 'connecting' : 'setup');
   const [errorMsg, setErrorMsg] = useState('');
+  // Transient, non-fatal message (e.g. a start rejected for too few players).
+  const [notice, setNotice] = useState('');
+  const [introData, setIntroData] = useState(null);
+  // Cumulative party scores across games (playlist / mixed / repeated games).
+  const [partyLeaderboard, setPartyLeaderboard] = useState([]);
+  useEffect(() => {
+    if (!notice) return undefined;
+    const t = setTimeout(() => setNotice(''), 6000);
+    return () => clearTimeout(t);
+  }, [notice]);
   const [isRoomCreator, setIsRoomCreator] = useState(false);
   const [creatorSettings, setCreatorSettings] = useState({ gameType: 'most-likely-to', rounds: 5 });
 
@@ -2968,7 +3040,14 @@ export default function HostPage() {
     sock.on('tot:paused', ({ secondsLeft }) => setTotData(prev => ({ ...prev, paused: true, secondsLeft: secondsLeft ?? prev.secondsLeft })));
     sock.on('tot:resumed', ({ secondsLeft }) => setTotData(prev => ({ ...prev, paused: false, secondsLeft: secondsLeft ?? prev.secondsLeft })));
 
-    sock.on('phase_timer', (data) => setPhaseTimer({ secondsLeft: data.secondsLeft, active: data.secondsLeft > 0, paused: !!data.paused }));
+    sock.on('phase_timer', (data) => setPhaseTimer({ secondsLeft: data.secondsLeft, active: data.secondsLeft > 0, paused: !!data.paused, phase: data.phase || null, total: data.total || null }));
+
+    // A phase that ended (results / game over) has no countdown any more —
+    // otherwise the TV kept showing a stale timer with a dead Continue button.
+    sock.onAny((event) => {
+      if (TIMER_STOP_EVENTS.test(event)) setPhaseTimer(prev => (prev ? { ...prev, secondsLeft: 0, active: false, phase: null } : prev));
+    });
+    sock.on('phase_paused', ({ paused }) => setPhaseTimer(prev => (prev ? { ...prev, paused: !!paused } : prev)));
 
     sock.on('tot:results', (data) => {
       setTotData(prev => ({
@@ -3142,8 +3221,9 @@ export default function HostPage() {
     sock.on('caption:round_results', (data) => {
       setCaptionData(prev => ({ ...prev, phase: 'results', round: data.round, featuredPhotoData: data.featuredPhotoData || prev.featuredPhotoData, featuredOwnerName: data.featuredOwnerName || prev.featuredOwnerName, prompt: data.prompt || prev.prompt, captionResults: data.captionResults || [] }));
     });
-    sock.on('caption:game_over', () => {
-      setCaptionData(prev => ({ ...prev, phase: 'ended' }));
+    sock.on('caption:game_over', (data) => {
+      setCaptionData(prev => ({ ...prev, phase: 'ended', leaderboard: data?.leaderboard || [], scores: data?.scores || {} }));
+      setStatus('caption-end');
     });
     sock.on('caption:restarted', ({ players: p }) => {
       setPlayers(p || []);
@@ -3198,6 +3278,7 @@ export default function HostPage() {
         leaderboard: data?.leaderboard || [],
         scores: data?.scores || {},
       }));
+      setStatus('photovote-end');
     });
     sock.on('photovote:restarted', ({ players: p }) => {
       setPlayers(p || []);
@@ -3295,8 +3376,15 @@ export default function HostPage() {
     });
     sock.on('dt:error', ({ message }) => {
       if (!isActiveSock()) return;
-      setErrorMsg(message);
-      setStatus('error');
+      setNotice(message);
+      setStatus('lobby');
+    });
+    // A start request the server refused (e.g. too few players): stay in the
+    // lobby and say why, instead of spinning on "Connecting…" forever.
+    sock.on('game:start_rejected', ({ message }) => {
+      if (!isActiveSock()) return;
+      setNotice(message);
+      setStatus('lobby');
     });
     sock.on('dt:paused', () => {
       if (!isActiveSock()) return;
@@ -3305,6 +3393,25 @@ export default function HostPage() {
     sock.on('dt:resumed', () => {
       if (!isActiveSock()) return;
       setDtData(prev => ({ ...prev, paused: false }));
+    });
+
+    sock.on('game:intro', (data) => {
+      if (!isActiveSock()) return;
+      setIntroData({ ...data, at: Date.now() });
+      setStatus('intro');
+    });
+    sock.on('intro:update', (data) => {
+      if (!isActiveSock()) return;
+      setIntroData({ ...data, at: Date.now() });
+    });
+    sock.on('intro:cancelled', () => {
+      if (!isActiveSock()) return;
+      setStatus('lobby');
+    });
+
+    sock.on('global_scores_updated', ({ leaderboard }) => {
+      if (!isActiveSock()) return;
+      setPartyLeaderboard(leaderboard || []);
     });
 
     sock.on('game_changed', ({ gameType, players: p, gameName }) => {
@@ -3327,10 +3434,12 @@ export default function HostPage() {
     // (reconnect after network drop). Without this, a brief socket disconnect
     // causes the host screen to get stuck showing stale vote/submission counts
     // because it missed broadcast events while out of the room channel.
-    sock.on('spectator_joined', ({ room }) => {
+    sock.on('spectator_joined', ({ room, canControl, intro: introNow }) => {
       if (!isActiveSock()) return;
+      if (introNow) setIntroData({ ...introNow, at: Date.now() });
       console.log(`[Host] spectator_joined phase=${room.phase} code=${room.code}`);
-      setIsRoomCreator(true);
+      // View-only unless the server accepted this screen's host key.
+      setIsRoomCreator(canControl !== false);
       setCreatorSettings(prev => ({ ...prev, gameType: room.gameType || prev.gameType }));
       setGameInfo({ code: room.code, gameName: room.gameName || '', gameType: room.gameType || '' });
       setPlayers(room.players || []);
@@ -3351,7 +3460,7 @@ export default function HostPage() {
         setQuestionData(prev => ({
           ...prev, text: room.currentQuestion || '',
           answeredCount: room.answersCount || 0,
-          totalAnswerers: room.players?.filter(p => p.isPlaying && p.isConnected).length || 0,
+          totalAnswerers: room.players?.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound).length || 0,
         }));
       }
       // ── ToT ───────────────────────────────────────────────────────────────
@@ -3500,12 +3609,17 @@ export default function HostPage() {
     // Every connect (initial + reconnect) re-joins the room channel so the host
     // receives all broadcast events. attachGameHandlers registers spectator_joined
     // which restores full state from the server snapshot.
-    sock.on('connect', () => sock.emit('join_spectator', { code: roomCodeParam }));
+    sock.on('connect', () => sock.emit('join_spectator', { code: roomCodeParam, hostKey: hostKeyFor(roomCodeParam) }));
 
     attachGameHandlers(sock);
     sock.connect();
     return () => { sock.disconnect(); };
   }, [roomCodeParam, attachGameHandlers]);
+
+  // Whatever socket this screen ends up owning (creator or spectator) is closed
+  // when the TV page unmounts — the creator socket used to stay connected with
+  // ~100 listeners calling setState on an unmounted page (AUDIT.md P3-15).
+  useEffect(() => () => { socketRef.current?.disconnect(); socketRef.current = null; }, []);
 
   // ─── Creator flow ─────────────────────────────────────────────────────────
   const handleCreateRoom = useCallback(({ gameType, gameName, rounds, selectedSubGames, roundsPerSubGame, drawMode, roomConfig, gameQueue: queue }) => {
@@ -3542,13 +3656,14 @@ export default function HostPage() {
     sock.on('connect', () => {
       const currentCode = roomCodeRef.current;
       if (currentCode) {
-        sock.emit('join_spectator', { code: currentCode });
+        sock.emit('join_spectator', { code: currentCode, hostKey: hostKeyFor(currentCode) });
       }
     });
 
-    sock.on('room_created', ({ code, players: initialPlayers, gameType: gt, gameName: gn }) => {
+    sock.on('room_created', ({ code, hostKey, players: initialPlayers, gameType: gt, gameName: gn }) => {
       // Guard: ignore if this socket has been superseded
       if (socketRef.current !== sock) return;
+      if (hostKey) { try { sessionStorage.setItem(`wst_hostKey:${code}`, hostKey); } catch { /* ignore */ } }
       roomCodeRef.current = code;
       setGameInfo({ code, gameName: gn || '', gameType: gt || '' });
       setPlayers(initialPlayers || []);
@@ -3565,25 +3680,7 @@ export default function HostPage() {
   const handleStartGame = () => {
     const sock = socketRef.current;
     if (!sock || !gameInfo.code) return;
-    if (creatorSettings.gameType === 'most-likely-to') {
-      sock.emit('mlt:start', { code: gameInfo.code, rounds: creatorSettings.rounds, allowSelfVote: true });
-    } else if (creatorSettings.gameType === 'drawing') {
-      sock.emit('draw:start', { code: gameInfo.code, rounds: creatorSettings.rounds, mode: creatorSettings.drawMode || 'classic' });
-    } else if (creatorSettings.gameType === 'fill-in-the-blank') {
-      sock.emit('fitb:start', { code: gameInfo.code, rounds: creatorSettings.rounds });
-    } else if (creatorSettings.gameType === 'selfie-roast') {
-      sock.emit('selfie:start', { code: gameInfo.code, rounds: creatorSettings.rounds });
-    } else if (creatorSettings.gameType === 'caption') {
-      sock.emit('caption:start', { code: gameInfo.code, rounds: creatorSettings.rounds });
-    } else if (creatorSettings.gameType === 'pmatch') {
-      sock.emit('photovote:start', { code: gameInfo.code, subType: 'pmatch', rounds: creatorSettings.rounds });
-    } else if (creatorSettings.gameType === 'photoassoc') {
-      sock.emit('photovote:start', { code: gameInfo.code, subType: 'photoassoc', rounds: creatorSettings.rounds });
-    } else if (creatorSettings.gameType === 'draw-telephone') {
-      sock.emit('dt:start', { code: gameInfo.code });
-    } else {
-      sock.emit('start_game', { code: gameInfo.code });
-    }
+    startGame(sock, creatorSettings.gameType, { code: gameInfo.code, rounds: creatorSettings.rounds, mode: creatorSettings.drawMode });
   };
 
   const handleMltPauseResume = () => {
@@ -3638,7 +3735,7 @@ export default function HostPage() {
   const handleKickPlayer = (playerId) => socketRef.current?.emit('kick_player', { code: gameInfo.code, targetPlayerId: playerId });
   const handleTotNext = () => socketRef.current?.emit('tot:next_round', { code: gameInfo.code });
   const handleSitNext = () => socketRef.current?.emit('sit:next', { code: gameInfo.code });
-  const handleNextAnswer = () => socketRef.current?.emit('next_answer_request', { code: gameInfo.code });
+  const handleNextAnswer = () => socketRef.current?.emit('next_answer_request', { code: gameInfo.code, answerIndex: votingData.currentIndex });
   const handleDrawNewWord = () => socketRef.current?.emit('draw:skip_word', { code: gameInfo.code });
   const handleDrawRestart = () => socketRef.current?.emit('draw:restart', { code: gameInfo.code });
   const handleNextQueueGame = (skipTransitionCheck = false) => {
@@ -3654,7 +3751,9 @@ export default function HostPage() {
     const code = gameInfo.code;
     const sock = socketRef.current;
     if (!sock || !code) {
-      if (!skipTransitionCheck) setIsTransitioning(false);
+      // Always release the lock (Skip Mini Game passes skipTransitionCheck and
+      // used to leave every transition button dead — AUDIT.md P3-21).
+      setIsTransitioning(false);
       return;
     }
     
@@ -3670,15 +3769,7 @@ export default function HostPage() {
     // Then start the next game directly — server start handlers cancel previous timers and setup state
     const t = nextGame.type;
     setTimeout(() => {
-      if (t === 'most-likely-to') sock.emit('mlt:start', { code, rounds: nextRounds, allowSelfVote: true });
-      else if (t === 'drawing') sock.emit('draw:start', { code, rounds: nextRounds, mode: nextMode });
-      else if (t === 'fill-in-the-blank') sock.emit('fitb:start', { code, rounds: nextRounds });
-      else if (t === 'selfie-roast') sock.emit('selfie:start', { code, rounds: nextRounds });
-      else if (t === 'caption') sock.emit('caption:start', { code, rounds: nextRounds });
-      else if (t === 'pmatch') sock.emit('photovote:start', { code, subType: 'pmatch', rounds: nextRounds });
-      else if (t === 'photoassoc') sock.emit('photovote:start', { code, subType: 'photoassoc', rounds: nextRounds });
-      else if (t === 'draw-telephone') sock.emit('dt:start', { code });
-      else sock.emit('start_game', { code });
+      startGame(sock, t, { code, rounds: nextRounds, mode: nextMode });
       
       setIsTransitioning(false);
     }, 200); // 200ms delay to ensure clients process game_changed before the start states
@@ -3769,6 +3860,8 @@ export default function HostPage() {
             </button>
           </div>
         );
+      case 'intro':
+        return <IntroPanel intro={introData} />;
       case 'lobby':
         return <LobbyPanel gameInfo={gameInfo} players={players} joinUrl={joinUrl} onKickPlayer={isRoomCreator ? handleKickPlayer : null} />;
       case 'mlt-voting':
@@ -3820,9 +3913,13 @@ export default function HostPage() {
       case 'selfie-vote':
       case 'selfie-round-results':
       case 'selfie-results':
-        return <SelfieHostPanel selfieData={selfieData} players={players} onSkipToVote={() => socketRef.current?.emit('selfie:skip_to_vote', { code: gameInfo.code })} onShowResults={() => socketRef.current?.emit('selfie:show_results', { code: gameInfo.code })} />;
+        return <SelfieHostPanel selfieData={selfieData} players={players} isFinal={status === 'selfie-results'} onSkipToVote={() => socketRef.current?.emit('selfie:skip_to_vote', { code: gameInfo.code })} onShowResults={() => socketRef.current?.emit('selfie:show_results', { code: gameInfo.code })} />;
       case 'caption':
         return <CaptionHostPanel captionData={captionData} players={players} />;
+      case 'caption-end':
+        return <GameEndPanel gameEndData={{ finalScores: pointsToScores(captionData.leaderboard, captionData.scores) }} players={players} />;
+      case 'photovote-end':
+        return <GameEndPanel gameEndData={{ finalScores: pointsToScores(photoVoteData.leaderboard, photoVoteData.scores) }} players={players} />;
       case 'photovote':
         return <PhotoVoteHostPanel photoVoteData={photoVoteData} players={players} />
       default:
@@ -3832,6 +3929,11 @@ export default function HostPage() {
 
   return (
     <div className="font-['Nunito'] h-screen bg-[#0D0D1A] text-[#F7F7F7] flex flex-col overflow-hidden">
+      {notice && (
+        <div role="alert" data-testid="host-notice" className="fixed top-20 left-1/2 -translate-x-1/2 z-50 max-w-xl px-6 py-3 rounded-2xl bg-[#FF6B6B] text-black font-['Fredoka_One'] text-lg shadow-lg">
+          {notice}
+        </div>
+      )}
       {!isMltCoreView && !isTotCoreView && <div className="flex items-center justify-between px-6 py-3 bg-[#1A1A2E] border-b border-[#2D2D44] flex-shrink-0">
         <div className="flex items-center gap-3">
           <span className="text-xl font-['Fredoka_One'] text-[#FFE66D]">🎉 Party Pack</span>
@@ -3853,7 +3955,8 @@ export default function HostPage() {
           {headerRoomCode && (
             <button
               onClick={() => {
-                const hostUrl = window.location.origin + '/host?room=' + headerRoomCode;
+                const key = hostKeyFor(headerRoomCode);
+                const hostUrl = window.location.origin + '/host?room=' + headerRoomCode + (key ? '&key=' + encodeURIComponent(key) : '');
                 navigator.clipboard.writeText(hostUrl).catch(() => {});
               }}
               title="Copy host URL"
@@ -3878,6 +3981,8 @@ export default function HostPage() {
               🏠 Main Menu
             </button>
           )}
+          <SoundToggle />
+          <LangSwitcher />
         </div>
       </div>}
 
@@ -3917,19 +4022,9 @@ export default function HostPage() {
 
             <div className="grid grid-cols-2 gap-2">
               {[
-                { id: 'most-likely-to',    label: '👑 Most Likely To',      accent: '#4ECDC4' },
-                { id: 'who-said-that',     label: '🤔 Who Said That?',      accent: '#FFE66D' },
-                { id: 'situational',       label: '💭 Situational',         accent: '#6C5CE7' },
-                { id: 'this-or-that',      label: '🆚 This or That',        accent: '#A29BFE' },
-                { id: 'drawing',           label: '🎨 Pictionary Battle',   accent: '#C39BD3' },
-                { id: 'fill-in-the-blank', label: '✏️ Fill in the Blank',  accent: '#55EFC4' },
-                { id: 'draw-telephone',    label: '📞 Drawing in Chain',   accent: '#FF6B6B' },
-                { id: 'selfie-roast',      label: '📸 Draw on Friends',     accent: '#FD79A8' },
-                { id: 'caption',           label: '💬 Selfie Captions',     accent: '#FD79A8' },
-                { id: 'pmatch',            label: '🎭 Selfie Challenge',    accent: '#FDCB6E' },
-                { id: 'photoassoc',        label: '🎯 Prompt Match',        accent: '#A29BFE' },
-                { id: 'playlist',          label: '📋 Playlist',            accent: '#FDCB6E' },
-                { id: 'mixed',             label: '🎲 Mixed Pack',          accent: '#FDCB6E', colSpan: true },
+                ...PICKABLE_GAMES.filter(g => g.id !== 'mixed').map(g => ({ id: g.id, label: gameLabel(g.id), accent: g.accent })),
+                { id: 'playlist', label: '📋 Playlist', accent: '#FDCB6E' },
+                { id: 'mixed', label: gameLabel('mixed'), accent: '#FDCB6E', colSpan: true },
               ].map(g => (
                 <button
                   key={g.id}
@@ -3977,19 +4072,9 @@ export default function HostPage() {
             <p className="text-sm font-['Nunito'] text-gray-400 mb-4 text-center">Same room &amp; players — new game starts immediately</p>
             <div className="grid grid-cols-2 gap-2 max-h-[60vh] overflow-y-auto pr-1">
               {[
-                { id: 'most-likely-to',    label: '👑 Most Likely To',      accent: '#4ECDC4' },
-                { id: 'who-said-that',     label: '🤔 Who Said That?',      accent: '#FFE66D' },
-                { id: 'situational',       label: '💭 Situational',         accent: '#6C5CE7' },
-                { id: 'this-or-that',      label: '🆚 This or That',        accent: '#A29BFE' },
-                { id: 'drawing',           label: '🎨 Pictionary Battle',   accent: '#C39BD3' },
-                { id: 'fill-in-the-blank', label: '✏️ Fill in the Blank',  accent: '#55EFC4' },
-                { id: 'draw-telephone',    label: '📞 Drawing in Chain',   accent: '#FF6B6B' },
-                { id: 'selfie-roast',      label: '📸 Draw on Friends',     accent: '#FD79A8' },
-                { id: 'caption',           label: '💬 Selfie Captions',     accent: '#FD79A8' },
-                { id: 'pmatch',            label: '🎭 Selfie Challenge',    accent: '#FDCB6E' },
-                { id: 'photoassoc',        label: '🎯 Prompt Match',        accent: '#A29BFE' },
-                { id: 'playlist',          label: '📋 Playlist',            accent: '#FDCB6E' },
-                { id: 'mixed',             label: '🎲 Mixed Pack',          accent: '#FDCB6E' },
+                ...PICKABLE_GAMES.filter(g => g.id !== 'mixed').map(g => ({ id: g.id, label: gameLabel(g.id), accent: g.accent })),
+                { id: 'playlist', label: '📋 Playlist', accent: '#FDCB6E' },
+                { id: 'mixed', label: gameLabel('mixed'), accent: '#FDCB6E', colSpan: true },
               ].map(g => (
                 <button
                   key={g.id}
@@ -4049,12 +4134,23 @@ export default function HostPage() {
               transition={{ duration: 0.3, ease: [0.2, 0.8, 0.2, 1] }}
             >
               {renderPanel()}
+              {END_STATUSES.includes(status) && (gameQueue.length > 1 || gameInfo.gameType === 'mixed') && partyLeaderboard.length > 0 && (
+                <PartyScoreboard
+                  leaderboard={partyLeaderboard}
+                  isFinal={!(gameQueue.length > 1 && queueIndex < gameQueue.length - 1)}
+                  onReset={isRoomCreator ? () => socketRef.current?.emit('reset_global_scores', { code: gameInfo.code }) : null}
+                />
+              )}
             </motion.div>
           </AnimatePresence>
         </div>
       )}
 
       {!isMltCoreView && !isTotCoreView && <HostControlBar
+        onIntroStartNow={() => socketRef.current?.emit('intro:start_now', { code: gameInfo.code })}
+        phaseTimer={phaseTimer}
+        onAdvancePhase={() => socketRef.current?.emit('host:advance', { code: gameInfo.code })}
+        onTogglePhasePause={() => socketRef.current?.emit('host:toggle_pause', { code: gameInfo.code })}
         status={status}
         isRoomCreator={isRoomCreator}
         players={players}

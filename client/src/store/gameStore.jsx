@@ -1,4 +1,6 @@
 import React, { createContext, useReducer, useContext } from 'react';
+import { initialRoundTimer, roundTimerReducer } from '../game-core/roundTimer';
+import { initialRoundProgress, roundProgressReducer } from '../game-core/roundProgress';
 import { createGameSlice } from './createGameSlice';
 
 // ─── Game slices (standard action handlers generated from factory) ────────────
@@ -228,6 +230,12 @@ const initialState = {
   globalScores: {},             // { playerId: cumulativeScore } — persists across games until host resets
   globalLeaderboard: [],        // sorted [{id, name, color, score}]
   phaseTimer: { secondsLeft: 60, active: false },
+  // Canonical round timer fed by every server tick event (game-core/roundTimer.js).
+  roundTimer: initialRoundTimer,
+  // Who has submitted in the current phase (game-core/roundProgress.js).
+  roundProgress: initialRoundProgress,
+  // Pre-game intro (game-core/player/GameIntroPage.jsx)
+  intro: null,
   roomConfig: { roundDurationSecs: 60, anonymousMode: false },
   caption: {
     phase: 'waiting',      // 'waiting' | 'photo' | 'writing' | 'voting' | 'results' | 'ended'
@@ -345,7 +353,7 @@ export const gameReducer = (state, action) => {
     case 'CLEAR_SESSION':
       // Clear the session-scoped playerId so this tab gets a fresh identity on
       // next join, while preserving persistent preferences (lang, savedSelfie).
-      try { sessionStorage.removeItem('wst_playerId'); } catch { /* ignore */ }
+      try { sessionStorage.removeItem('wst_playerId'); sessionStorage.removeItem('wst_roomCode'); } catch { /* ignore */ }
       return { ...state, playerId: null, roomCode: null };
     case 'SET_PLAYER_ID':
       // Use sessionStorage so each browser tab gets its own player ID (avoids sharing bugs in multi-tab testing)
@@ -864,9 +872,12 @@ export const gameReducer = (state, action) => {
     case 'SELFIE_RESULTS':
       return {
         ...state,
-        phase: 'selfieEnd',
+        // Only the final round ends the game; per-round results stay in 'selfie'.
+        phase: action.payload.isFinal ? 'selfieEnd' : 'selfie',
         selfie: {
           ...state.selfie,
+          isFinal: !!action.payload.isFinal,
+          round: action.payload.round ?? state.selfie.round,
           phase: 'results',
           submissions: action.payload.submissions,
           scores: action.payload.scores || {},
@@ -1005,6 +1016,18 @@ export const gameReducer = (state, action) => {
           paused: !!action.payload.paused,
         },
       };
+    case 'INTRO_SET': {
+      // Server sends the countdown in seconds; keep an absolute end time.
+      const { countdown, ...rest } = action.payload || {};
+      return { ...state, intro: { ...rest, countdownEndsAt: countdown != null ? Date.now() + countdown * 1000 : null } };
+    }
+    case 'ROUND_PROGRESS':
+    case 'ROUND_PROGRESS_RESET':
+      return { ...state, roundProgress: roundProgressReducer(state.roundProgress, action) };
+    case 'ROUND_TIMER_TICK':
+    case 'ROUND_TIMER_PAUSED':
+    case 'ROUND_TIMER_CLEAR':
+      return { ...state, roundTimer: roundTimerReducer(state.roundTimer, action) };
     case 'PHASE_TIMER_STOP':
       return { ...state, phaseTimer: { secondsLeft: 0, active: false } };
     case 'SET_ROOM_CONFIG':
@@ -1103,7 +1126,7 @@ export const gameReducer = (state, action) => {
     case 'CAPTION_GAME_OVER':
       return {
         ...state,
-        caption: { ...state.caption, phase: 'ended', scores: action.payload.scores },
+        caption: { ...state.caption, phase: 'ended', scores: action.payload.scores, leaderboard: action.payload.leaderboard || [] },
       };
     case 'CAPTION_RESTARTED':
       return {
@@ -1172,7 +1195,7 @@ export const gameReducer = (state, action) => {
     case 'PHOTOVOTE_GAME_OVER':
       return {
         ...state,
-        photoVote: { ...state.photoVote, phase: 'ended', scores: action.payload.scores },
+        photoVote: { ...state.photoVote, phase: 'ended', scores: action.payload.scores, leaderboard: action.payload.leaderboard || [] },
       };
     case 'PHOTOVOTE_RESTARTED':
       return {

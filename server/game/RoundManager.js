@@ -23,10 +23,12 @@
  *
  * @returns {{ start, nextRound, getCurrent, getTotal, isLastRound, getProgress }}
  */
-function createRoundManager({ totalRounds, onRoundStart, onGameEnd }) {
+function createRoundManager({ totalRounds, onRoundStart, onGameEnd, initialRound = 0 }) {
   if (!totalRounds || totalRounds < 1) throw new Error('RoundManager requires totalRounds >= 1');
 
-  let currentRound = 0;
+  // initialRound lets a manager resume mid-game (e.g. after a server restart)
+  // without firing onRoundStart for the round already in progress.
+  let currentRound = Math.max(0, Math.min(initialRound, totalRounds));
 
   return {
     /**

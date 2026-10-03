@@ -8,11 +8,11 @@
 //
 // What is intentionally NOT persisted:
 //   - live timer handles (Node Timeout objects — not serializable)
-//   - runtime helper instances (_submissionTracker / _voteCollector). Their
-//     methods don't survive JSON, and a half-serialized object would be truthy
-//     and break the handlers' "no tracker → fall back to raw state" path. Dropped
-//     so that fallback (threshold-based advance from the persisted vote/answer
-//     maps) kicks in after a restart.
+//   - runtime helper instances (every "_"-prefixed object key: trackers,
+//     collectors, phase/round managers). Their methods don't survive JSON, and
+//     a half-serialized object would be truthy and break the handlers'
+//     "no helper → fall back to raw state" path. Dropped so that fallback (or
+//     lazy rehydration, e.g. VotingGameTemplate.rehydrate) kicks in.
 //   - live socket bindings (every socket is dead after a restart; players are
 //     marked disconnected until they reconnect).
 //
@@ -32,26 +32,46 @@ const path = require('path');
 const TimerManager = require('./TimerManager');
 const log = require('../logger');
 
-const DATA_DIR = path.join(__dirname, '..', '.data');
+// WST_DATA_DIR lets tests (and deployments) point persistence elsewhere so a
+// test run never touches the real server/.data/rooms.json.
+const DATA_DIR = process.env.WST_DATA_DIR || path.join(__dirname, '..', '.data');
 const FILE = path.join(DATA_DIR, 'rooms.json');
 const TMP = `${FILE}.tmp`;
 
-const stripHelpers = (slice) => {
-  if (!slice || typeof slice !== 'object') return slice;
-  // eslint-disable-next-line no-unused-vars
-  const { _submissionTracker, _voteCollector, ...rest } = slice;
-  return rest;
+// Runtime helpers (trackers, collectors, phase/round managers) live under
+// "_"-prefixed keys holding objects. Their methods don't survive JSON: a helper
+// saved as {} is restored as a truthy empty object and the next method call
+// throws. Strip them all — on the room itself and on every game slice — so the
+// handlers' "no helper → fall back to raw state" paths (or lazy rehydration)
+// take over after a restart.
+const isHelperKey = (key, value) => key.startsWith('_') && value !== null && typeof value === 'object' && !Array.isArray(value);
+
+const stripHelpers = (obj) => {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return obj;
+  const out = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (isHelperKey(key, value)) continue;
+    out[key] = value;
+  }
+  return out;
+};
+
+// Strip helpers from the room and one level down (room.draw, room.mlt, …).
+const stripRoomHelpers = (room) => {
+  const top = stripHelpers(room);
+  for (const [key, value] of Object.entries(top)) {
+    if (value && typeof value === 'object' && !Array.isArray(value) && key !== 'players') {
+      top[key] = stripHelpers(value);
+    }
+  }
+  return top;
 };
 
 // Produce a JSON-safe, restart-ready copy of a room. Never mutates the live room.
 const serializeRoom = (room) => {
-  const base = TimerManager.sanitizeForClient(room); // drops _timers + *timerRef
+  const base = stripRoomHelpers(TimerManager.sanitizeForClient(room)); // drops _timers + *timerRef + helpers
   return {
     ...base,
-    draw: stripHelpers(base.draw),
-    sit: stripHelpers(base.sit),
-    mlt: stripHelpers(base.mlt),
-    fitb: stripHelpers(base.fitb),
     players: (base.players || []).map((p) => ({
       ...p,
       socketId: null,
@@ -67,8 +87,9 @@ const serializeAll = (roomsMap) => {
   for (const [code, room] of roomsMap.entries()) {
     try {
       out[code] = serializeRoom(room);
-    } catch (_) {
-      // A single un-serializable room must not sink the whole save.
+    } catch (err) {
+      // A single un-serializable room must not sink the whole save — but say so.
+      log.warn('persistence: room not serializable, skipped', { code, message: err.message });
     }
   }
   return out;
@@ -94,10 +115,17 @@ const writeNow = async (roomsMap) => {
   }
 };
 
-// Debounced save — coalesces bursts of mutations into one write.
+// Debounced save — coalesces bursts of mutations into one write, but never
+// waits longer than MAX_WAIT_MS: a busy room used to postpone every save until
+// a lull, so a restart rolled it back to a stale state (AUDIT.md P3-18).
+const MAX_WAIT_MS = 4000;
+let firstPendingAt = 0;
 const scheduleSave = (roomsMap, delay = 1500) => {
+  const now = Date.now();
+  if (!firstPendingAt) firstPendingAt = now;
   if (saveTimer) clearTimeout(saveTimer);
-  saveTimer = setTimeout(() => { saveTimer = null; writeNow(roomsMap); }, delay);
+  const wait = Math.max(0, Math.min(delay, MAX_WAIT_MS - (now - firstPendingAt)));
+  saveTimer = setTimeout(() => { saveTimer = null; firstPendingAt = 0; writeNow(roomsMap); }, wait);
   // Don't let a pending save keep the process (or a test runner) alive.
   if (saveTimer && typeof saveTimer.unref === 'function') saveTimer.unref();
 };
@@ -114,4 +142,4 @@ const loadRooms = () => {
   }
 };
 
-module.exports = { serializeRoom, serializeAll, scheduleSave, writeNow, loadRooms, FILE, DATA_DIR };
+module.exports = { stripRoomHelpers, serializeRoom, serializeAll, scheduleSave, writeNow, loadRooms, FILE, DATA_DIR };

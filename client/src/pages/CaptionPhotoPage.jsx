@@ -6,11 +6,15 @@ import { useSounds } from '../hooks/useSounds';
 import GamePageWrapper from '../components/GamePageWrapper.jsx';
 import SelfieCapture from '../components/game/SelfieCapture.jsx';
 import { uploadPhoto } from '../utils/photoUpload.js';
+import { translations } from '../locales/translations';
 
 export default function CaptionPhotoPage() {
   const { state, dispatch } = useGame();
   const caption = state.caption;
   const sounds = useSounds();
+  const lang = translations[state.lang] || translations.en;
+  const t = lang.photo || translations.en.photo;
+  const tc = lang.common || translations.en.common;
 
   const handleSubmit = async (photoData) => {
     sounds.answer?.();
@@ -28,12 +32,12 @@ export default function CaptionPhotoPage() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.3, ease: 'easeOut' }}
       >
-        <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8] mt-6 mb-2">Caption Me! 💬</h1>
+        <h1 className="text-3xl font-['Fredoka_One'] text-[#FD79A8] mt-6 mb-2">{t.captionTitle}</h1>
         <p className="text-gray-400 font-['Nunito'] text-sm text-center mb-2">
-          Round {caption.round} of {caption.totalRounds}
+          {tc.round.replace('{current}', caption.round).replace('{total}', caption.totalRounds)}
         </p>
         <p className="text-gray-400 font-['Nunito'] text-sm text-center mb-6">
-          Take a selfie — everyone else will write a caption for it!
+          {t.captionHint}
         </p>
 
         <SelfieCapture

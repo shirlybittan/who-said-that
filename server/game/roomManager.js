@@ -1,5 +1,7 @@
 const { randomUUID: uuidv4 } = require('crypto');
 const persistence = require('./persistence');
+const { issueHostKey } = require('./hostIdentity');
+const { GAME_IDS, STANDALONE_IDS } = require('./registry');
 
 const rooms = new Map();
 
@@ -11,7 +13,8 @@ const STRICT_IDENTITY = process.env.STRICT_IDENTITY === '1' || process.env.STRIC
 const generateRoomCode = () => {
   let code;
   do {
-    code = Math.random().toString(36).substring(2, 6).toUpperCase();
+    // Always exactly 4 characters (toString(36) could yield 1–3 — P3-18).
+    code = Array.from({ length: 4 }, () => '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'[Math.floor(Math.random() * 36)]).join('');
   } while (rooms.has(code));
   return code;
 };
@@ -32,11 +35,13 @@ const createRoom = (socketId, playerName = 'Host', gameType = 'most-likely-to', 
     color: generatePlayerColor([]),
     isHost: true,
     isPlaying: hostIsPlaying,
+    // A non-playing creator is the TV/display itself (created from /host).
+    isDisplay: !hostIsPlaying,
     isConnected: true
   };
 
-  const validGameTypes = ['who-said-that', 'most-likely-to', 'situational', 'this-or-that', 'mixed', 'drawing', 'fill-in-the-blank', 'selfie-roast', 'caption', 'pmatch', 'photoassoc', 'draw-telephone'];
-  const standaloneTypes = new Set(['drawing', 'fill-in-the-blank', 'selfie-roast', 'caption', 'pmatch', 'photoassoc', 'draw-telephone']);
+  const validGameTypes = GAME_IDS;
+  const standaloneTypes = STANDALONE_IDS;
   let resolvedGameType = gameType;
   let selectedSubGames = [];
 
@@ -175,6 +180,7 @@ const createRoom = (socketId, playerName = 'Host', gameType = 'most-likely-to', 
   
   room.lastActivityAt = Date.now();
 
+  issueHostKey(room, player.id);
   rooms.set(code, room);
   return { room, player };
 };
@@ -206,12 +212,15 @@ const persistSoon = () => persistence.scheduleSave(rooms);
 const restoreRooms = (snapshot) => {
   if (!snapshot || typeof snapshot !== 'object') return 0;
   let count = 0;
-  for (const [rawCode, room] of Object.entries(snapshot)) {
+  for (let [rawCode, room] of Object.entries(snapshot)) {
     if (!room) continue;
     // Normalize the key + room.code to uppercase so getRoom(code) (which callers
     // uppercase) always matches, even if a snapshot ever held a mismatched key.
     const code = String(room.code || rawCode || '').toUpperCase();
     if (!code) continue;
+    // Older snapshots persisted helpers as {} — strip them so they can't be
+    // mistaken for live trackers (see persistence.stripRoomHelpers).
+    room = persistence.stripRoomHelpers(room);
     room.code = code;
     room.players = (room.players || []).map((p) => ({
       ...p,
@@ -241,6 +250,8 @@ const evictStaleRooms = (maxAgeMs = 60 * 60 * 1000) => {
   for (const [code, room] of rooms.entries()) {
     const age = now - (room.lastActivityAt || 0);
     if (age < maxAgeMs) continue;
+    // Never evict a room that still has someone connected (P2-35).
+    if ((room.players || []).some(p => p.isConnected)) continue;
 
     // Cancel all timer references to free event-loop slots
     const timerFields = [
@@ -255,6 +266,10 @@ const evictStaleRooms = (maxAgeMs = 60 * 60 * 1000) => {
       room.dt?.voteTimerRef,
     ];
     timerFields.forEach(ref => { if (ref) { try { clearTimeout(ref); clearInterval(ref); } catch (_) {} } });
+    // Shared TimerManager timers and Draw Telephone chain intervals too.
+    Object.values(room._timers || {}).forEach(t => { try { t?.cancel?.(); } catch (_) {} });
+    Object.values(room.dt?.chains || {}).forEach(c => { if (c?.timerRef) clearInterval(c.timerRef); });
+    [room._hostGraceTimer, room._introTimer].forEach(ref => { if (ref) clearTimeout(ref); });
 
     // Drop heavy asset blobs to free memory before GC
     if (room.playerPhotos) room.playerPhotos = {};
@@ -266,6 +281,7 @@ const evictStaleRooms = (maxAgeMs = 60 * 60 * 1000) => {
     rooms.delete(code);
     evicted.push(code);
   }
+  if (evicted.length) persistence.scheduleSave(rooms); // drop them from rooms.json too
   return evicted;
 };
 
@@ -277,11 +293,10 @@ const joinRoom = (code, socketId, playerName, playerId) => {
   if (playerId) {
     const existingPlayer = room.players.find(p => p.id === playerId);
     if (existingPlayer) {
-      if (existingPlayer.phoneSocketId) {
-        existingPlayer.phoneSocketId = socketId;
-      } else {
-        existingPlayer.socketId = socketId;
-      }
+      // socketId is the player's controller (phone). A TV bound to the host
+      // lives in tvSocketId and is left untouched (see hostIdentity.js).
+      existingPlayer.socketId = socketId;
+      existingPlayer.phoneSocketId = null;
       existingPlayer.isConnected = true;
       existingPlayer.name = playerName || existingPlayer.name;
       return { room, player: existingPlayer, isRejoin: true };
@@ -406,15 +421,8 @@ const removePlayerBySocketId = (socketId, permanent) => {
       if (!stillConnected) {
         player.isConnected = false;
         wentOffline = true;
-        if (player.isHost) {
-          player.isHost = false;
-          const nextConnected = room.players.find(p => p.isConnected);
-          if (nextConnected) {
-            nextConnected.isHost = true;
-            room.host = nextConnected.id;
-            newHost = nextConnected;
-          }
-        }
+        // Host migration is NOT immediate any more: the caller starts a grace
+        // period (hostIdentity.noteHostOffline / resolveHost).
       }
     }
   }
@@ -425,14 +433,18 @@ const removePlayerBySocketId = (socketId, permanent) => {
 const setGameOptions = (code, socketId, mode, totalRounds, gameType, mltRounds, allowSelfVote) => {
   const room = getRoom(code);
   if (!room) throw new Error('Room not found');
-  const player = room.players.find(p => p.socketId === socketId);
+  const player = room.players.find(p => socketMatches(p, socketId));
   if (!player || !player.isHost) throw new Error('Only host can change options');
 
   if (mode !== undefined) room.mode = mode;
-  if (totalRounds !== undefined) room.totalRounds = totalRounds;
+  // Clamp client-supplied rounds (P2-43).
+  if (totalRounds !== undefined) {
+    const n = parseInt(totalRounds, 10);
+    if (Number.isFinite(n)) room.totalRounds = Math.min(Math.max(n, 1), 10);
+  }
   
-  const validGameTypes = ['who-said-that', 'most-likely-to', 'situational', 'this-or-that', 'mixed', 'drawing', 'fill-in-the-blank', 'selfie-roast', 'caption', 'pmatch', 'photoassoc', 'draw-telephone'];
-  const standaloneTypes = new Set(['drawing', 'fill-in-the-blank', 'selfie-roast', 'caption', 'pmatch', 'photoassoc', 'draw-telephone']);
+  const validGameTypes = GAME_IDS;
+  const standaloneTypes = STANDALONE_IDS;
 
   if (gameType !== undefined) {
     if (Array.isArray(gameType)) {

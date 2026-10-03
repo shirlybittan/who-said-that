@@ -390,8 +390,10 @@ const buildMiniGameSnapshot = (room, playerId, options = {}) => {
     case 'selfieEnd':
       return buildSelfieSnapshot(room, playerId);
     case 'caption':
+    case 'captionEnd':
       return buildCaptionSnapshot(room, playerId);
     case 'photovote':
+    case 'photovoteEnd':
       return buildPhotoVoteSnapshot(room, playerId);
     case 'dt':
     case 'dtEnd':

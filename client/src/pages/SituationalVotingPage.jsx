@@ -7,6 +7,7 @@ import { useSounds } from '../hooks/useSounds';
 import VoteCoin from '../components/game/VoteCoin';
 import VoteLocked from '../components/game/VoteLocked';
 import ConfirmVoteCard from '../game-core/player/ConfirmVoteCard';
+import useAutoConfirmPending from '../game-core/hooks/useAutoConfirmPending';
 
 export default function SituationalVotingPage() {
   const { state, dispatch } = useGame();
@@ -15,10 +16,7 @@ export default function SituationalVotingPage() {
   const sounds = useSounds();
   const [pendingVote, setPendingVote] = React.useState(null);
 
-  // Use server-driven timer (phaseTimer updated by phase_timer socket events)
-  const serverTimeLeft = state.phaseTimer?.secondsLeft ?? 0;
-  const timerActive = state.phaseTimer?.active ?? false;
-  const timerPaused = state.phaseTimer?.paused ?? false;
+  const tc = translations[state.lang].common;
 
   const handleSelect = (answerId) => {
     if (sit.hasVoted) return;
@@ -35,6 +33,7 @@ export default function SituationalVotingPage() {
   };
 
   const handleVote = handleSelect; // backward compat
+  useAutoConfirmPending({ pending: pendingVote, hasVoted: sit.hasVoted, onConfirm: handleConfirm });
 
   const handleContinue = () => {
     sounds.click();
@@ -77,10 +76,10 @@ export default function SituationalVotingPage() {
                     {isWinner && <span className="text-lg">⭐</span>}
                   </div>
                   <span className="text-sm font-['Nunito'] text-gray-400">
-                    {ans.votes} {ans.votes === 1 ? 'vote' : 'votes'}
+                    {ans.votes} {ans.votes === 1 ? tc.vote : tc.votes}
                   </span>
                 </div>
-                <p className="text-white font-['Nunito'] italic">"{ans.text}"</p>
+                <p className="text-white font-['Nunito'] italic [overflow-wrap:anywhere]">"{ans.text}"</p>
                 {/* Vote coins */}
                 {ans.votes > 0 && (
                   <div className="flex flex-wrap gap-1.5 mt-2">
@@ -114,11 +113,6 @@ export default function SituationalVotingPage() {
       <h1 className="text-3xl font-['Fredoka_One'] text-[#4ECDC4] mb-2 mt-4">{t.votePrompt}</h1>
       <p className="text-gray-400 font-['Nunito'] mb-1 italic text-center">"{sit.question}"</p>
 
-      {timerActive && !sit.hasVoted && (
-        <p className={`text-xl font-bold font-['Nunito'] mb-4 ${serverTimeLeft <= 5 ? 'text-red-400 animate-pulse' : serverTimeLeft <= 15 ? 'text-orange-400' : 'text-gray-400'}`}>
-          ⏳ {serverTimeLeft}s
-        </p>
-      )}
 
       {!state.isPlaying ? (
         // ── Cast / spectator view ─────────────────────────────────────────
@@ -126,7 +120,7 @@ export default function SituationalVotingPage() {
           <p className="text-4xl font-['Fredoka_One'] text-[#4ECDC4]">
             {sit.voteCount} <span className="text-gray-400 text-2xl">/ {sit.totalVoters}</span>
           </p>
-          <p className="text-sm font-['Nunito'] text-gray-400 mt-2 uppercase tracking-wider">{t.votesIn || 'votes in'}</p>
+          <p className="text-sm font-['Nunito'] text-gray-400 mt-2 uppercase tracking-wider">{tc.votesIn}</p>
           <div className="mt-4 w-full bg-[#2D2D44] rounded-full h-2">
             <div
               className="bg-[#4ECDC4] h-2 rounded-full transition-all duration-500"
@@ -153,7 +147,7 @@ export default function SituationalVotingPage() {
                   key={ans.id}
                   onClick={() => handleVote(ans.id)}
                   disabled={sit.hasVoted || isOwn}
-                  className={`w-full text-left rounded-2xl p-4 border-2 transition transform
+                  className={`w-full text-start rounded-2xl p-4 border-2 transition transform
                     ${isSelected
                       ? 'border-[#4ECDC4] bg-[#4ECDC4]/15 scale-[1.02]'
                       : pendingVote === ans.id
@@ -165,7 +159,7 @@ export default function SituationalVotingPage() {
                           : 'border-[#2D2D44] bg-[#1A1A2E] hover:border-[#4ECDC4] hover:bg-[#4ECDC4]/10 active:scale-95 cursor-pointer'
                     }`}
                 >
-                  <p className="font-['Nunito'] text-white italic">"{ans.text}"</p>
+                  <p className="font-['Nunito'] text-white italic [overflow-wrap:anywhere]">"{ans.text}"</p>
                   {isOwn && (
                     <p className="text-xs text-gray-500 mt-1 font-['Nunito']">({t.noSelfVote})</p>
                   )}
@@ -176,12 +170,10 @@ export default function SituationalVotingPage() {
 
             {pendingVote && !sit.hasVoted && (
               <ConfirmVoteCard
-                vote={state.players.find(p => p.id === pendingVote)}
+                // Answers are anonymous: show the answer text, never its author.
+                vote={{ label: sit.answers.find(a => a.id === pendingVote)?.text || '' }}
                 onConfirm={handleConfirm}
                 onChange={() => setPendingVote(null)}
-                confirmLabel="✓ Confirm"
-                changeLabel="← Change"
-                titleLabel="Confirm your vote?"
               />
             )}
 

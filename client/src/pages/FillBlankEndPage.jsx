@@ -1,21 +1,21 @@
 import React from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
+import { translations } from '../locales/translations';
 import GameEndShell from '../components/game/GameEndShell';
+import { getGame, gameLabel } from '../games/registry';
 
 export default function FillBlankEndPage() {
   const { state } = useGame();
-  const { fitb, isHost, roomCode } = state;
-
+  const { fitb, roomCode } = state;
+  const tf = translations[state.lang]?.fitb || translations.en.fitb;
   return (
     <GameEndShell
-      title="Game Over!"
-      subtitle="✏️ Fill in the Blank"
+      title={tf.gameOver}
+      subtitle={gameLabel('fill-in-the-blank', state.lang)}
       leaderboard={fitb.leaderboard || []}
-      accentColor="#F9CA24"
-      isHost={isHost}
+      accentColor={getGame('fill-in-the-blank').accent}
       onPlayAgain={() => socket.emit('fitb:restart', { code: roomCode })}
-      playAgainLabel="🔄 Play Again"
       gameType={state.gameType}
     />
   );

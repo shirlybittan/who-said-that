@@ -20,9 +20,11 @@ export function useMiniGameLifecycle({ onSubmit, resetKey, initialConfirmed = fa
 
   /** Calls onSubmit then locks the UI into the waiting phase. */
   const confirm = useCallback(() => {
+    // Re-entry guard: Enter key / double-tap after confirming must not re-submit.
+    if (hasConfirmed) return;
     if (typeof onSubmit === 'function') onSubmit();
     setHasConfirmed(true);
-  }, [onSubmit]);
+  }, [onSubmit, hasConfirmed]);
 
   /** Returns the UI to the input phase without re-calling onSubmit. */
   const editResponse = useCallback(() => {

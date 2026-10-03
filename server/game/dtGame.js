@@ -6,7 +6,9 @@ const VoteCollector = require('./VoteCollector');
 const { buildMiniGameSnapshot } = require('./miniGameSnapshot');
 const { shuffleAnswers } = require('./gameLogic');
 const { sanitizeStrokes } = require('./limits');
-const { getActivePlayers } = require('./players');
+const { getActivePlayers, admitLateJoiners } = require('./players');
+const { requireMinPlayers, clampRounds } = require('./rules');
+const { PHOTO_SECS, VOTE_SECS, startPhaseTimer } = require('./phaseTimer');
 const log = require('../logger');
 const {
   createRoom,
@@ -25,6 +27,14 @@ const DT_GUESS_SECS = 60;   // seconds to guess before auto-submit
 const DT_VOTE_SECS = 30;    // seconds to vote before auto-advance
 
 // We need to pass in dependencies from index.js
+// setupDtGame runs per socket, so its helpers live in a closure. The threshold
+// evaluator is stateless apart from (io, room), so any instance can serve a
+// disconnect in any room; the most recent one is kept here.
+let dtRecheck = null;
+const registerRecheck = (fn) => { dtRecheck = fn; };
+/** Re-evaluate "everyone submitted" for photo games / Draw Telephone. */
+const recheckDtRoom = (io, room, code) => { if (dtRecheck) dtRecheck(io, room, code); };
+
 function setupDtGame(io, socket, {
   getPlayerSocket,
   findPlayer,
@@ -42,11 +52,10 @@ function setupDtGame(io, socket, {
     if (!player || !player.isHost) return;
 
     cancelAllTimers(room);
+    admitLateJoiners(io, room);
+    if (!requireMinPlayers(socket, room, 'selfie-roast')) return;
     const playingPlayers = getActivePlayers(room);
-    if (playingPlayers.length < 2) return;
-
-    room.players.forEach(p => { p.joinedMidRound = false; });
-    const totalRounds = Math.min(Math.max(parseInt(rounds) || 3, 1), 10);
+    const totalRounds = clampRounds(rounds, 3);
     const scores = {};
     playingPlayers.forEach(p => { scores[p.id] = 0; });
 
@@ -77,6 +86,7 @@ function setupDtGame(io, socket, {
 
     const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
     io.to(code).emit('selfie:photo_phase', { round: 1, totalRounds, players, totalPhotographers: playingPlayers.length });
+    startSelfiePhotoTimer(io, room, code);
 
     // Notify players whose photos were pre-loaded so they see "saved selfie" UI
     playingPlayers.forEach(p => {
@@ -122,12 +132,7 @@ function setupDtGame(io, socket, {
       const submittedPlayerIds = Object.keys(room.dt.selfiePhotos);
       io.to(code).emit('dt:photo_received', { photoCount, totalPhotographers: playingPlayers.length, submittedPlayerIds });
 
-      if (photoCount >= playingPlayers.length) {
-        room.dt.phase = 'prompting';
-        const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
-        io.to(code).emit('dt:prompt_phase', { players, totalPrompts: playingPlayers.length, secondsLeft: DT_PROMPT_SECS });
-        startDtPromptTimer(io, room, code);
-      }
+      recheckRoom(io, room, code);
       return;
     }
 
@@ -185,9 +190,7 @@ function setupDtGame(io, socket, {
     const photoCount = Object.keys(room.selfie.photos).length;
     io.to(code).emit('selfie:photo_received', { photoCount, totalPhotographers: playingPlayers.length, submittedPlayerIds: Object.keys(room.selfie.photos) });
 
-    if (photoCount >= playingPlayers.length) {
-      assignSelfieDrawers(io, room, code);
-    }
+    recheckRoom(io, room, code);
   });
 
   const assignSelfieDrawers = (io, room, code) => {
@@ -301,18 +304,21 @@ function setupDtGame(io, socket, {
       io.to(code).emit('selfie:drawing_received', { drawingCount, totalDrawers: playingPlayers.length, drawnPlayerIds: Object.keys(room.selfie.strokes) });
     }
 
-    if (!isUpdate && drawingCount >= playingPlayers.length) {
-      startSelfieVoting(io, room, code);
-    }
+    if (!isUpdate) recheckRoom(io, room, code);
   });
 
   const startSelfieVoting = (io, room, code) => {
     if (room.selfie.phase !== 'drawing') return;
     room.selfie.phase = 'voting';
     room.selfie.votes = {};
+    startPhaseTimer(io, room, code, {
+      key: 'selfieVote', seconds: VOTE_SECS, phase: 'selfie-voting',
+      isActive: () => room.phase === 'selfie' && room.selfie?.phase === 'voting',
+      onExpire: () => resolveSelfieVoting(io, room, code),
+    });
     const playingPlayers = getActivePlayers(room);
     room.selfie._voteCollector = VoteCollector.create({
-      getExpectedCount: () => getActivePlayers(room).length,
+      getExpectedIds: () => getActivePlayers(room).map(p => p.id),
       allowSelfVote: false,
       onVote: (voterId, targetId) => { room.selfie.votes[voterId] = targetId; },
       onComplete: () => resolveSelfieVoting(io, room, code),
@@ -406,12 +412,7 @@ function setupDtGame(io, socket, {
     const voteCount = room.selfie._voteCollector?.count() ?? Object.keys(room.selfie.votes).length;
     io.to(code).emit('selfie:vote_received', { voteCount, totalVoters: playingPlayers.length, votedPlayerIds: room.selfie._voteCollector?.getVoterIds() ?? Object.keys(room.selfie.votes) });
 
-    if (!room.selfie._voteCollector) {
-      const allVoted = playingPlayers.every(p => room.selfie.votes[p.id] !== undefined);
-      if (voteCount >= playingPlayers.length || allVoted) {
-        resolveSelfieVoting(io, room, code);
-      }
-    }
+    if (!room.selfie._voteCollector) recheckRoom(io, room, code);
   });
 
   const resolveSelfieVoting = (io, room, code) => {
@@ -479,6 +480,7 @@ function setupDtGame(io, socket, {
     if (room.selfie.round >= room.selfie.totalRounds) return;
 
     room.selfie.round++;
+    admitLateJoiners(io, room);
     // Reuse existing photos from playerPhotos bank
     room.selfie.phase = 'photo';
     room.selfie.photos = {};
@@ -498,6 +500,7 @@ function setupDtGame(io, socket, {
     } else {
       const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
       io.to(code).emit('selfie:photo_phase', { round: room.selfie.round, totalRounds: room.selfie.totalRounds, players, totalPhotographers: playingPlayers.length });
+      startSelfiePhotoTimer(io, room, code);
     }
   });
 
@@ -555,6 +558,7 @@ function setupDtGame(io, socket, {
       } else {
         const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
         io.to(code).emit('selfie:photo_phase', { round: room.selfie.round, totalRounds: room.selfie.totalRounds, players, totalPhotographers: playingPlayers.length });
+        startSelfiePhotoTimer(io, room, code);
       }
     }
   });
@@ -581,16 +585,128 @@ function setupDtGame(io, socket, {
     io.to(code).emit('selfie:restarted', { code, players: room.players });
   });
 
+  // ─── Phase timers (AUDIT.md P1-05) ────────────────────────────────────────
+  // Every waiting phase has a countdown; host:advance ends it early through the
+  // same onExpire path. Photo phases need at least 2 photos to continue.
+  const enoughPhotos = (photos) => Object.keys(photos || {}).length >= 2;
+
+  function startSelfiePhotoTimer(io, room, code) {
+    startPhaseTimer(io, room, code, {
+      key: 'selfiePhoto', seconds: PHOTO_SECS, phase: 'selfie-photo',
+      isActive: () => room.phase === 'selfie' && room.selfie?.phase === 'photo',
+      onExpire: () => (enoughPhotos(room.selfie.photos) ? assignSelfieDrawers(io, room, code) : startSelfiePhotoTimer(io, room, code)),
+    });
+  }
+
+  function startCaptionPhotoTimer(io, room, code) {
+    startPhaseTimer(io, room, code, {
+      key: 'captionPhoto', seconds: PHOTO_SECS, phase: 'caption-photo',
+      isActive: () => room.phase === 'caption' && room.caption?.phase === 'photo',
+      onExpire: () => (enoughPhotos(room.caption.photos) ? startCaptionWritingPhase(io, room, code) : startCaptionPhotoTimer(io, room, code)),
+    });
+  }
+
+  function startPhotoVotePhotoTimer(io, room, code) {
+    startPhaseTimer(io, room, code, {
+      key: 'photoVotePhoto', seconds: PHOTO_SECS, phase: 'photovote-photo',
+      isActive: () => room.phase === 'photovote' && room.photoVote?.phase === 'photo',
+      onExpire: () => (enoughPhotos(room.photoVote.photos) ? startPhotoVoteRound(io, room, code) : startPhotoVotePhotoTimer(io, room, code)),
+    });
+  }
+
+  function startDtSelfieTimer(io, room, code) {
+    startPhaseTimer(io, room, code, {
+      key: 'dtSelfie', seconds: PHOTO_SECS, phase: 'dt-selfie',
+      isActive: () => room.phase === 'dt' && room.dt?.phase === 'selfie',
+      onExpire: () => startDtPromptPhase(io, room, code),
+    });
+  }
+
+  function startDtPromptPhase(io, room, code) {
+    if (room.phase !== 'dt' || room.dt.phase !== 'selfie') return;
+    room.dt.phase = 'prompting';
+    const list = getActivePlayers(room).map(p => ({ id: p.id, name: p.name, color: p.color }));
+    io.to(code).emit('dt:prompt_phase', { players: list, totalPrompts: list.length, secondsLeft: DT_PROMPT_SECS });
+    startDtPromptTimer(io, room, code);
+  }
+
+  // ─── Threshold evaluation (shared by submit handlers and disconnects) ─────
+  // "Everyone we're waiting for has submitted" for the current sub-phase of the
+  // photo games and Draw Telephone. Called after every submission AND when a
+  // player disconnects / is kicked, so a player leaving while pending no longer
+  // stalls an untimed phase (AUDIT.md P2-01), and a submitter who left can't
+  // make a phase advance early (P2-02). Idempotent: each advance function is
+  // guarded by the sub-phase it starts from.
+  function recheckRoom(io, room, code) {
+    const players = getActivePlayers(room);
+    const everyone = (list, has) => list.length > 0 && list.every(p => has(p.id));
+    switch (room.phase) {
+      case 'selfie': {
+        const sf = room.selfie;
+        if (sf.phase === 'photo' && everyone(players, id => sf.photos[id])) assignSelfieDrawers(io, room, code);
+        else if (sf.phase === 'drawing') {
+          const drawers = players.filter(p => sf.assignments?.[p.id]);
+          if (everyone(drawers, id => sf.strokes[id])) startSelfieVoting(io, room, code);
+        } else if (sf.phase === 'voting') {
+          if (sf._voteCollector) sf._voteCollector.recheck();
+          else if (everyone(players, id => sf.votes[id] !== undefined)) resolveSelfieVoting(io, room, code);
+        }
+        break;
+      }
+      case 'caption': {
+        const cp = room.caption;
+        if (cp.phase === 'photo' && everyone(players, id => cp.photos[id])) startCaptionWritingPhase(io, room, code);
+        else if (cp.phase === 'writing' && everyone(players, id => cp.captions[id])) startCaptionVotingPhase(io, room, code);
+        else if (cp.phase === 'voting') {
+          if (cp._voteCollector) cp._voteCollector.recheck();
+          else if (everyone(players, id => cp.votes[id])) endCaptionRound(io, room, code);
+        }
+        break;
+      }
+      case 'photovote': {
+        const pv = room.photoVote;
+        if (pv.phase === 'photo' && everyone(players, id => pv.photos[id])) startPhotoVoteRound(io, room, code);
+        else if (pv.phase === 'voting') {
+          if (pv._voteCollector) pv._voteCollector.recheck();
+          else if (everyone(players, id => pv.votes[id])) endPhotoVoteRound(io, room, code);
+        }
+        break;
+      }
+      case 'dt': {
+        const dt = room.dt;
+        if (dt.phase === 'selfie' && everyone(players, id => dt.selfiePhotos?.[id])) {
+          startDtPromptPhase(io, room, code);
+        } else if (dt.phase === 'prompting' && everyone(players, id => dt.prompts.some(pr => pr.authorId === id))) {
+          if (dt.promptTimerRef) { clearTimeout(dt.promptTimerRef); dt.promptTimerRef = null; }
+          startDtDrawingPhase(io, room, code, players);
+        } else if (dt.phase === 'guessing') {
+          const activeIds = new Set(players.map(p => p.id));
+          const pending = Object.entries(dt.chains || {})
+            .filter(([, c]) => activeIds.has(c.targetPlayerId))
+            .filter(([pid]) => dt.guesses[pid] === undefined);
+          if (Object.keys(dt.chains || {}).length > 0 && pending.length === 0) startDtRevealPhase(io, room, code);
+        }
+        break;
+      }
+      default:
+        break;
+    }
+  }
+  registerRecheck(recheckRoom);
+
   // ─── Caption mode ──────────────────────────────────────────────────────────
   // Phase flow: photo → writing → voting → results → (next round or end)
   // Each round: everyone submits a photo, then everyone ELSE writes a caption for it.
   // The photo owner cannot write a caption but CAN vote. Votes = points.
 
-  socket.on('caption:start', ({ code, rounds = 3 }) => {
+  socket.on('caption:start', ({ code, rounds: rawRounds }) => {
     const room = getRoom(code);
     if (!room) return;
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
+    admitLateJoiners(io, room);
+    if (!requireMinPlayers(socket, room, 'caption')) return;
+    const rounds = clampRounds(rawRounds, 3);
 
     cancelAllTimers(room);
     const { captionPrompts } = require('../questions/captionPrompts');
@@ -639,6 +755,7 @@ function setupDtGame(io, socket, {
       totalRounds: room.caption.totalRounds,
       players,
     });
+    startCaptionPhotoTimer(io, room, code);
 
     // Notify pre-loaded players
     captionPlayers.forEach(p => {
@@ -674,23 +791,29 @@ function setupDtGame(io, socket, {
 
     const playingPlayers = getActivePlayers(room);
     const submittedCount = Object.keys(room.caption.photos).length;
-    io.to(code).emit('caption:photo_submitted', { playerId: player.id, submittedCount, totalCount: playingPlayers.length });
+    io.to(code).emit('caption:photo_submitted', { playerId: player.id, submittedCount, totalCount: playingPlayers.length, submittedPlayerIds: Object.keys(room.caption.photos) });
 
     // Auto-advance when all photos are in
-    if (submittedCount >= playingPlayers.length) {
-      startCaptionWritingPhase(io, room, code);
-    }
+    recheckRoom(io, room, code);
   });
 
   function startCaptionWritingPhase(io, room, code) {
+    admitLateJoiners(io, room);
     room.caption.phase = 'writing';
     room.caption.captions = {};
     room.caption.votes = {};
 
     // Pick the featured photo owner for this round (cycle through players)
     const playingPlayers = getActivePlayers(room);
-    const ownerIndex = (room.caption.currentRound - 1) % playingPlayers.length;
-    room.caption.featuredOwnerId = playingPlayers[ownerIndex].id;
+    // Only players with a photo can be featured; with nobody left, end the game
+    // instead of indexing into an empty array (used to crash the server).
+    const candidates = playingPlayers.filter(p => room.caption.photos[p.id]);
+    if (candidates.length === 0) {
+      endCaptionGame(io, room, code);
+      return;
+    }
+    const ownerIndex = (room.caption.currentRound - 1) % candidates.length;
+    room.caption.featuredOwnerId = candidates[ownerIndex].id;
 
     const promptObj = room.caption.prompts[room.caption.currentPromptIndex] || { text: 'Write a funny caption!' };
     room.caption.currentPrompt = promptObj.text;
@@ -711,11 +834,19 @@ function setupDtGame(io, socket, {
       featuredPhotoData: room.caption.photos[room.caption.featuredOwnerId],
       writers: playingPlayers.map(p => ({ id: p.id, name: p.name })),
     });
+    const writingSecs = room.roomConfig?.roundDurationSecs || 60;
+    startPhaseTimer(io, room, code, {
+      key: 'captionWriting', seconds: writingSecs, phase: 'caption-writing',
+      isActive: () => room.phase === 'caption' && room.caption?.phase === 'writing',
+      onExpire: () => startCaptionVotingPhase(io, room, code),
+    });
   }
 
   socket.on('caption:submit_caption', ({ code, text }) => {
     const room = getRoom(code);
-    if (!room || room.phase !== 'caption' || (room.caption.phase !== 'writing' && room.caption.phase !== 'voting')) return;
+    // Captions are locked once voting starts: edits used to change text voters
+    // had already seen, and late captions never reached the ballot (P2-40).
+    if (!room || room.phase !== 'caption' || room.caption.phase !== 'writing') return;
     const player = findPlayer(room, socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
 
@@ -734,20 +865,22 @@ function setupDtGame(io, socket, {
 
     const writers = getActivePlayers(room);
     const submittedCount = Object.keys(room.caption.captions).length;
-    io.to(code).emit('caption:caption_submitted', { playerId: player.id, submittedCount, totalCount: writers.length });
+    io.to(code).emit('caption:caption_submitted', { playerId: player.id, submittedCount, totalCount: writers.length, submittedPlayerIds: Object.keys(room.caption.captions) });
 
-    const allSubmitted = writers.every(p => room.caption.captions[p.id]);
-    if (room.caption.phase === 'writing' && ((!isUpdate && submittedCount >= writers.length) || allSubmitted)) {
-      startCaptionVotingPhase(io, room, code);
-    }
+    recheckRoom(io, room, code);
   });
 
   function startCaptionVotingPhase(io, room, code) {
     if (room.caption.phase !== 'writing') return; // guard against double-fire
     room.caption.phase = 'voting';
     room.caption.votes = {};
+    startPhaseTimer(io, room, code, {
+      key: 'captionVote', seconds: VOTE_SECS, phase: 'caption-voting',
+      isActive: () => room.phase === 'caption' && room.caption?.phase === 'voting',
+      onExpire: () => endCaptionRound(io, room, code),
+    });
     room.caption._voteCollector = VoteCollector.create({
-      getExpectedCount: () => getActivePlayers(room).length,
+      getExpectedIds: () => getActivePlayers(room).map(p => p.id),
       allowSelfVote: true, // self-vote validated manually in handler before castVote
       onVote: (voterId, captionId) => { room.caption.votes[voterId] = captionId; },
       onComplete: () => endCaptionRound(io, room, code),
@@ -797,12 +930,7 @@ function setupDtGame(io, socket, {
     const voteCount = room.caption._voteCollector?.count() ?? Object.keys(room.caption.votes).length;
     io.to(code).emit('caption:vote_received', { voteCount, totalVoters: voters.length, votedPlayerIds: room.caption._voteCollector?.getVoterIds() ?? Object.keys(room.caption.votes) });
 
-    if (!room.caption._voteCollector) {
-      const allVoted = voters.every(p => room.caption.votes[p.id]);
-      if (voteCount >= voters.length || allVoted) {
-        endCaptionRound(io, room, code);
-      }
-    }
+    if (!room.caption._voteCollector) recheckRoom(io, room, code);
   });
 
   socket.on('caption:skip_to_voting', ({ code }) => {
@@ -868,6 +996,25 @@ function setupDtGame(io, socket, {
     });
   }
 
+  // Every playing player appears on the final board, 0-point players included.
+  function buildPointsLeaderboard(room, scores) {
+    const ids = new Set([...Object.keys(scores || {}), ...room.players.filter(p => p.isPlaying).map(p => p.id)]);
+    return [...ids]
+      .map(id => ({ id, pts: (scores || {})[id] || 0, name: room.players.find(p => p.id === id)?.name || '?' }))
+      .sort((a, b) => b.pts - a.pts);
+  }
+
+  function endCaptionGame(io, room, code) {
+    if (room.caption.phase === 'ended') return;
+    mergeToGlobalScores(io, room, room.caption.scores);
+    room.caption.phase = 'ended';
+    room.phase = 'captionEnd';
+    io.to(code).emit('caption:game_over', {
+      scores: room.caption.scores,
+      leaderboard: buildPointsLeaderboard(room, room.caption.scores),
+    });
+  }
+
   socket.on('caption:next_round', ({ code }) => {
     const room = getRoom(code);
     if (!room || room.phase !== 'caption' || room.caption.phase !== 'results') return;
@@ -875,15 +1022,7 @@ function setupDtGame(io, socket, {
     if (!player || !player.isHost) return;
 
     if (room.caption.currentRound >= room.caption.totalRounds) {
-      // Game over — merge scores
-      mergeToGlobalScores(io, room, room.caption.scores);
-      room.caption.phase = 'ended';
-      io.to(code).emit('caption:game_over', {
-        scores: room.caption.scores,
-        leaderboard: Object.entries(room.caption.scores)
-          .map(([id, pts]) => ({ id, pts, name: room.players.find(p => p.id === id)?.name || '?' }))
-          .sort((a, b) => b.pts - a.pts),
-      });
+      endCaptionGame(io, room, code);
     } else {
       room.caption.currentRound++;
       // Reuse existing photos — skip the photo collection phase
@@ -917,6 +1056,8 @@ function setupDtGame(io, socket, {
     if (!room) return;
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
+    admitLateJoiners(io, room);
+    if (!requireMinPlayers(socket, room, 'pmatch')) return;
     cancelAllTimers(room);
     const pvPlayers = getActivePlayers(room);
     const { pmatchPrompts } = require('../questions/pmatchPrompts');
@@ -930,14 +1071,18 @@ function setupDtGame(io, socket, {
       players: pvPlayers.map(p => ({ id: p.id, name: p.name, color: p.color })),
       prompt: photoPhasePrompt,
     });
+    startPhotoVotePhotoTimer(io, room, code);
   });
 
-  socket.on('photovote:start', ({ code, subType = 'pmatch', rounds = 5 }) => {
+  socket.on('photovote:start', ({ code, subType = 'pmatch', rounds: rawRounds }) => {
     const room = getRoom(code);
     if (!room) return;
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
     if (!['pmatch', 'photoassoc'].includes(subType)) return;
+    admitLateJoiners(io, room);
+    if (!requireMinPlayers(socket, room, subType)) return;
+    const rounds = clampRounds(rawRounds, 5);
 
     cancelAllTimers(room);
     const pvPlayers = getActivePlayers(room);
@@ -997,6 +1142,7 @@ function setupDtGame(io, socket, {
       players,
       prompt: photoPhasePrompt,
     });
+    startPhotoVotePhotoTimer(io, room, code);
 
     // Notify pre-loaded players
     pvPlayers.forEach(p => {
@@ -1032,11 +1178,9 @@ function setupDtGame(io, socket, {
 
     const playingPlayers = getActivePlayers(room);
     const submittedCount = Object.keys(room.photoVote.photos).length;
-    io.to(code).emit('photovote:photo_submitted', { playerId: player.id, submittedCount, totalCount: playingPlayers.length });
+    io.to(code).emit('photovote:photo_submitted', { playerId: player.id, submittedCount, totalCount: playingPlayers.length, submittedPlayerIds: Object.keys(room.photoVote.photos) });
 
-    if (submittedCount >= playingPlayers.length) {
-      startPhotoVoteRound(io, room, code);
-    }
+    recheckRoom(io, room, code);
   });
 
   function resolvePhotoVotePrompt(promptObj, playingPlayers) {
@@ -1053,8 +1197,13 @@ function setupDtGame(io, socket, {
   function startPhotoVoteRound(io, room, code) {
     room.photoVote.phase = 'voting';
     room.photoVote.votes = {};
+    startPhaseTimer(io, room, code, {
+      key: 'photoVoteVote', seconds: VOTE_SECS, phase: 'photovote-voting',
+      isActive: () => room.phase === 'photovote' && room.photoVote?.phase === 'voting',
+      onExpire: () => endPhotoVoteRound(io, room, code),
+    });
     room.photoVote._voteCollector = VoteCollector.create({
-      getExpectedCount: () => getActivePlayers(room).length,
+      getExpectedIds: () => getActivePlayers(room).map(p => p.id),
       allowSelfVote: false,
       onVote: (voterId, targetId) => { room.photoVote.votes[voterId] = targetId; },
       onComplete: () => endPhotoVoteRound(io, room, code),
@@ -1108,12 +1257,7 @@ function setupDtGame(io, socket, {
     const votedPlayerIds = room.photoVote._voteCollector?.getVoterIds() ?? Object.keys(room.photoVote.votes);
     io.to(code).emit('photovote:vote_received', { voteCount, totalVoters: playingPlayers.length, votedPlayerIds });
 
-    if (!room.photoVote._voteCollector) {
-      const allVoted = playingPlayers.every(p => room.photoVote.votes[p.id]);
-      if (voteCount >= playingPlayers.length || allVoted) {
-        endPhotoVoteRound(io, room, code);
-      }
-    }
+    if (!room.photoVote._voteCollector) recheckRoom(io, room, code);
   });
 
   socket.on('photovote:change_question', ({ code }) => {
@@ -1147,6 +1291,7 @@ function setupDtGame(io, socket, {
         players: playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color })),
         prompt: photoPhasePrompt,
       });
+      startPhotoVotePhotoTimer(io, room, code);
       return;
     }
 
@@ -1247,14 +1392,14 @@ function setupDtGame(io, socket, {
       }
       mergeToGlobalScores(io, room, room.photoVote.scores);
       room.photoVote.phase = 'ended';
+      room.phase = 'photovoteEnd';
       io.to(code).emit('photovote:game_over', {
         scores: room.photoVote.scores,
-        leaderboard: Object.entries(room.photoVote.scores)
-          .map(([id, pts]) => ({ id, pts, name: room.players.find(p => p.id === id)?.name || '?' }))
-          .sort((a, b) => b.pts - a.pts),
+        leaderboard: buildPointsLeaderboard(room, room.photoVote.scores),
       });
     } else {
       room.photoVote.currentRound++;
+      admitLateJoiners(io, room);
       
       if (room.photoVote.subType === 'pmatch') {
         room.photoVote.phase = 'photo';
@@ -1274,6 +1419,7 @@ function setupDtGame(io, socket, {
           players: playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color })),
           prompt: photoPhasePrompt,
         });
+        startPhotoVotePhotoTimer(io, room, code);
       } else {
         room.photoVote.phase = 'voting';
         room.photoVote.votes = {};
@@ -1380,14 +1526,21 @@ function setupDtGame(io, socket, {
   };
 
   // Helper: start the drawing timer for a specific chain
-  const startDtChainTimer = (io, room, code, promptId) => {
+  const startDtChainTimer = (io, room, code, promptId, { resume = false } = {}) => {
     const chain = room.dt.chains[promptId];
     if (!chain) return;
-    // Always reset the timer to a full turn for each new participant
-    chain.secondsLeft = DT_DRAW_SECS;
+    // A new participant gets a full turn; resuming after a pause keeps the time
+    // that was left (it used to reset every chain to 45s — AUDIT.md P2-28).
+    if (!resume || !(chain.secondsLeft > 0)) chain.secondsLeft = DT_DRAW_SECS;
     // Clear any stale interval that may still be running
     if (chain.timerRef) { clearInterval(chain.timerRef); chain.timerRef = null; }
     chain.timerRef = setInterval(() => {
+      // The game ended or moved on (e.g. host pressed End game): stop ticking.
+      if (room.phase !== 'dt' || room.dt.phase !== 'drawing') {
+        clearInterval(chain.timerRef);
+        chain.timerRef = null;
+        return;
+      }
       chain.secondsLeft--;
       // (activeTurns maps playerId→promptId, so invert the lookup)
       const activeDrawerEntry = Object.entries(room.dt.activeTurns).find(([, pid]) => pid === promptId);
@@ -1395,7 +1548,7 @@ function setupDtGame(io, socket, {
         const [activeDrawerId] = activeDrawerEntry;
         const drawerPlayer = room.players.find(p => p.id === activeDrawerId);
         if (drawerPlayer?.socketId) {
-          io.to(getPlayerSocket(drawerPlayer)).emit('dt:turn_timer', { promptId, secondsLeft: chain.secondsLeft });
+          io.to(getPlayerSocket(drawerPlayer)).emit('dt:turn_timer', { promptId, secondsLeft: chain.secondsLeft, total: DT_DRAW_SECS });
         }
         io.to(code).emit('dt:drawer_timer', { playerId: activeDrawerId, secondsLeft: chain.secondsLeft });
       }
@@ -1418,6 +1571,7 @@ function setupDtGame(io, socket, {
 
   // Helper: called when a turn times out — submits empty/current strokes for that turn
   const autoSubmitDtTurn = (io, room, code, promptId) => {
+    if (room.phase !== 'dt') return; // game ended during the grace window
     const chain = room.dt.chains[promptId];
     if (!chain || chain.phase !== 'drawing') return;
     const drawerEntry = Object.entries(room.dt.activeTurns).find(([, pid]) => pid === promptId);
@@ -1496,6 +1650,7 @@ function setupDtGame(io, socket, {
 
   // Helper: start guessing phase — target players see final drawing
   const startDtGuessingPhase = (io, room, code) => {
+    if (room.phase !== 'dt' || room.dt.phase !== 'drawing') return; // ended / already guessing
     room.dt.phase = 'guessing';
     const totalGuessers = Object.keys(room.dt.chains).length;
 
@@ -1608,11 +1763,9 @@ function setupDtGame(io, socket, {
     const player = findPlayer(room, socket.id);
     if (!player || !player.isHost) return;
 
+    admitLateJoiners(io, room);
+    if (!requireMinPlayers(socket, room, 'draw-telephone')) return;
     const playingPlayers = getActivePlayers(room);
-    if (playingPlayers.length < 3) {
-      socket.emit('dt:error', { message: 'Need at least 3 players to start Draw Telephone.' });
-      return;
-    }
 
     cancelAllTimers(room);
     room.phase = 'dt';
@@ -1646,6 +1799,7 @@ function setupDtGame(io, socket, {
     room.dt.phase = 'selfie';
     room.dt.selfiePhotos = {}; // Players must explicitly submit or reuse
     io.to(code).emit('dt:selfie_phase', { players, photoCount: 0, totalPhotographers: playingPlayers.length });
+    startDtSelfieTimer(io, room, code);
 
     // Notify players whose photos are already saved so they can choose to reuse them
     playingPlayers.forEach(p => {
@@ -1671,12 +1825,7 @@ function setupDtGame(io, socket, {
 
     io.to(code).emit('dt:photo_received', { photoCount, totalPhotographers: playingPlayers.length, submittedPlayerIds });
 
-    if (photoCount >= playingPlayers.length) {
-      room.dt.phase = 'prompting';
-      const players = playingPlayers.map(p => ({ id: p.id, name: p.name, color: p.color }));
-      io.to(code).emit('dt:prompt_phase', { players, totalPrompts: players.length, secondsLeft: DT_PROMPT_SECS });
-      startDtPromptTimer(io, room, code);
-    }
+    recheckRoom(io, room, code);
   });
 
   socket.on('dt:submit_prompt', ({ code, templateText }) => {
@@ -1706,10 +1855,7 @@ function setupDtGame(io, socket, {
     });
 
     // When all players have submitted, assign targets and start drawing chains
-    if (room.dt.prompts.length >= playingPlayers.length) {
-      if (room.dt.promptTimerRef) { clearTimeout(room.dt.promptTimerRef); room.dt.promptTimerRef = null; }
-      startDtDrawingPhase(io, room, code, playingPlayers);
-    }
+    recheckRoom(io, room, code);
   });
 
   const startDtDrawingPhase = (io, room, code, playingPlayers) => {
@@ -1909,7 +2055,7 @@ function setupDtGame(io, socket, {
     if (!room || room.phase !== 'dt' || room.dt.phase !== 'guessing') return;
     const player = findPlayer(room, socket.id);
     if (!player || !player.isPlaying || !player.isConnected) return;
-    if (room.dt.guesses[promptId]) return; // already guessed
+    // A guess can be edited until the guessing phase closes (product decision).
 
     // Only the target of this chain can guess
     const chain = room.dt.chains[promptId];
@@ -1919,7 +2065,9 @@ function setupDtGame(io, socket, {
     const sanitized = guessText.trim().slice(0, 200);
     if (!sanitized) return;
 
+    const isUpdate = room.dt.guesses[promptId] !== undefined;
     room.dt.guesses[promptId] = sanitized;
+    if (isUpdate) return; // counts / completion only change on the first guess
 
     const totalGuessers = Object.keys(room.dt.chains).length;
     const guessedCount = Object.keys(room.dt.guesses).length;
@@ -1928,9 +2076,7 @@ function setupDtGame(io, socket, {
       .map(([, c]) => c.targetPlayerId);
     io.to(code).emit('dt:guess_received', { guessedCount, totalGuessers, guessedPlayerIds });
 
-    if (guessedCount >= totalGuessers) {
-      startDtRevealPhase(io, room, code);
-    }
+    recheckRoom(io, room, code);
   });
 
   const startDtRevealPhase = (io, room, code) => {
@@ -2001,6 +2147,8 @@ function setupDtGame(io, socket, {
 
     if (!['correct', 'close', 'wrong'].includes(vote)) return;
     if (!room.dt.chains[promptId]) return;
+    // Only the chain currently being revealed can be voted on.
+    if (promptId !== room.dt.revealQueue?.[room.dt.revealCurrentIndex]) return;
     if (!room.dt.votes[promptId]) room.dt.votes[promptId] = {};
     if (room.dt.votes[promptId][player.id]) return; // already voted
 
@@ -2037,6 +2185,14 @@ function setupDtGame(io, socket, {
   });
 
   const endDtGame = (io, room, code) => {
+    // Stop every Draw Telephone timer: per-chain turn intervals, the prompt
+    // timeout and the phase timers. Chains used to keep ticking after "End game"
+    // and later broadcast dt:guessing_phase into the finished game (P1-09).
+    for (const chain of Object.values(room.dt.chains || {})) {
+      if (chain.timerRef) { clearInterval(chain.timerRef); chain.timerRef = null; }
+    }
+    if (room.dt.promptTimerRef) { clearTimeout(room.dt.promptTimerRef); room.dt.promptTimerRef = null; }
+    cancelAllTimers(room);
     room.dt.phase = 'end';
     room.phase = 'dtEnd';
 
@@ -2129,7 +2285,7 @@ function setupDtGame(io, socket, {
       room._timers.dtPrompt.resume();
     } else if (room.dt.phase === 'drawing') {
       for (const promptId of Object.values(room.dt.activeTurns)) {
-        startDtChainTimer(io, room, code, promptId);
+        startDtChainTimer(io, room, code, promptId, { resume: true });
       }
     } else if (room.dt.phase === 'guessing' && room._timers?.dtGuess) {
       room._timers.dtGuess.resume();
@@ -2153,7 +2309,7 @@ function setupDtGame(io, socket, {
   });
 }
 
-module.exports = { 
+module.exports = { recheckDtRoom, 
   setupDtGame,
   DT_DRAW_SECS,
   DT_PROMPT_SECS,

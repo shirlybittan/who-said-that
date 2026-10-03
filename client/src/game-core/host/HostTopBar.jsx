@@ -1,4 +1,6 @@
 import React from 'react';
+import SoundToggle from '../../components/shell/SoundToggle';
+import LangSwitcher from '../../components/shell/LangSwitcher';
 import { QRCodeSVG } from 'qrcode.react';
 
 export default function HostTopBar({ roomCode, showQr, joinUrl, onCopyHostUrl, onChangeGame, onMainMenu }) {
@@ -42,6 +44,8 @@ export default function HostTopBar({ roomCode, showQr, joinUrl, onCopyHostUrl, o
             🏠 Main Menu
           </button>
         ) : null}
+        <SoundToggle />
+        <LangSwitcher />
       </div>
     </div>
   );

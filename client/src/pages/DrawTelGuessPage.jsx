@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useGame } from '../store/gameStore.jsx';
+import { translations } from '../locales/translations';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
@@ -13,6 +14,7 @@ export default function DrawTelGuessPage() {
   const { dt, roomCode, phaseSecondsLeft } = state;
   const guessTurn = dt.guessTurn;
   const sounds = useSounds();
+  const t = translations[state.lang]?.dt || translations.en.dt;
   const [guessText, setGuessText] = useState('');
 
   const canSubmit = guessText.trim().length > 0;
@@ -31,8 +33,8 @@ export default function DrawTelGuessPage() {
   });
 
   // Capture mutable values in a ref so they don't need to be in the timer's deps
-  const autoSubmitRef = useRef({ guessText, guessTurn, roomCode });
-  useEffect(() => { autoSubmitRef.current = { guessText, guessTurn, roomCode }; });
+  const autoSubmitRef = useRef({ guessText, guessTurn, roomCode, fallback: t.autoGuess });
+  useEffect(() => { autoSubmitRef.current = { guessText, guessTurn, roomCode, fallback: t.autoGuess }; });
 
   // Reset text when a new guess prompt arrives
   useEffect(() => {
@@ -46,10 +48,10 @@ export default function DrawTelGuessPage() {
   // Auto-submit when timer reaches zero (uses ref to avoid stale closures)
   useEffect(() => {
     if (secondsLeft > 0 || hasConfirmed) return;
-    const { guessText: text, guessTurn: turn, roomCode: code } = autoSubmitRef.current;
+    const { guessText: text, guessTurn: turn, roomCode: code, fallback } = autoSubmitRef.current;
     if (turn) {
       let textToSubmit = text.trim();
-      if (!textToSubmit) textToSubmit = 'I had absolutely no idea 🤦‍♂️';
+      if (!textToSubmit) textToSubmit = fallback;
       sounds.answer?.();
       socket.emit('dt:submit_guess', { code, promptId: turn.promptId, guessText: textToSubmit });
       dispatch({ type: 'DT_MARK_GUESSED' });
@@ -65,8 +67,8 @@ export default function DrawTelGuessPage() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
         >
-          <p className="text-2xl font-['Fredoka_One'] text-[#FF6B6B] mb-2">Get ready to guess!</p>
-          <p className="text-gray-400 font-['Nunito'] text-sm">Drawing is being finished…</p>
+          <p className="text-2xl font-['Fredoka_One'] text-[#FF6B6B] mb-2">{t.getReady}</p>
+          <p className="text-gray-400 font-['Nunito'] text-sm">{t.finishingDrawing}</p>
         </motion.div>
       </GamePageWrapper>
     );
@@ -81,15 +83,12 @@ export default function DrawTelGuessPage() {
         transition={{ duration: 0.3, ease: 'easeOut' }}
       >
         <div className="w-full max-w-md mt-4 mb-4">
-          <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest mb-1">📞 Draw Telephone</p>
+          <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest mb-1">{t.gameName}</p>
           <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-['Fredoka_One'] text-[#FF6B6B]">What's the original prompt?</h2>
-            <span className="text-sm font-['Nunito'] tabular-nums ml-3" style={{ color: secondsLeft <= 10 ? '#FF6B6B' : '#9CA3AF' }}>
-              ⏱ {secondsLeft}s
-            </span>
+            <h2 className="text-2xl font-['Fredoka_One'] text-[#FF6B6B]">{t.guessTitle}</h2>
           </div>
           <p className="text-sm text-gray-400 font-['Nunito'] mt-1">
-            {guessTurn.drawerCount} player{guessTurn.drawerCount !== 1 ? 's' : ''} drew this for you. What do you think the original sentence was?
+            {(guessTurn.drawerCount !== 1 ? t.drewForYouMany : t.drewForYouOne).replace('{count}', guessTurn.drawerCount)}
           </p>
         </div>
 
@@ -99,7 +98,7 @@ export default function DrawTelGuessPage() {
             <ReplayCanvas
               strokes={guessTurn.finalStrokes || []}
               photoData={guessTurn.originalSelfieData || null}
-              cssWidth={400}
+              cssWidth="100%"
             />
           </div>
         </div>
@@ -107,7 +106,7 @@ export default function DrawTelGuessPage() {
         {/* Reminder of template format */}
         <div className="w-full max-w-md mb-4 bg-[#1A1A2E] rounded-xl border border-[#2D2D44] p-3">
           <p className="text-xs text-gray-500 font-['Nunito']">
-            Hint: the original prompt was about <span className="text-[#FFE66D] font-bold">you</span> — it included your name somewhere.
+            {t.hintA} <span className="text-[#FFE66D] font-bold">{t.hintYou}</span> {t.hintB}
           </p>
         </div>
 
@@ -116,15 +115,15 @@ export default function DrawTelGuessPage() {
             hasConfirmed={hasConfirmed}
             onConfirm={confirm}
             onEditResponse={editResponse}
-            confirmLabel="Submit Guess"
+            confirmLabel={t.submitGuess}
             disableConfirm={!canSubmit}
-            waitingMessage="Waiting for other players to guess..."
+            waitingMessage={t.waitingGuessOthers}
           >
             <input
               type="text"
               value={guessText}
               onChange={(e) => setGuessText(e.target.value.slice(0, 200))}
-              placeholder="What was the original prompt?"
+              placeholder={t.guessPlaceholder}
               className="w-full bg-[#1A1A2E] border-2 border-[#2D2D44] focus:border-[#FF6B6B] outline-none rounded-xl px-4 py-3 text-white font-['Nunito'] text-base placeholder-gray-600 transition"
               maxLength={200}
               autoFocus

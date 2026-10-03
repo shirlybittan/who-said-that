@@ -3,6 +3,9 @@ import { socket } from '../socket';
 import { useGame } from '../store/gameStore.jsx';
 import { useNavigate } from 'react-router-dom';
 import { buildJoinRestorePlan } from '../utils/rejoinState.js';
+import { phaseForEvent } from '../game-core/phaseEvents';
+import { timerActionFor } from '../game-core/roundTimer';
+import { progressActionFor } from '../game-core/roundProgress';
 
 export const useSocket = () => {
   const { state, dispatch } = useGame();
@@ -17,7 +20,14 @@ export const useSocket = () => {
   const stateRef = useRef(state);
   useEffect(() => { stateRef.current = state; });
 
+  // react-router's navigate changes identity on every route change. Depending
+  // on it re-registered ~120 listeners and re-sent join_room (receiving the
+  // whole room, photos included) on EVERY navigation (AUDIT.md P1-14).
+  const navigateRef = useRef(navigate);
+  useEffect(() => { navigateRef.current = navigate; });
+
   useEffect(() => {
+    const navigate = (...args) => navigateRef.current(...args);
     const onConnect = () => {
       dispatch({ type: 'SET_CONNECTION', payload: 'online' });
       const savedId = sessionStorage.getItem('wst_playerId');
@@ -52,8 +62,10 @@ export const useSocket = () => {
       }
     };
 
-    const onRoomCreated = ({ code, playerId, players, gameType, gameName, selectedSubGames, isPlaying, roomConfig, globalScores }) => {
+    const onRoomCreated = ({ code, hostKey, playerId, players, gameType, gameName, selectedSubGames, isPlaying, roomConfig, globalScores }) => {
       sessionStorage.setItem('wst_roomCode', code);
+      // Phone host: keep the key so a 'Show on TV' screen can be given control.
+      if (hostKey) sessionStorage.setItem(`wst_hostKey:${code}`, hostKey);
       const myPlayer = players?.find(p => p.id === playerId);
       if (myPlayer?.name) sessionStorage.setItem('wst_playerName', myPlayer.name);
       dispatch({ type: 'SET_ROOM', payload: { roomCode: code, phase: 'lobby', isHost: true, isPlaying: !!isPlaying, players, gameType, gameName: gameName || '', selectedSubGames, roomConfig: roomConfig || {}, globalScores: globalScores || {} } });
@@ -71,6 +83,14 @@ export const useSocket = () => {
       dispatch({ type: 'SET_ROOM', payload: { ...roomPayload, uploadToken: uploadToken || null } });
       dispatch({ type: 'SET_PLAYER_ID', payload: playerId });
       actions.forEach(action => dispatch(action));
+      if (room.phase === 'intro' && room.intro) {
+        dispatch({ type: 'INTRO_SET', payload: {
+          gameType: room.intro.gameType,
+          players: room.players.filter(p => p.isPlaying && p.isConnected && !p.joinedMidRound).map(p => ({ id: p.id, name: p.name, color: p.color })),
+          readyIds: Object.keys(room.intro.ready || {}),
+          countdown: room.intro.countdownEndsAt ? Math.max(0, Math.ceil((room.intro.countdownEndsAt - Date.now()) / 1000)) : null,
+        } });
+      }
       navigate(route);
     };
 
@@ -154,10 +174,25 @@ export const useSocket = () => {
     };
 
     const onHostChanged = ({ host }) => {
-      if (state.playerId === host) {
-        dispatch({ type: 'SET_ROOM', payload: { isHost: true } });
-      }
+      // The role can move away too (grace-period handover, owner reclaim).
+      dispatch({ type: 'SET_ROOM', payload: { isHost: stateRef.current.playerId === host } });
     };
+
+    // A mid-round joiner is folded in at the start of the next round: leave the
+    // lobby and pull the authoritative snapshot (join_success navigates us).
+    const onRoundAdmitted = () => {
+      dispatch({ type: 'SET_ROOM', payload: { joinedMidRound: false } });
+      const code = sessionStorage.getItem('wst_roomCode');
+      if (code) socket.emit('request_resync', { code });
+    };
+
+    // Every game starts with the shared intro screen (server/game/intro.js).
+    const onGameIntro = (data) => {
+      dispatch({ type: 'INTRO_SET', payload: data });
+      navigate('/intro');
+    };
+    const onIntroUpdate = (data) => dispatch({ type: 'INTRO_SET', payload: data });
+    const onIntroCancelled = () => navigate('/lobby');
 
     const onError = ({ message }) => {
       dispatch({ type: 'SET_ERROR', payload: message });
@@ -166,6 +201,8 @@ export const useSocket = () => {
 
     const onKicked = () => {
       alert("You have been kicked from the room.");
+      // Forget the room so a later reconnect can't resurrect this player (P1-13).
+      dispatch({ type: 'CLEAR_SESSION' });
       dispatch({ type: 'RESET_GAME' });
       navigate('/');
     };
@@ -477,6 +514,21 @@ export const useSocket = () => {
     };
     // ────────────────────────────────────────────────────────────────────────
 
+    // Keep state.phase in lock-step with the server for every phase-bearing
+    // event (see game-core/phaseEvents.js). onAny runs before the specific
+    // listeners, so a reducer that sets a more precise phase still wins.
+    const onAnyEvent = (event, data) => {
+      const phase = phaseForEvent(event);
+      if (phase) dispatch({ type: 'SET_PHASE', payload: phase });
+      // Every server countdown feeds the one canonical round timer.
+      const timerAction = timerActionFor(event, data);
+      if (timerAction) dispatch(timerAction);
+      // ...and every 'X submitted' event feeds the one who-is-missing list.
+      const progressAction = progressActionFor(event, data);
+      if (progressAction) dispatch(progressAction);
+    };
+    socket.onAny(onAnyEvent);
+
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
     document.addEventListener('visibilitychange', onVisibilityChange);
@@ -521,6 +573,11 @@ export const useSocket = () => {
     socket.on('players_ready', onPlayersReady);
     socket.on('game_ended', onGameEnded);
     socket.on('error', onError);
+    socket.on('game:start_rejected', onError);
+    socket.on('round:admitted', onRoundAdmitted);
+    socket.on('game:intro', onGameIntro);
+    socket.on('intro:update', onIntroUpdate);
+    socket.on('intro:cancelled', onIntroCancelled);
     socket.on('kicked', onKicked);
     socket.on('mlt:prompt', onMltPrompt);
     socket.on('mlt:question_changed', onMltQuestionChanged);
@@ -744,6 +801,7 @@ export const useSocket = () => {
     socket.on('game_changed', onGameChanged);
 
     return () => {
+      socket.offAny(onAnyEvent);
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
       document.removeEventListener('visibilitychange', onVisibilityChange);
@@ -768,6 +826,11 @@ export const useSocket = () => {
       socket.off('players_ready', onPlayersReady);
       socket.off('game_ended', onGameEnded);
       socket.off('error', onError);
+      socket.off('game:start_rejected', onError);
+      socket.off('round:admitted', onRoundAdmitted);
+      socket.off('game:intro', onGameIntro);
+      socket.off('intro:update', onIntroUpdate);
+      socket.off('intro:cancelled', onIntroCancelled);
       socket.off('kicked', onKicked);
       socket.off('mlt:prompt', onMltPrompt);
       socket.off('mlt:question_changed', onMltQuestionChanged);
@@ -863,5 +926,5 @@ export const useSocket = () => {
       socket.off('phase_timer', onPhaseTimer);
       socket.off('game_changed', onGameChanged);
     };
-  }, [dispatch, navigate, state.playerId]);
+  }, [dispatch]);
 };

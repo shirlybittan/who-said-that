@@ -2,6 +2,11 @@ import React from 'react';
 import { useGame } from '../store/gameStore.jsx';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
+import GameEndShell from '../components/game/GameEndShell';
+import { translations } from '../locales/translations';
+import useSingleFlight from '../game-core/hooks/useSingleFlight';
+import { pointsLeaderboard } from '../game-core/pointsLeaderboard';
+import { gameLabel } from '../games/registry';
 
 export default function PhotoVoteResultsPage() {
   const { state } = useGame();
@@ -10,6 +15,10 @@ export default function PhotoVoteResultsPage() {
   const isEnded = pv.phase === 'ended';
 
   const modeColor = pv.subType === 'photoassoc' ? '#A29BFE' : '#FDCB6E';
+  const t = translations[state.lang]?.common || translations.en.common;
+  const tpv = translations[state.lang]?.photoVote || translations.en.photoVote;
+  const guard = useSingleFlight(1000);
+  const isLastRound = pv.round >= pv.totalRounds;
 
   const handleNext = () => {
     if (isEnded) {
@@ -19,13 +28,27 @@ export default function PhotoVoteResultsPage() {
     }
   };
 
+  // Game over: the shared end screen (phones used to stay on the last round's
+  // results with "Waiting for host…" — AUDIT.md P2-07).
+  if (isEnded) {
+    return (
+      <GameEndShell
+        subtitle={gameLabel(pv.subType === 'photoassoc' ? 'photoassoc' : 'pmatch', state.lang)}
+        leaderboard={pointsLeaderboard(pv.leaderboard, pv.scores, state.players)}
+        accentColor={modeColor}
+        onPlayAgain={() => socket.emit('photovote:restart', { code: state.roomCode })}
+        gameType={state.gameType}
+      />
+    );
+  }
+
   return (
     <motion.div
       className="flex flex-col items-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6"
       initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}
     >
-      <h1 className="text-3xl font-['Fredoka_One'] mt-6 mb-1" style={{ color: modeColor }}>
-        {isEnded ? '🏆 Final Results!' : `Round ${pv.round} Results`}
+      <h1 className="text-3xl font-['Fredoka_One'] mt-2 mb-1" style={{ color: modeColor }}>
+        {isEnded ? tpv.finalResults : tpv.roundResults.replace('{round}', pv.round)}
       </h1>
 
       {pv.prompt && (
@@ -45,7 +68,7 @@ export default function PhotoVoteResultsPage() {
               r.isWinner ? 'border-yellow-400 bg-yellow-400/10' : 'border-gray-700 bg-[#1A1A2E]'
             }`}
           >
-            <span className="text-2xl">{r.isWinner ? '🥇' : i === 1 ? '🥈' : '📸'}</span>
+            <span className="text-2xl">{r.isWinner ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : '📸'}</span>
             {r.photoData ? (
               <img src={r.photoData} className="w-12 h-12 rounded-xl object-cover" alt={r.playerName} />
             ) : (
@@ -53,7 +76,7 @@ export default function PhotoVoteResultsPage() {
             )}
             <div className="flex-1">
               <p className="font-['Fredoka_One'] text-white">{r.playerName}</p>
-              <p className="text-xs text-gray-400 font-['Nunito']">{r.voteCount} vote{r.voteCount !== 1 ? 's' : ''}</p>
+              <p className="text-xs text-gray-400 font-['Nunito']">{r.voteCount} {r.voteCount === 1 ? t.vote : t.votes}</p>
             </div>
           </motion.div>
         ))}
@@ -61,7 +84,7 @@ export default function PhotoVoteResultsPage() {
 
       {isEnded && (
         <div className="w-full max-w-sm mb-4">
-          <h2 className="text-xl font-['Fredoka_One'] text-[#FFE66D] mb-3 text-center">Scoreboard</h2>
+          <h2 className="text-xl font-['Fredoka_One'] text-[#FFE66D] mb-3 text-center">{tpv.scoreboard}</h2>
           {Object.entries(pv.scores || {})
             .sort(([, a], [, b]) => b - a)
             .map(([id, pts], i) => {
@@ -69,7 +92,7 @@ export default function PhotoVoteResultsPage() {
               return (
                 <div key={id} className="flex justify-between items-center bg-[#1A1A2E] rounded-xl px-4 py-2 mb-2">
                   <span className="font-['Nunito'] text-white">{i + 1}. {p?.name || id}</span>
-                  <span className="font-['Fredoka_One']" style={{ color: modeColor }}>{pts} pts</span>
+                  <span className="font-['Fredoka_One']" style={{ color: modeColor }}>{pts} {t.pts}</span>
                 </div>
               );
             })}
@@ -78,15 +101,15 @@ export default function PhotoVoteResultsPage() {
 
       {isHost && (
         <button
-          onClick={handleNext}
+          onClick={guard(handleNext)}
           style={{ backgroundColor: modeColor }}
           className="w-full max-w-sm py-4 rounded-2xl font-['Fredoka_One'] text-xl text-white mt-2"
         >
-          {isEnded ? 'Back to Lobby 🏠' : `Next Round (${pv.round + 1}/${pv.totalRounds}) ▶️`}
+          {isLastRound ? t.finish : t.nextRound}
         </button>
       )}
       {!isHost && (
-        <p className="text-gray-500 font-['Nunito'] text-sm mt-4">Waiting for host…</p>
+        <p className="text-gray-500 font-['Nunito'] text-sm mt-4 animate-pulse">{t.waitingHost}</p>
       )}
     </motion.div>
   );

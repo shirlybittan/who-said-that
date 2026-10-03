@@ -1,12 +1,14 @@
 import React, { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useGame } from '../store/gameStore.jsx';
+import { translations } from '../locales/translations';
 import { motion } from 'framer-motion';
 import { socket } from '../socket';
 
 export default function DrawTelWaitPage() {
   const { state } = useGame();
   const { dt, playerId } = state;
+  const t = translations[state.lang]?.dt || translations.en.dt;
   const navigate = useNavigate();
 
   // Only go back to the draw page if:
@@ -62,25 +64,25 @@ export default function DrawTelWaitPage() {
   const phase = dt.phase;
 
   const title =
-    phase === 'guessing' ? 'Guessing phase…' :
-    phase === 'drawing'  ? 'Drawing phase…' :
-    phase === 'reveal'   ? 'Reveal time!' :
-    phase === 'end'      ? 'Game over!' :
-    'Waiting…';
+    phase === 'guessing' ? t.phaseGuessing :
+    phase === 'drawing'  ? t.phaseDrawing :
+    phase === 'reveal'   ? t.phaseReveal :
+    phase === 'end'      ? t.phaseEnd :
+    t.phaseWaiting;
 
   const subtitle =
-    phase === 'guessing' ? `Waiting for guessers… (${dt.guessedCount}/${dt.totalGuessers})` :
-    phase === 'drawing'  ? `${dt.chainsCompletedCount}/${dt.totalChains} chains done` :
-    phase === 'reveal'   ? 'Heading to the reveal…' :
-    phase === 'end'      ? 'Heading to results…' :
-    'Hang tight!';
+    phase === 'guessing' ? t.waitingGuessers.replace('{done}', dt.guessedCount).replace('{total}', dt.totalGuessers) :
+    phase === 'drawing'  ? t.chainsDone.replace('{done}', dt.chainsCompletedCount).replace('{total}', dt.totalChains) :
+    phase === 'reveal'   ? t.headingReveal :
+    phase === 'end'      ? t.headingResults :
+    t.hangTight;
 
   return (
     <motion.div
       className="flex flex-col items-center justify-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6"
       initial={{ opacity: 0 }} animate={{ opacity: 1 }}
     >
-      <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest mb-4">📞 Draw Telephone</p>
+      <p className="text-xs text-gray-500 font-['Nunito'] uppercase tracking-widest mb-4">{t.gameName}</p>
       <p className="text-3xl font-['Fredoka_One'] text-[#FF6B6B] mb-3">{title}</p>
       <p className="text-gray-400 font-['Nunito'] text-sm mb-6">{subtitle}</p>
 
@@ -100,7 +102,7 @@ export default function DrawTelWaitPage() {
       {/* Show who is currently drawing (when we can see it) */}
       {phase === 'drawing' && dt.activeDrawerIds?.length > 0 && (
         <p className="text-xs text-[#FF6B6B]/60 font-['Nunito'] mt-4 text-center">
-          {dt.activeDrawerIds.length} player{dt.activeDrawerIds.length !== 1 ? 's are' : ' is'} drawing right now…
+          {(dt.activeDrawerIds.length !== 1 ? t.drawingNowMany : t.drawingNowOne).replace('{count}', dt.activeDrawerIds.length)}
         </p>
       )}
     </motion.div>

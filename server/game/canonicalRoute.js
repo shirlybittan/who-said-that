@@ -19,6 +19,8 @@ const computeCanonicalRoute = (room, playerId) => {
   if (player.joinedMidRound && room.phase && room.phase !== 'lobby') return '/lobby';
 
   switch (room.phase) {
+    case 'intro':
+      return '/intro';
     case 'question':
       return '/question';
     case 'sit-voting':
@@ -68,6 +70,10 @@ const computeCanonicalRoute = (room, playerId) => {
       if (p === 'voting') return '/photo-vote';
       return '/photo-vote-results';
     }
+    case 'captionEnd':
+      return '/caption-results';
+    case 'photovoteEnd':
+      return '/photo-vote-results';
     case 'dt':
       return computeDtRoute(room, playerId);
     case 'dtEnd':

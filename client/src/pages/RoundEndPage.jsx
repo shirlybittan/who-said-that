@@ -24,7 +24,7 @@ export default function RoundEndPage() {
     >
       <h1 className="text-4xl font-['Fredoka_One'] text-[#FF6B6B] mb-8">{t.title.replace('{round}', state.currentRound)}</h1>
 
-      <div className="w-full max-w-md bg-[#1A1A2E] p-6 rounded-2xl border border-[#2D2D44] shadow-xl mb-8 text-left space-y-4 max-h-96 overflow-y-auto scrollbar-thin">
+      <div className="w-full max-w-md bg-[#1A1A2E] p-6 rounded-2xl border border-[#2D2D44] shadow-xl mb-8 text-start space-y-4 max-h-96 overflow-y-auto scrollbar-thin">
         <h3 className="text-2xl font-bold font-['Nunito'] text-[#FFE66D] sticky top-0 bg-[#1A1A2E] pb-2 z-10 flex justify-between items-center">
           <span>{t.summary}</span>
           <span className="text-sm font-normal text-gray-400">
@@ -34,8 +34,8 @@ export default function RoundEndPage() {
 
         {state.answers?.map((ans, idx) => (
           <div key={idx} className="border-b border-[#2D2D44] pb-4 last:border-b-0">
-             <p className="text-gray-300 italic mb-2">"{ans.text}"</p>
-             <div className="flex items-center space-x-2 mb-1">
+             <p className="text-gray-300 italic mb-2 [overflow-wrap:anywhere]">"{ans.text}"</p>
+             <div className="flex items-center gap-2 mb-1">
                <span className="font-bold w-4 h-4 rounded-full inline-block flex-shrink-0" style={{ backgroundColor: state.players.find(p => p.id === ans.playerId)?.color || 'grey' }} />
                <span className="font-['Fredoka_One']">{ans.playerName}</span>   
              </div>
@@ -51,7 +51,7 @@ export default function RoundEndPage() {
                        const voter = state.players.find(p => p.id === v.voterId);
                        return (
                          <div key={i} className="flex items-center bg-[#1A1A2E] px-2 py-1 rounded border border-[#FFE66D]/30">
-                           <span className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: voter?.color }}></span>
+                           <span className="w-3 h-3 rounded-full me-2" style={{ backgroundColor: voter?.color }}></span>
                            <span className="text-xs font-['Fredoka_One'] text-[#FFE66D]">{voter?.name}</span>
                          </div>
                        )

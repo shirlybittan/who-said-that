@@ -26,3 +26,6 @@ playwright-report/
 
 # Persisted room state (runtime, do not commit)
 server/.data/
+
+# regression-suite server data
+.data-regression/

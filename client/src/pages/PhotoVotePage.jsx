@@ -1,14 +1,20 @@
 import React, { useState } from 'react';
 import { useGame } from '../store/gameStore.jsx';
+import { translations } from '../locales/translations';
 import { socket } from '../socket';
 import { motion } from 'framer-motion';
 import { useSounds } from '../hooks/useSounds';
 import ConfirmVoteCard from '../game-core/player/ConfirmVoteCard';
+import VoteLocked from '../components/game/VoteLocked';
+import useAutoConfirmPending from '../game-core/hooks/useAutoConfirmPending';
 
 export default function PhotoVotePage() {
   const { state, dispatch } = useGame();
   const pv = state.photoVote;
   const sounds = useSounds();
+  const lang = translations[state.lang] || translations.en;
+  const t = lang.photoVote || translations.en.photoVote;
+  const tc = lang.common || translations.en.common;
   const [selected, setSelected] = useState(null);
 
   const handleSelect = (targetPlayerId) => {
@@ -23,13 +29,14 @@ export default function PhotoVotePage() {
     socket.emit('photovote:vote', { code: state.roomCode, targetPlayerId: selected });
     dispatch({ type: 'PHOTOVOTE_MARK_VOTED', payload: { targetPlayerId: selected } });
   };
+  useAutoConfirmPending({ pending: selected, hasVoted: pv.hasVoted, onConfirm: handleConfirm });
 
   return (
     <motion.div
       className="flex flex-col items-center min-h-screen bg-[#0D0D1A] text-[#F7F7F7] p-6"
       initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, ease: 'easeOut' }}
     >
-      <p className="text-gray-400 font-['Nunito'] text-sm mt-4 mb-2">Round {pv.round} of {pv.totalRounds}</p>
+      <p className="text-gray-400 font-['Nunito'] text-sm mt-2 mb-2">{tc.round.replace('{current}', pv.round).replace('{total}', pv.totalRounds)}</p>
       <h1 className="text-2xl font-['Fredoka_One'] text-[#FFE66D] text-center mb-6 px-2">{pv.prompt}</h1>
 
       <div className="grid grid-cols-2 gap-3 w-full max-w-sm">
@@ -65,9 +72,9 @@ export default function PhotoVotePage() {
               )}
               <div className="w-full bg-[#0D0D1A]/80 py-1 px-2 text-center">
                 <span className="font-['Nunito'] text-xs text-white">{photo.playerName}</span>
-                {isVoted && <span className="ml-1">✅</span>}
-                {isSelected && !pv.hasVoted && <span className="ml-1">👆</span>}
-                {isMe && <span className="ml-1 text-gray-500 text-xs">(you)</span>}
+                {isVoted && <span className="ms-1">✅</span>}
+                {isSelected && !pv.hasVoted && <span className="ms-1">👆</span>}
+                {isMe && <span className="ms-1 text-gray-500 text-xs">{t.you}</span>}
               </div>
             </button>
           );
@@ -79,22 +86,18 @@ export default function PhotoVotePage() {
         return (
           <ConfirmVoteCard
             vote={{
-              name: targetPlayer ? targetPlayer.name : 'Unknown Player',
+              name: targetPlayer ? targetPlayer.name : t.unknownPlayer,
               color: targetPlayer?.color || '#FDCB6E'
             }}
             onConfirm={handleConfirm}
             onChange={() => setSelected(null)}
-            confirmLabel="✓ Confirm"
-            changeLabel="← Change"
-            titleLabel="Confirm your vote?"
+            accentColor={pv.subType === 'photoassoc' ? '#A29BFE' : '#FDCB6E'}
           />
         );
       })()}
 
       {pv.hasVoted && (
-        <p className="text-gray-500 font-['Nunito'] text-sm mt-5">
-          {pv.voteCount} / {pv.totalVoters} votes in — waiting…
-        </p>
+        <VoteLocked voteCount={pv.voteCount} totalVoters={pv.totalVoters} accentColor={pv.subType === 'photoassoc' ? '#A29BFE' : '#FDCB6E'} />
       )}
     </motion.div>
   );
