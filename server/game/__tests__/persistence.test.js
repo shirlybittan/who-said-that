@@ -129,3 +129,24 @@ describe('every runtime helper is stripped (P0-02)', () => {
     expect(r.mlt.round).toBe(1);
   });
 });
+
+describe('stripRoomHelpers — client snapshots', () => {
+  const TimerManager = require('../TimerManager');
+  const { stripRoomHelpers } = require('../persistence');
+
+  test('drops raw setTimeout handles, which are circular and overflowed socket.io emits', () => {
+    const room = { code: 'R2', phase: 'intro', intro: { ready: {} }, players: [] };
+    room._introTimer = setTimeout(() => {}, 10000);
+    room._hostGraceTimer = setTimeout(() => {}, 10000);
+    try {
+      const snapshot = stripRoomHelpers(TimerManager.sanitizeForClient(room));
+      expect(snapshot._introTimer).toBeUndefined();
+      expect(snapshot._hostGraceTimer).toBeUndefined();
+      expect(snapshot.intro).toEqual({ ready: {} });
+      expect(() => JSON.stringify(snapshot)).not.toThrow();
+    } finally {
+      clearTimeout(room._introTimer);
+      clearTimeout(room._hostGraceTimer);
+    }
+  });
+});

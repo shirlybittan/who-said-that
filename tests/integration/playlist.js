@@ -42,6 +42,9 @@ function attachBase(c) {
   const s = c.socket;
   s.on('disconnect', (reason) => { if (!c.expectDisconnect) disconnects.push(`${c.name}:${reason}`); });
   s.on('error', (d) => { console.log(`   [err ${c.name}] ${d && d.message}`); });
+  // Every game start now opens an intro screen; tap "I'm ready" like a phone does
+  // (the host isn't playing, so its ready is ignored).
+  s.on('game:intro', () => { if (c.code) s.emit('intro:ready', { code: c.code }); });
   // Track the FULL room roster only from events that carry the complete player
   // list (host + all players). Game payloads that carry only *playing* players
   // (e.g. mlt:prompt) must not be used here or they'd hide the host.
@@ -110,6 +113,7 @@ async function setup() {
   const created = await waitEvent(host, 'room_created');
   host.id = created.playerId;
   const code = created.code;
+  host.code = code;
 
   const players = [];
   for (let i = 1; i <= 5; i++) {
@@ -118,6 +122,7 @@ async function setup() {
     p.socket.emit('join_room', { code, playerName: `P${i}` });
     const js = await waitEvent(p, 'join_success');
     p.id = js.playerId;
+    p.code = code;
     players.push(p);
   }
   await delay(300);

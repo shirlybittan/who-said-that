@@ -16,7 +16,7 @@ const {
   listRoomsSummary,
   getAllRooms,
 } = require('./game/roomManager');
-const { loadRooms } = require('./game/persistence');
+const { loadRooms, stripRoomHelpers } = require('./game/persistence');
 const { selectQuestions, selectSituationalQuestions, selectThisOrThatQuestions, selectDrawingQuestion, selectMixedQuestions, shuffleAnswers } = require('./game/gameLogic');
 const { buildMiniGameSnapshot } = require('./game/miniGameSnapshot');
 const { computeCanonicalRoute } = require('./game/canonicalRoute');
@@ -132,10 +132,16 @@ const adminAuth = (req, res, next) => {
   return next();
 };
 
+// A room without server-only state: timers and the "_"-prefixed helpers
+// (_introTimer, _hostGraceTimer, trackers, collectors). A raw setTimeout handle
+// is circular, so leaving one in made socket.io's emit overflow the stack
+// ("Maximum call stack size exceeded" on a join/resync during the intro countdown).
+const roomWithoutInternals = (room) => stripRoomHelpers(TimerManager.sanitizeForClient(room));
+
 // Strip heavy blobs (photos, strokes) from a room snapshot so the state endpoint
 // stays light; keep counts so you can still see the shape of the round.
 const stripHeavyBlobs = (room) => {
-  const clone = JSON.parse(JSON.stringify(TimerManager.sanitizeForClient(room)));
+  const clone = JSON.parse(JSON.stringify(roomWithoutInternals(room)));
   const countKeys = (o) => (o && typeof o === 'object' ? Object.keys(o).length : 0);
   if (clone.playerPhotos) clone.playerPhotos = `<${countKeys(clone.playerPhotos)} photos>`;
   if (clone.selfie) { clone.selfie.photos = `<${countKeys(clone.selfie.photos)} photos>`; clone.selfie.strokes = `<${countKeys(clone.selfie.strokes)} drawings>`; }
@@ -264,7 +270,7 @@ const mergeToGlobalScores = (io, room, scores) => {
 
 // Never send the host key to clients (only the creator receives it, once).
 const { roomForPlayer } = require('./game/clientView');
-const sanitizeRoomForClient = (room) => withoutSecrets(TimerManager.sanitizeForClient(room));
+const sanitizeRoomForClient = (room) => withoutSecrets(roomWithoutInternals(room));
 
 // Re-evaluate who hosts the room and tell everyone if it changed.
 function refreshHost(io, room) {
@@ -1013,6 +1019,7 @@ io.on('connection', (socket) => {
         socket.to(room.code).emit('player_joined', { players: room.players });
       }
     } catch (err) {
+      log.warn('join_room failed', { code, socketId: socket.id, err: err?.stack || String(err) });
       socket.emit('error', { message: err.message });
     }
   });
@@ -1060,8 +1067,9 @@ io.on('connection', (socket) => {
           dtVoteSeconds: DT_VOTE_SECS,
         }),
       });
-    } catch (_) {
+    } catch (err) {
       // Best-effort — a failed resync just leaves the client on its current state.
+      log.warn('request_resync failed', { code, socketId: socket.id, err: err?.stack || String(err) });
     }
   });
 
@@ -1078,6 +1086,7 @@ io.on('connection', (socket) => {
         mltAllowSelfVote: room.mlt.allowSelfVote,
       });
     } catch (err) {
+      log.warn('set_game_options failed', { code, socketId: socket.id, err: err?.stack || String(err) });
       socket.emit('error', { message: err.message });
     }
   });
