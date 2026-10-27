@@ -13,6 +13,8 @@ function makeIo() {
   };
 }
 
+const rooms = [];
+
 function makeRoom(playerCount = 2) {
   const players = Array.from({ length: playerCount }, (_, i) => ({
     id:          `p${i + 1}`,
@@ -21,8 +23,15 @@ function makeRoom(playerCount = 2) {
     isConnected: true,
     isPlaying:   true,
   }));
-  return { players, _timers: {} };
+  const room = { players, _timers: {} };
+  rooms.push(room);
+  return room;
 }
+
+// startVoting() starts a real countdown; cancel it so Jest can exit cleanly.
+afterEach(() => {
+  rooms.splice(0).forEach(room => Object.values(room._timers || {}).forEach(t => t?.cancel?.()));
+});
 
 const PROMPTS = ['Who is most likely to fall asleep first?', 'Who would survive a zombie apocalypse?'];
 
